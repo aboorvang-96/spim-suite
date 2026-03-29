@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}Invoices - FinanceHub{% endblock %}
+{% block nav_invoices %}active{% endblock %}
+{% block page_title %}Invoices{% endblock %}
+{% block page_sub %}Billing and payment tracking{% endblock %}
+{% block header_actions %}<a href="{% url 'invoices:add' %}" class="btn btn-navy">+ New Invoice</a>{% endblock %}
+{% block content %}
+<div class="space-y-4">
+  <div class="flex flex-wrap gap-2">
+    <a href="{% url 'invoices:list' %}" class="btn {% if not status_filter %}btn-navy{% else %}btn-outline{% endif %}">All</a>
+    <a href="?status=draft"   class="btn {% if status_filter == 'draft'   %}btn-navy{% else %}btn-outline{% endif %}">Draft</a>
+    <a href="?status=sent"    class="btn {% if status_filter == 'sent'    %}btn-navy{% else %}btn-outline{% endif %}">Sent</a>
+    <a href="?status=paid"    class="btn {% if status_filter == 'paid'    %}btn-navy{% else %}btn-outline{% endif %}">Paid</a>
+    <a href="?status=overdue" class="btn {% if status_filter == 'overdue' %}btn-navy{% else %}btn-outline{% endif %}">Overdue</a>
+  </div>
+  <div class="card p-0 overflow-hidden"><div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="bg-slate-50 border-b border-slate-100">
+        <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Invoice #</th>
+        <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Client</th>
+        <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Status</th>
+        <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Issue Date</th>
+        <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Due Date</th>
+        <th class="text-right px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Total</th>
+        <th class="px-5 py-3"></th>
+      </tr></thead>
+      <tbody>
+        {% for inv in invoices %}
+        <tr class="table-row border-b border-slate-50">
+          <td class="px-5 py-3"><a href="{% url 'invoices:detail' inv.pk %}" class="font-semibold text-blue-600 hover:underline">{{ inv.invoice_number }}</a></td>
+          <td class="px-5 py-3 text-slate-700 font-medium">{{ inv.client.name }}</td>
+          <td class="px-5 py-3">{% if inv.status == 'paid' %}<span class="badge badge-green">Paid</span>{% elif inv.status == 'overdue' %}<span class="badge badge-red">Overdue</span>{% elif inv.status == 'sent' %}<span class="badge badge-blue">Sent</span>{% else %}<span class="badge badge-slate">Draft</span>{% endif %}</td>
+          <td class="px-5 py-3 text-slate-500 text-xs">{{ inv.issue_date|date:"M d, Y" }}</td>
+          <td class="px-5 py-3 text-slate-500 text-xs">{{ inv.due_date|date:"M d, Y" }}</td>
+          <td class="px-5 py-3 text-right font-semibold text-slate-800">₹{{ inv.total|floatformat:2 }}</td>
+          <td class="px-5 py-3"><div class="flex justify-end gap-2">
+            <a href="{% url 'invoices:edit' inv.pk %}" class="text-blue-500 text-xs">Edit</a>
+            <form method="post" action="{% url 'invoices:delete' inv.pk %}" onsubmit="return confirm('Delete?')">{% csrf_token %}<button class="text-red-400 text-xs">Delete</button></form>
+          </div></td>
+        </tr>
+        {% empty %}<tr><td colspan="7" class="px-5 py-12 text-center text-slate-400 text-sm">No invoices. <a href="{% url 'invoices:add' %}" class="text-blue-600">Create one &rarr;</a></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+</div>
+{% endblock %}

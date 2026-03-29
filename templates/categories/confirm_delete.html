@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm Deletion - Expense Manager{% endblock %}
+{% block page_title %}Confirm Deletion{% endblock %}
+{% block page_subtitle %}Are you sure you want to delete this {{ type }} category?{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto mt-10">
+    <div class="bg-white rounded-2xl shadow-xl shadow-rose-500/10 border border-rose-100 overflow-hidden relative">
+        <div class="absolute top-0 inset-x-0 h-2 bg-rose-500"></div>
+        
+        <div class="p-8 text-center">
+            <div class="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i class="fa-solid fa-triangle-exclamation text-4xl text-rose-500 animate-pulse"></i>
+            </div>
+            
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Delete Category?</h2>
+            <p class="text-gray-600 mb-8">
+                You are about to delete the category <span class="font-bold text-gray-900 border-b border-gray-300 border-dashed">"{{ object.name }}"</span>.
+                This action cannot be undone. Any transactions linked to this category will become uncategorized.
+            </p>
+            
+            <form method="POST" class="flex flex-col sm:flex-row gap-4 justify-center">
+                {% csrf_token %}
+                <a href="{% if type == 'income' %}{% url 'categories:income_list' %}{% else %}{% url 'categories:expense_list' %}{% endif %}" class="px-6 py-3 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors w-full sm:w-auto">
+                    Cancel Keep It
+                </a>
+                <button type="submit" class="px-6 py-3 rounded-xl font-semibold text-white bg-rose-500 hover:bg-rose-600 shadow-lg shadow-rose-500/30 transition-colors w-full sm:w-auto flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i> Yes, Delete Category
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

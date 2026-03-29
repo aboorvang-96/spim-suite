@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} - FinanceHub{% endblock %}
+{% block nav_invoices %}active{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  <form method="post" novalidate>{% csrf_token %}
+    <div class="card mb-4">
+      <h3 class="font-semibold text-slate-700 text-sm mb-4">Invoice Details</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {% for field in form %}<div class="{% if field.name == 'notes' %}sm:col-span-2{% endif %}"><label class="block text-slate-500 text-xs font-medium uppercase tracking-wide mb-1.5">{{ field.label }}</label>{{ field }}{% if field.errors %}<p class="text-red-500 text-xs mt-1">{{ field.errors.0 }}</p>{% endif %}</div>{% endfor %}
+      </div>
+    </div>
+    <div class="card mb-4">
+      <h3 class="font-semibold text-slate-700 text-sm mb-4">Line Items</h3>
+      {{ formset.management_form }}
+      <table class="w-full text-sm mb-3">
+        <thead><tr class="text-slate-400 text-xs"><th class="text-left pb-2 font-medium">Description</th><th class="text-left pb-2 font-medium w-24">Qty</th><th class="text-left pb-2 font-medium w-28">Rate</th><th class="pb-2 w-8"></th></tr></thead>
+        <tbody>{% for item_form in formset %}
+          <tr><td class="pr-3 pb-2">{{ item_form.description }}</td><td class="pr-3 pb-2">{{ item_form.quantity }}</td><td class="pr-3 pb-2">{{ item_form.rate }}</td><td class="pb-2">{% if item_form.instance.pk %}{{ item_form.DELETE }}{% endif %}</td>
+          {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}</tr>
+        {% endfor %}</tbody>
+      </table>
+    </div>
+    <div class="flex gap-3"><button type="submit" class="btn btn-navy">{% if obj %}Save changes{% else %}Create invoice{% endif %}</button><a href="{% url 'invoices:list' %}" class="btn btn-outline">Cancel</a></div>
+  </form>
+</div>
+{% endblock %}

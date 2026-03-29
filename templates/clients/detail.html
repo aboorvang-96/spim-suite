@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}{{ client.name }} - FinanceHub{% endblock %}
+{% block nav_clients %}active{% endblock %}
+{% block page_title %}{{ client.name }}{% endblock %}
+{% block page_sub %}{% if client.company %}{{ client.company }}{% endif %}{% endblock %}
+{% block header_actions %}
+  <a href="{% url 'clients:edit' client.pk %}" class="btn btn-outline">Edit</a>
+  <form method="post" action="{% url 'clients:delete' client.pk %}" onsubmit="return confirm('Delete client?')" style="display:inline">{% csrf_token %}<button class="btn btn-danger">Delete</button></form>
+{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+  <div class="card">
+    <div class="flex items-center gap-4 mb-5">
+      <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold" style="background:#0f2044">{{ client.name|first|upper }}</div>
+      <div><h2 class="font-semibold text-slate-800">{{ client.name }}</h2>{% if client.company %}<p class="text-slate-400 text-sm">{{ client.company }}</p>{% endif %}</div>
+    </div>
+    <dl class="space-y-3 text-sm">
+      {% if client.email %}<div class="flex gap-3"><dt class="text-slate-400 w-16 flex-shrink-0">Email</dt><dd class="text-slate-700">{{ client.email }}</dd></div>{% endif %}
+      {% if client.phone %}<div class="flex gap-3"><dt class="text-slate-400 w-16 flex-shrink-0">Phone</dt><dd class="text-slate-700">{{ client.phone }}</dd></div>{% endif %}
+      {% if client.website %}<div class="flex gap-3"><dt class="text-slate-400 w-16 flex-shrink-0">Website</dt><dd><a href="{{ client.website }}" target="_blank" class="text-blue-600 hover:underline">{{ client.website }}</a></dd></div>{% endif %}
+      {% if client.address %}<div class="flex gap-3"><dt class="text-slate-400 w-16 flex-shrink-0">Address</dt><dd class="text-slate-700 whitespace-pre-line">{{ client.address }}</dd></div>{% endif %}
+      {% if client.notes %}<div class="flex gap-3"><dt class="text-slate-400 w-16 flex-shrink-0">Notes</dt><dd class="text-slate-500 italic">{{ client.notes }}</dd></div>{% endif %}
+    </dl>
+  </div>
+  <div class="xl:col-span-2">
+    <div class="card">
+      <div class="flex items-center justify-between mb-4"><h3 class="font-semibold text-slate-700 text-sm">Linked Projects</h3><a href="{% url 'projects:add' %}" class="btn btn-outline text-xs py-1">+ New Project</a></div>
+      {% if projects %}
+        <div class="space-y-2">
+          {% for p in projects %}
+          <div class="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+            <div><a href="{% url 'projects:detail' p.pk %}" class="font-medium text-slate-700 hover:text-blue-600 text-sm">{{ p.name }}</a><p class="text-slate-400 text-xs mt-0.5">{{ p.task_progress }}% complete</p></div>
+            {% if p.status == 'active' %}<span class="badge badge-green">Active</span>{% elif p.status == 'completed' %}<span class="badge badge-blue">Done</span>{% else %}<span class="badge badge-slate">{{ p.get_status_display }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}<p class="text-slate-400 text-sm">No projects linked.</p>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

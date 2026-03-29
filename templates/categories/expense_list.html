@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Categories - Expense Manager{% endblock %}
+{% block page_title %}{{ type|title }} Categories{% endblock %}
+{% block page_subtitle %}Manage customizations for you {{ type }}s{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl flex flex-col lg:flex-row gap-6">
+
+    <!-- Sidebar toggles for Income vs Expense categories -->
+    <div class="w-full lg:w-64 flex-shrink-0">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 flex flex-row lg:flex-col gap-2">
+            <a href="{% url 'categories:expense_list' %}" class="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors {% if type == 'expense' %}bg-rose-50 text-rose-600 font-semibold border border-rose-100{% else %}text-gray-600 hover:bg-gray-50{% endif %}">
+                <i class="fa-solid fa-tags w-5"></i>
+                <span class="hidden sm:inline">Expense Categories</span>
+            </a>
+            <a href="{% url 'categories:income_list' %}" class="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors {% if type == 'income' %}bg-emerald-50 text-emerald-600 font-semibold border border-emerald-100{% else %}text-gray-600 hover:bg-gray-50{% endif %}">
+                <i class="fa-solid fa-briefcase w-5"></i>
+                <span class="hidden sm:inline">Income Categories</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <h3 class="font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fa-solid fa-list-ul {% if type == 'income' %}text-emerald-500{% else %}text-rose-500{% endif %}"></i> {{ type|title }} Categories
+                </h3>
+                <a href="{% if type == 'income' %}{% url 'categories:income_add' %}{% else %}{% url 'categories:expense_add' %}{% endif %}" class="text-sm font-semibold text-white px-4 py-2 rounded-lg transition-colors shadow-sm {% if type == 'income' %}bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30{% else %}bg-rose-500 hover:bg-rose-600 shadow-rose-500/30{% endif %} flex items-center gap-2">
+                    <i class="fa-solid fa-plus"></i> Add New
+                </a>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+                {% for category in categories %}
+                <div class="border border-gray-100 rounded-xl p-5 hover:border-gray-300 hover:shadow-md transition-all group relative bg-white" data-id="{{ category.id }}">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner" style="background-color: {{ category.color }}15; color: {{ category.color }};">
+                                <i class="fa-solid fa-{{ category.icon|default:'tag' }}"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-gray-800">{{ category.name }}</h4>
+                                <p class="text-xs text-gray-500">{{ category.expenses.count|default:category.incomes.count|default:"0" }} transactions</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <p class="text-sm text-gray-600 line-clamp-2 h-10 mb-4">
+                        {{ category.description|default:"No description provided." }}
+                    </p>
+                    
+                    <div class="flex items-center justify-end border-t border-gray-50 pt-4 opacity-0 group-hover:opacity-100 transition-opacity gap-2">
+                        <a href="{% if type == 'income' %}{% url 'categories:income_edit' category.pk %}{% else %}{% url 'categories:expense_edit' category.pk %}{% endif %}" class="w-8 h-8 rounded-lg flex items-center justify-center text-indigo-500 hover:bg-indigo-50 transition-colors" title="Edit">
+                            <i class="fa-regular fa-pen-to-square"></i>
+                        </a>
+                        <button onclick="deleteResource('{% if type == 'income' %}{% url 'categories:income_delete' category.pk %}{% else %}{% url 'categories:expense_delete' category.pk %}{% endif %}', '{{ category.id }}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-rose-500 hover:bg-rose-50 transition-colors" title="Delete">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-span-1 md:col-span-2 lg:col-span-3 py-16 text-center">
+                    <div class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fa-solid fa-tags text-3xl text-gray-300"></i>
+                    </div>
+                    <h4 class="text-lg font-bold text-gray-800 mb-1">No custom categories</h4>
+                    <p class="text-sm text-gray-500 mb-6">Create categories to better organize your {{ type }}s.</p>
+                    <a href="{% if type == 'income' %}{% url 'categories:income_add' %}{% else %}{% url 'categories:expense_add' %}{% endif %}" class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 shadow-lg shadow-indigo-600/30 transition-all inline-flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Create First Category
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Delete handling via AJAX inside main.js
+</script>
+{% endblock %}

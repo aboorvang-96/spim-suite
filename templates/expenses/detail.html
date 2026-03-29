@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Expense Details - Expense Manager{% endblock %}
+{% block page_title %}Expense Details{% endblock %}
+{% block page_subtitle %}Review transaction information and receipts{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+    <!-- Header Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
+        <div class="h-32 bg-gradient-to-r from-gray-100 to-gray-50 absolute inset-x-0 top-0"></div>
+        
+        <div class="relative pt-16 px-6 pb-6 sm:px-10 flex flex-col sm:flex-row gap-6 items-start sm:items-end justify-between">
+            <div class="flex items-center gap-5">
+                <div class="w-20 h-20 rounded-2xl bg-white shadow-lg flex items-center justify-center p-2 z-10">
+                    <div class="w-full h-full rounded-xl flex items-center justify-center" style="{% if expense.category %}color: {{ expense.category.color }}; background-color: {{ expense.category.color }}15;{% else %}background-color: #f1f5f9; color: #64748b;{% endif %}">
+                        <i class="fa-solid fa-{{ expense.category.icon|default:'receipt' }} text-3xl"></i>
+                    </div>
+                </div>
+                <div class="z-10 bg-white/50 backdrop-blur-md px-4 py-2 rounded-xl border border-white">
+                    <h2 class="text-2xl font-bold text-gray-800">{{ expense.title }}</h2>
+                    <p class="text-gray-500 font-medium">{{ expense.category.name|default:'Uncategorized' }}</p>
+                </div>
+            </div>
+            
+            <div class="flex flex-col items-end z-10">
+                <p class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-1">Total Amount</p>
+                <h3 class="text-4xl font-black text-rose-500">₹{{ expense.amount }}</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- Info Column -->
+        <div class="md:col-span-2 space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+                <h3 class="text-lg font-bold text-gray-800 border-b border-gray-100 pb-4 mb-6"><i class="fa-solid fa-circle-info text-indigo-500 mr-2"></i> Transaction Information</h3>
+                
+                <div class="grid grid-cols-2 gap-y-6 gap-x-4">
+                    <div>
+                        <p class="text-sm text-gray-400 font-medium mb-1">Date</p>
+                        <p class="font-bold text-gray-800 flex items-center gap-2"><i class="fa-regular fa-calendar text-indigo-400"></i> {{ expense.date|date:"F j, Y" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-400 font-medium mb-1">Payment Method</p>
+                        <p class="font-bold text-gray-800 capitalize flex items-center gap-2"><i class="fa-solid fa-credit-card text-emerald-400"></i> {{ expense.get_payment_method_display }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-400 font-medium mb-1">Status</p>
+                        {% if expense.status == 'paid' %}
+                            <span class="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-semibold border border-emerald-100 inline-block">Paid Completed</span>
+                        {% elif expense.status == 'pending' %}
+                            <span class="px-3 py-1 bg-amber-50 text-amber-600 rounded-lg text-sm font-semibold border border-amber-100 inline-block">Pending Payment</span>
+                        {% else %}
+                            <span class="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-sm font-semibold border border-gray-200 inline-block capitalize">{{ expense.status }}</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-400 font-medium mb-1">Created At</p>
+                        <p class="font-bold text-gray-800 text-sm">{{ expense.created_at|date:"M j, Y H:i" }}</p>
+                    </div>
+                </div>
+
+                <div class="mt-8 pt-6 border-t border-gray-100">
+                    <p class="text-sm text-gray-400 font-medium mb-2">Description / Notes</p>
+                    <div class="bg-gray-50 rounded-xl p-4 border border-gray-100 min-h-[100px]">
+                        {% if expense.description %}
+                            <p class="text-gray-700 whitespace-pre-wrap">{{ expense.description }}</p>
+                        {% else %}
+                            <p class="text-gray-400 italic">No description provided for this transaction.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar / Actions -->
+        <div class="space-y-6">
+            
+            <!-- Quick Actions -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4">Quick Actions</h3>
+                <div class="space-y-3">
+                    <a href="{% url 'expenses:edit' expense.pk %}" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-xl transition-colors">
+                        <i class="fa-regular fa-pen-to-square"></i> Edit Expense
+                    </a>
+                    
+                    <button onclick="deleteResource('{% url 'expenses:delete' expense.pk %}', '{{ expense.id }}')" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold rounded-xl transition-colors">
+                        <i class="fa-regular fa-trash-can"></i> Delete Expense
+                    </button>
+                    
+                    <a href="{% url 'expenses:list' %}" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-gray-600 font-semibold rounded-xl transition-colors">
+                        <i class="fa-solid fa-arrow-left"></i> Back to List
+                    </a>
+                </div>
+            </div>
+
+            <!-- Receipt Status -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4">Receipt Documents</h3>
+                
+                {% if expense.receipts.exists %}
+                    <div class="flex items-start gap-4 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                        <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-emerald-500 shadow-sm flex-shrink-0">
+                            <i class="fa-solid fa-file-check text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">Receipt Attached</p>
+                            <p class="text-xs text-emerald-600 font-medium mb-2">{{ expense.receipts.first.get_file_type_display }} Document</p>
+                            <a href="{{ expense.receipts.first.file.url }}" target="_blank" class="inline-flex items-center gap-1 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 px-3 py-1.5 rounded-lg transition-colors">
+                                View File <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            </a>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="flex items-start gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200 border-dashed">
+                        <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-gray-400 shadow-sm flex-shrink-0">
+                            <i class="fa-regular fa-file-image text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="font-bold text-gray-600 text-sm">No Receipt</p>
+                            <p class="text-xs text-gray-500 mb-2">Missing proof of payment.</p>
+                            <a href="{% url 'expenses:edit' expense.pk %}" class="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors">
+                                <i class="fa-solid fa-upload"></i> Upload Now
+                            </a>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm Deletion - Expense Manager{% endblock %}
+{% block page_title %}Confirm Deletion{% endblock %}
+{% block page_subtitle %}Are you sure you want to delete this income transaction?{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto mt-10">
+    <div class="bg-white rounded-2xl shadow-xl shadow-rose-500/10 border border-rose-100 overflow-hidden relative">
+        <div class="absolute top-0 inset-x-0 h-2 bg-rose-500"></div>
+        
+        <div class="p-8 text-center">
+            <div class="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i class="fa-solid fa-trash text-4xl text-rose-500 animate-pulse"></i>
+            </div>
+            
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Delete Income?</h2>
+            <div class="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-100 text-left w-3/4 mx-auto">
+                <p class="text-sm text-gray-500 mb-1">Transaction Details:</p>
+                <p class="font-bold text-gray-800">{{ income.title }}</p>
+                <p class="text-xs text-gray-500">{{ income.date|date:"M d, Y" }}</p>
+                <p class="text-emerald-500 font-bold mt-2">+₹{{ income.amount }}</p>
+            </div>
+            
+            <p class="text-gray-600 mb-8">
+                This action cannot be undone.
+            </p>
+            
+            <form method="POST" class="flex flex-col sm:flex-row gap-4 justify-center">
+                {% csrf_token %}
+                <a href="{% url 'income:list' %}" class="px-6 py-3 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors w-full sm:w-auto">
+                    Cancel
+                </a>
+                <button type="submit" class="px-6 py-3 rounded-xl font-semibold text-white bg-rose-500 hover:bg-rose-600 shadow-lg shadow-rose-500/30 transition-colors w-full sm:w-auto flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i> Permanently Delete
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

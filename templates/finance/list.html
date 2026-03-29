@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Finance - FinanceHub{% endblock %}
+{% block nav_finance %}active{% endblock %}
+{% block page_title %}Finance Tracker{% endblock %}
+{% block page_sub %}Income and expense management{% endblock %}
+{% block header_actions %}
+  <a href="{% url 'finance:add' %}" class="btn btn-navy">+ Add Transaction</a>
+  <a href="{% url 'finance:categories' %}" class="btn btn-outline">Categories</a>
+{% endblock %}
+{% block content %}
+<div class="space-y-4">
+  <div class="grid grid-cols-3 gap-3">
+    <div class="card text-center py-3"><p class="text-xs text-slate-400 uppercase tracking-wide font-medium">Balance</p><p class="text-xl font-bold mt-1 {% if balance >= 0 %}text-slate-800{% else %}text-red-600{% endif %}">₹{{ balance|floatformat:2 }}</p></div>
+    <div class="card text-center py-3"><p class="text-xs text-slate-400 uppercase tracking-wide font-medium">Income</p><p class="text-xl font-bold mt-1 text-green-600">₹{{ total_income|floatformat:2 }}</p></div>
+    <div class="card text-center py-3"><p class="text-xs text-slate-400 uppercase tracking-wide font-medium">Expenses</p><p class="text-xl font-bold mt-1 text-red-500">₹{{ total_expense|floatformat:2 }}</p></div>
+  </div>
+  <div class="card">
+    <form method="get" class="flex flex-wrap gap-3 items-end">
+      <div><label class="block text-slate-500 text-xs mb-1 uppercase tracking-wide font-medium">Type</label><select name="type" class="form-input w-32"><option value="">All</option><option value="income" {% if filters.type == 'income' %}selected{% endif %}>Income</option><option value="expense" {% if filters.type == 'expense' %}selected{% endif %}>Expense</option></select></div>
+      <div><label class="block text-slate-500 text-xs mb-1 uppercase tracking-wide font-medium">Category</label><select name="category" class="form-input w-40"><option value="">All categories</option>{% for cat in categories %}<option value="{{ cat.pk }}" {% if filters.category == cat.pk|stringformat:'s' %}selected{% endif %}>{{ cat.name }}</option>{% endfor %}</select></div>
+      <div><label class="block text-slate-500 text-xs mb-1 uppercase tracking-wide font-medium">Month</label><input type="month" name="month" value="{{ filters.month }}" class="form-input w-40"/></div>
+      <button type="submit" class="btn btn-navy">Filter</button>
+      <a href="{% url 'finance:list' %}" class="btn btn-outline">Clear</a>
+    </form>
+  </div>
+  <div class="card p-0 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="bg-slate-50 border-b border-slate-100">
+          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Date</th>
+          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Description</th>
+          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Category</th>
+          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Type</th>
+          <th class="text-right px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Amount</th>
+          <th class="px-5 py-3"></th>
+        </tr></thead>
+        <tbody>
+          {% for t in transactions %}
+          <tr class="table-row border-b border-slate-50">
+            <td class="px-5 py-3 text-slate-500 text-xs">{{ t.date|date:"M d, Y" }}</td>
+            <td class="px-5 py-3"><p class="text-slate-700 font-medium text-sm">{{ t.description|default:"—" }}</p>{% if t.reference %}<p class="text-slate-400 text-xs">Ref: {{ t.reference }}</p>{% endif %}</td>
+            <td class="px-5 py-3">{% if t.category %}<span class="badge badge-slate">{{ t.category.name }}</span>{% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}</td>
+            <td class="px-5 py-3">{% if t.type == 'income' %}<span class="badge badge-green">Income</span>{% else %}<span class="badge badge-red">Expense</span>{% endif %}</td>
+            <td class="px-5 py-3 text-right font-semibold {% if t.type == 'income' %}text-green-600{% else %}text-red-500{% endif %}">{% if t.type == 'income' %}+{% else %}-{% endif %}₹{{ t.amount|floatformat:2 }}</td>
+            <td class="px-5 py-3 text-right">
+              <a href="{% url 'finance:edit' t.pk %}" class="text-blue-500 hover:text-blue-700 text-xs font-medium">Edit</a>
+              <form method="post" action="{% url 'finance:delete' t.pk %}" onsubmit="return confirm('Delete?')" style="display:inline;margin-left:.5rem">{% csrf_token %}<button class="text-red-400 hover:text-red-600 text-xs font-medium">Delete</button></form>
+            </td>
+          </tr>
+          {% empty %}<tr><td colspan="6" class="px-5 py-12 text-center text-slate-400 text-sm">No transactions. <a href="{% url 'finance:add' %}" class="text-blue-600">Add your first &rarr;</a></td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

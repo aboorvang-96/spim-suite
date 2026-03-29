@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - FinanceHub</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f1f5f9;
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            background: #0f2044;
+            width: 40%;
+            color: white;
+            padding: 3rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 3rem; }
+        .logo-icon { 
+            width: 32px; 
+            height: 32px; 
+            background: #c9a84c; 
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .logo-text { font-size: 1.1rem; font-weight: 600; }
+        .logo-text .accent { color: #c9a84c; }
+        .sidebar h2 { font-size: 1.8rem; margin-bottom: 1rem; font-weight: 300; }
+        .sidebar h2 b { font-weight: 600; }
+        .features { display: flex; flex-direction: column; gap: 1rem; margin-top: 2rem; }
+        .feature-item { display: flex; align-items: center; gap: 1rem; }
+        .feature-check {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(201,168,76,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .feature-check svg { width: 10px; height: 10px; stroke: #c9a84c; }
+        .feature-text { color: rgba(191,219,254,0.8); font-size: 0.9rem; }
+        .copyright { font-size: 0.75rem; opacity: 0.4; }
+        
+        .main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            overflow-y: auto;
+        }
+        .register-box {
+            width: 100%;
+            max-width: 400px;
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .register-box h1 { font-size: 1.5rem; color: #1e293b; margin-bottom: 0.5rem; font-weight: 600; }
+        .register-box > p { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1.5rem; }
+        
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { 
+            display: block;
+            color: #64748b;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+            letter-spacing: 0.5px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.6rem 0.8rem;
+            border: 1px solid #d1d9e6;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: #f8fafc;
+            color: #1e293b;
+            transition: border 0.2s, box-shadow 0.2s;
+            font-family: inherit;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #2a4a7f;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(42,74,127,0.1);
+        }
+        .form-group input::placeholder { color: #94a3b8; }
+        .form-group input.error { border-color: #dc2626; }
+        .error-msg { color: #dc2626; font-size: 0.8rem; margin-top: 0.3rem; }
+        
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        
+        .strength-bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem; margin-top: 0.5rem; }
+        .strength-bar { height: 3px; border-radius: 999px; background: #e2e8f0; }
+        .strength-bar.active { background: #dc2626; }
+        .strength-bar.active.fair { background: #f97316; }
+        .strength-bar.active.good { background: #eab308; }
+        .strength-bar.active.strong { background: #16a34a; }
+        .strength-label { font-size: 0.75rem; color: #94a3b8; margin-top: 0.3rem; }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 0.7rem;
+            background: #0f2044;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 0.5rem;
+        }
+        .submit-btn:hover { background: #1a3260; }
+        
+        .signup-link { 
+            text-align: center; 
+            margin-top: 1.5rem; 
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        .signup-link a { color: #0f2044; text-decoration: none; font-weight: 600; }
+        .signup-link a:hover { text-decoration: underline; }
+        
+        .error-box {
+            background: #fee2e2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            .sidebar { display: none; }
+            .main { padding: 1rem; }
+            .form-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div>
+            <div class="logo">
+                <div class="logo-icon">📊</div>
+                <div class="logo-text">Finance<span class="accent">Hub</span></div>
+            </div>
+            <h2>Start managing<br><b>your finances</b><br>today.</h2>
+            <div class="features">
+                <div class="feature-item">
+                    <div class="feature-check">
+                        <svg fill="none" viewBox="0 0 12 12">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <span class="feature-text">Expense and income tracking</span>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-check">
+                        <svg fill="none" viewBox="0 0 12 12">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <span class="feature-text">Project management</span>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-check">
+                        <svg fill="none" viewBox="0 0 12 12">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <span class="feature-text">Invoice generation</span>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-check">
+                        <svg fill="none" viewBox="0 0 12 12">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <span class="feature-text">Financial reports</span>
+                </div>
+            </div>
+        </div>
+        <div class="copyright">© 2025 FinanceHub</div>
+    </div>
+    
+    <div class="main">
+        <div class="register-box">
+            <h1>Create account</h1>
+            <p>Fill in your details to get started</p>
+            
+            {% if form.non_field_errors %}
+                <div class="error-box">
+                    {% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}
+                </div>
+            {% endif %}
+            
+            <form method="post" novalidate>
+                {% csrf_token %}
+                
+                <div class="form-group">
+                    <label>Full name</label>
+                    <input 
+                        type="text" 
+                        name="full_name"
+                        value="{{ form.full_name.value|default:'' }}"
+                        placeholder="Jane Doe"
+                        {% if form.full_name.errors %}class="error"{% endif %}
+                    >
+                    {% if form.full_name.errors %}<p class="error-msg">{{ form.full_name.errors.0 }}</p>{% endif %}
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input 
+                            type="text" 
+                            name="username"
+                            value="{{ form.username.value|default:'' }}"
+                            placeholder="janedoe"
+                            {% if form.username.errors %}class="error"{% endif %}
+                        >
+                        {% if form.username.errors %}<p class="error-msg">{{ form.username.errors.0 }}</p>{% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input 
+                            type="email" 
+                            name="email"
+                            value="{{ form.email.value|default:'' }}"
+                            placeholder="you@co.com"
+                            {% if form.email.errors %}class="error"{% endif %}
+                        >
+                        {% if form.email.errors %}<p class="error-msg">{{ form.email.errors.0 }}</p>{% endif %}
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Password</label>
+                    <input 
+                        type="password" 
+                        name="password"
+                        id="p1"
+                        placeholder="Minimum 8 characters"
+                        oninput="updatePasswordStrength(this.value)"
+                        {% if form.password.errors %}class="error"{% endif %}
+                    >
+                    <div class="strength-bars" id="strengthBars">
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                    </div>
+                    <p class="strength-label" id="strengthLabel"></p>
+                    {% if form.password.errors %}<p class="error-msg">{{ form.password.errors.0 }}</p>{% endif %}
+                </div>
+                
+                <div class="form-group">
+                    <label>Confirm password</label>
+                    <input 
+                        type="password" 
+                        name="password2"
+                        placeholder="Re-enter password"
+                        {% if form.password2.errors %}class="error"{% endif %}
+                    >
+                    {% if form.password2.errors %}<p class="error-msg">{{ form.password2.errors.0 }}</p>{% endif %}
+                </div>
+                
+                <button type="submit" class="submit-btn">Create account</button>
+            </form>
+            
+            <p class="signup-link">Already have an account? <a href="{% url 'accounts:login' %}">Sign in</a></p>
+        </div>
+    </div>
+    
+    <script>
+    function updatePasswordStrength(value) {
+        const bars = document.querySelectorAll('.strength-bar');
+        const label = document.getElementById('strengthLabel');
+        const labels = ['Weak', 'Fair', 'Good', 'Strong'];
+        const colors = ['#dc2626', '#f97316', '#eab308', '#16a34a'];
+        
+        let strength = 0;
+        if (value.length >= 8) strength++;
+        if (/[A-Z]/.test(value)) strength++;
+        if (/[0-9]/.test(value)) strength++;
+        if (/[^A-Za-z0-9]/.test(value)) strength++;
+        
+        bars.forEach((bar, index) => {
+            bar.classList.remove('active', 'fair', 'good', 'strong');
+            if (index < strength && strength > 0) {
+                bar.classList.add('active');
+                if (strength === 2) bar.classList.add('fair');
+                else if (strength === 3) bar.classList.add('good');
+                else if (strength === 4) bar.classList.add('strong');
+            }
+        });
+        
+        if (value.length) {
+            label.textContent = labels[Math.max(0, strength - 1)] || '';
+            label.style.color = colors[Math.max(0, strength - 1)] || '#94a3b8';
+        } else {
+            label.textContent = '';
+        }
+    }
+    </script>
+</body>
+</html>

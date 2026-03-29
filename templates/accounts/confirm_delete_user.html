@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete User - Expense Manager{% endblock %}
+
+{% block page_title %}Delete User{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto mt-8">
+    <div class="bg-white rounded-xl shadow-sm border border-rose-200 overflow-hidden">
+        <div class="px-6 py-5 bg-rose-50 border-b border-rose-100 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+            </div>
+            <div>
+                <h3 class="text-base font-semibold text-rose-900">Confirm Deletion</h3>
+                <p class="text-sm text-rose-700 mt-0.5">This action cannot be undone.</p>
+            </div>
+        </div>
+        
+        <div class="p-6">
+            <p class="text-slate-600 mb-6">
+                Are you sure you want to delete the user <strong class="text-slate-900">{{ user_to_delete.username }}</strong>? 
+                All associated data (expenses, incomes, categories) will also be permanently deleted.
+            </p>
+            
+            <form method="post" action="{% url 'accounts:user_delete' user_to_delete.id %}" class="flex gap-3 justify-end mt-4">
+                {% csrf_token %}
+                <a href="{% url 'accounts:user_list' %}" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200">
+                    Cancel
+                </a>
+                <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-rose-600 rounded-lg hover:bg-rose-700 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-1 flex items-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i> Delete User
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,1102 @@
+
+import os
+
+BASE = r"E:\Freelancing\financehub"
+
+def w(rel, txt):
+    path = os.path.join(BASE, rel.replace('/', os.sep))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(txt.lstrip('\n'))
+    print("  OK " + rel)
+
+print("\n  Scaffolding FinanceHub backend...\n")
+
+w("requirements.txt", """
+Django==4.2.11
+mysqlclient==2.2.4
+python-decouple==3.8
+python-dateutil==2.9.0
+Pillow==10.3.0
+""")
+
+w(".env", """
+SECRET_KEY=django-insecure-financehub-xk3pv82mnqrw9yz-changeme
+DEBUG=True
+DB_NAME=expense_manager
+DB_USER=root
+DB_PASSWORD=
+DB_HOST=localhost
+DB_PORT=3306
+""")
+
+w("manage.py", """
+#!/usr/bin/env python
+import os, sys
+def main():
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+    from django.core.management import execute_from_command_line
+    execute_from_command_line(sys.argv)
+if __name__ == '__main__':
+    main()
+""")
+
+w("core/__init__.py", "")
+
+w("core/wsgi.py", """
+import os
+from django.core.wsgi import get_wsgi_application
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+application = get_wsgi_application()
+""")
+
+w("core/settings.py", """
+from pathlib import Path
+from decouple import config
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+SECRET_KEY = config('SECRET_KEY')
+DEBUG      = config('DEBUG', cast=bool, default=True)
+ALLOWED_HOSTS = ['*']
+
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'accounts',
+    'finance',
+    'projects',
+    'clients',
+    'invoices',
+    'dashboard',
+    'reports',
+]
+
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+ROOT_URLCONF    = 'core.urls'
+AUTH_USER_MODEL = 'accounts.User'
+LOGIN_URL       = '/auth/login/'
+LOGIN_REDIRECT_URL  = '/dashboard/'
+LOGOUT_REDIRECT_URL = '/auth/login/'
+
+TEMPLATES = [{
+    'BACKEND': 'django.template.backends.django.DjangoTemplates',
+    'DIRS': [BASE_DIR / 'templates'],
+    'APP_DIRS': True,
+    'OPTIONS': {'context_processors': [
+        'django.template.context_processors.debug',
+        'django.template.context_processors.request',
+        'django.contrib.auth.context_processors.auth',
+        'django.contrib.messages.context_processors.messages',
+    ]},
+}]
+
+DATABASES = {'default': {
+    'ENGINE':   'django.db.backends.mysql',
+    'NAME':     config('DB_NAME'),
+    'USER':     config('DB_USER'),
+    'PASSWORD': config('DB_PASSWORD'),
+    'HOST':     config('DB_HOST', default='localhost'),
+    'PORT':     config('DB_PORT', default='3306'),
+    'OPTIONS':  {'charset': 'utf8mb4'},
+}}
+
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE     = 'UTC'
+USE_I18N = True
+USE_TZ   = True
+
+STATIC_URL       = '/static/'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_ROOT      = BASE_DIR / 'staticfiles'
+MEDIA_URL        = '/media/'
+MEDIA_ROOT       = BASE_DIR / 'media'
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+""")
+
+w("core/urls.py", """
+from django.contrib import admin
+from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+from django.shortcuts import redirect
+
+urlpatterns = [
+    path('admin/',     admin.site.urls),
+    path('auth/',      include('accounts.urls',  namespace='accounts')),
+    path('dashboard/', include('dashboard.urls', namespace='dashboard')),
+    path('finance/',   include('finance.urls',   namespace='finance')),
+    path('projects/',  include('projects.urls',  namespace='projects')),
+    path('clients/',   include('clients.urls',   namespace='clients')),
+    path('invoices/',  include('invoices.urls',  namespace='invoices')),
+    path('reports/',   include('reports.urls',   namespace='reports')),
+    path('',           lambda r: redirect('accounts:login')),
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+""")
+
+# ── accounts ───────────────────────────────────────
+w("accounts/__init__.py", "")
+
+w("accounts/models.py", """
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.db import models
+
+class UserManager(BaseUserManager):
+    def create_user(self, email, username, password=None, **extra):
+        email = self.normalize_email(email)
+        user  = self.model(email=email, username=username, **extra)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, username, password=None, **extra):
+        extra.setdefault('role', 'admin')
+        extra.setdefault('is_staff', True)
+        extra.setdefault('is_superuser', True)
+        return self.create_user(email, username, password, **extra)
+
+class User(AbstractBaseUser, PermissionsMixin):
+    ROLES = (('admin', 'Admin'), ('user', 'User'))
+    email       = models.EmailField(unique=True)
+    username    = models.CharField(max_length=60, unique=True)
+    full_name   = models.CharField(max_length=120, blank=True)
+    role        = models.CharField(max_length=10, choices=ROLES, default='user')
+    avatar      = models.ImageField(upload_to='avatars/', blank=True, null=True)
+    is_active   = models.BooleanField(default=True)
+    is_staff    = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(auto_now_add=True)
+
+    USERNAME_FIELD  = 'email'
+    REQUIRED_FIELDS = ['username']
+    objects = UserManager()
+
+    def __str__(self):
+        return self.full_name or self.username
+
+    @property
+    def is_admin(self):
+        return self.role == 'admin'
+
+    @property
+    def initials(self):
+        parts = (self.full_name or self.username).split()
+        return (parts[0][0] + (parts[1][0] if len(parts) > 1 else '')).upper()
+""")
+
+w("accounts/forms.py", """
+from django import forms
+from django.contrib.auth import authenticate
+from .models import User
+
+class LoginForm(forms.Form):
+    email    = forms.EmailField()
+    password = forms.CharField(widget=forms.PasswordInput)
+
+    def clean(self):
+        email = self.cleaned_data.get('email')
+        pwd   = self.cleaned_data.get('password')
+        if email and pwd:
+            self.user = authenticate(username=email, password=pwd)
+            if not self.user:
+                raise forms.ValidationError("Invalid email or password.")
+            if not self.user.is_active:
+                raise forms.ValidationError("This account has been deactivated.")
+        return self.cleaned_data
+
+    def get_user(self):
+        return self.user
+
+class RegisterForm(forms.ModelForm):
+    password  = forms.CharField(widget=forms.PasswordInput, min_length=8)
+    password2 = forms.CharField(widget=forms.PasswordInput, label="Confirm password")
+
+    class Meta:
+        model  = User
+        fields = ['full_name', 'username', 'email']
+
+    def clean_username(self):
+        u = self.cleaned_data['username']
+        if User.objects.filter(username=u).exists():
+            raise forms.ValidationError("Username already taken.")
+        return u
+
+    def clean_email(self):
+        e = self.cleaned_data['email']
+        if User.objects.filter(email=e).exists():
+            raise forms.ValidationError("Email already registered.")
+        return e
+
+    def clean(self):
+        p1 = self.cleaned_data.get('password')
+        p2 = self.cleaned_data.get('password2')
+        if p1 and p2 and p1 != p2:
+            raise forms.ValidationError("Passwords do not match.")
+        return self.cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.set_password(self.cleaned_data['password'])
+        if commit:
+            user.save()
+        return user
+""")
+
+w("accounts/views.py", """
+from django.shortcuts import render, redirect
+from django.contrib.auth import login, logout
+from django.contrib import messages
+from .forms import LoginForm, RegisterForm
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard:index')
+    form = LoginForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        login(request, form.get_user())
+        return redirect('dashboard:index')
+    return render(request, 'accounts/login.html', {'form': form})
+
+def register_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard:index')
+    form = RegisterForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        user = form.save()
+        login(request, user)
+        messages.success(request, 'Welcome, ' + (user.full_name or user.username) + '!')
+        return redirect('dashboard:index')
+    return render(request, 'accounts/register.html', {'form': form})
+
+def logout_view(request):
+    logout(request)
+    return redirect('accounts:login')
+""")
+
+w("accounts/urls.py", """
+from django.urls import path
+from . import views
+app_name = 'accounts'
+urlpatterns = [
+    path('login/',    views.login_view,    name='login'),
+    path('register/', views.register_view, name='register'),
+    path('logout/',   views.logout_view,   name='logout'),
+]
+""")
+
+w("accounts/admin.py", """
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as Base
+from .models import User
+
+@admin.register(User)
+class UserAdmin(Base):
+    list_display  = ('email', 'username', 'full_name', 'role', 'is_active', 'date_joined')
+    list_filter   = ('role', 'is_active')
+    search_fields = ('email', 'username', 'full_name')
+    ordering      = ('-date_joined',)
+    fieldsets = (
+        (None,            {'fields': ('email', 'username', 'password')}),
+        ('Personal',      {'fields': ('full_name', 'avatar')}),
+        ('Role & Access', {'fields': ('role', 'is_active', 'is_staff', 'is_superuser')}),
+        ('Permissions',   {'fields': ('groups', 'user_permissions')}),
+    )
+    add_fieldsets = ((None, {
+        'classes': ('wide',),
+        'fields':  ('email', 'username', 'full_name', 'role', 'password1', 'password2'),
+    }),)
+""")
+
+# ── finance ─────────────────────────────────────────
+w("finance/__init__.py", "")
+
+w("finance/models.py", """
+from django.db import models
+from django.conf import settings
+
+class Category(models.Model):
+    TYPE = (('income', 'Income'), ('expense', 'Expense'))
+    name       = models.CharField(max_length=100)
+    type       = models.CharField(max_length=10, choices=TYPE)
+    color      = models.CharField(max_length=7, default='#6366f1')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='categories')
+
+    class Meta:
+        verbose_name_plural = 'Categories'
+        ordering = ['type', 'name']
+
+    def __str__(self):
+        return self.name + ' (' + self.get_type_display() + ')'
+
+class Transaction(models.Model):
+    TYPE = (('income', 'Income'), ('expense', 'Expense'))
+    user        = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
+    type        = models.CharField(max_length=10, choices=TYPE)
+    category    = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True)
+    amount      = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.CharField(max_length=300, blank=True)
+    date        = models.DateField()
+    reference   = models.CharField(max_length=100, blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return self.get_type_display() + ' ' + str(self.amount)
+""")
+
+w("finance/forms.py", """
+from django import forms
+from .models import Transaction, Category
+
+class TransactionForm(forms.ModelForm):
+    class Meta:
+        model  = Transaction
+        fields = ['type', 'category', 'amount', 'description', 'date', 'reference']
+        widgets = {
+            'date':        forms.DateInput(attrs={'type': 'date'}),
+            'description': forms.TextInput(attrs={'placeholder': 'Brief description'}),
+            'reference':   forms.TextInput(attrs={'placeholder': 'Invoice # or ref (optional)'}),
+        }
+
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['category'].queryset    = Category.objects.filter(created_by=user)
+        self.fields['category'].required    = False
+        self.fields['category'].empty_label = 'No category'
+
+class CategoryForm(forms.ModelForm):
+    class Meta:
+        model   = Category
+        fields  = ['name', 'type', 'color']
+        widgets = {'color': forms.TextInput(attrs={'type': 'color'})}
+""")
+
+w("finance/views.py", """
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.db.models import Sum
+from django.utils import timezone
+from .models import Transaction, Category
+from .forms import TransactionForm, CategoryForm
+
+@login_required
+def transaction_list(request):
+    qs      = Transaction.objects.filter(user=request.user).select_related('category')
+    tx_type = request.GET.get('type', '')
+    cat_id  = request.GET.get('category', '')
+    month   = request.GET.get('month', '')
+    if tx_type: qs = qs.filter(type=tx_type)
+    if cat_id:  qs = qs.filter(category_id=cat_id)
+    if month:   qs = qs.filter(date__startswith=month)
+    total_income  = qs.filter(type='income').aggregate(t=Sum('amount'))['t']  or 0
+    total_expense = qs.filter(type='expense').aggregate(t=Sum('amount'))['t'] or 0
+    return render(request, 'finance/list.html', {
+        'transactions': qs[:200],
+        'total_income':  total_income,
+        'total_expense': total_expense,
+        'balance':       total_income - total_expense,
+        'categories':    Category.objects.filter(created_by=request.user),
+        'filters':       {'type': tx_type, 'category': cat_id, 'month': month},
+    })
+
+@login_required
+def add_transaction(request):
+    form = TransactionForm(request.user, request.POST or None, initial={'date': timezone.now().date()})
+    if request.method == 'POST' and form.is_valid():
+        t = form.save(commit=False)
+        t.user = request.user
+        t.save()
+        messages.success(request, "Transaction recorded.")
+        return redirect('finance:list')
+    return render(request, 'finance/form.html', {'form': form, 'title': 'Add Transaction'})
+
+@login_required
+def edit_transaction(request, pk):
+    t    = get_object_or_404(Transaction, pk=pk, user=request.user)
+    form = TransactionForm(request.user, request.POST or None, instance=t)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, "Transaction updated.")
+        return redirect('finance:list')
+    return render(request, 'finance/form.html', {'form': form, 'title': 'Edit Transaction', 'obj': t})
+
+@login_required
+def delete_transaction(request, pk):
+    t = get_object_or_404(Transaction, pk=pk, user=request.user)
+    if request.method == 'POST':
+        t.delete()
+        messages.success(request, "Deleted.")
+    return redirect('finance:list')
+
+@login_required
+def category_list(request):
+    cats = Category.objects.filter(created_by=request.user)
+    form = CategoryForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        c = form.save(commit=False)
+        c.created_by = request.user
+        c.save()
+        messages.success(request, "Category added.")
+        return redirect('finance:categories')
+    return render(request, 'finance/categories.html', {'categories': cats, 'form': form})
+
+@login_required
+def delete_category(request, pk):
+    c = get_object_or_404(Category, pk=pk, created_by=request.user)
+    if request.method == 'POST':
+        c.delete()
+        messages.success(request, "Category removed.")
+    return redirect('finance:categories')
+""")
+
+w("finance/urls.py", """
+from django.urls import path
+from . import views
+app_name = 'finance'
+urlpatterns = [
+    path('',                            views.transaction_list,   name='list'),
+    path('add/',                        views.add_transaction,    name='add'),
+    path('<int:pk>/edit/',              views.edit_transaction,   name='edit'),
+    path('<int:pk>/delete/',            views.delete_transaction, name='delete'),
+    path('categories/',                 views.category_list,      name='categories'),
+    path('categories/<int:pk>/delete/', views.delete_category,    name='delete_category'),
+]
+""")
+
+w("finance/admin.py", """
+from django.contrib import admin
+from .models import Category, Transaction
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'type', 'color', 'created_by')
+
+@admin.register(Transaction)
+class TransactionAdmin(admin.ModelAdmin):
+    list_display   = ('user', 'type', 'amount', 'category', 'date')
+    list_filter    = ('type', 'date')
+    date_hierarchy = 'date'
+""")
+
+# ── projects ─────────────────────────────────────────
+w("projects/__init__.py", "")
+
+w("projects/models.py", """
+from django.db import models
+from django.conf import settings
+
+class Project(models.Model):
+    STATUS = (('active','Active'),('on_hold','On Hold'),('completed','Completed'),('cancelled','Cancelled'))
+    name        = models.CharField(max_length=200)
+    client      = models.ForeignKey('clients.Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='projects')
+    owner       = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='owned_projects')
+    status      = models.CharField(max_length=15, choices=STATUS, default='active')
+    budget      = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    start_date  = models.DateField()
+    due_date    = models.DateField(null=True, blank=True)
+    description = models.TextField(blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def task_progress(self):
+        total = self.tasks.count()
+        if not total:
+            return 0
+        return int(self.tasks.filter(status='done').count() / total * 100)
+
+class Task(models.Model):
+    STATUS   = (('todo','To Do'),('in_progress','In Progress'),('done','Done'))
+    PRIORITY = (('low','Low'),('medium','Medium'),('high','High'))
+    project     = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='tasks')
+    title       = models.CharField(max_length=200)
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    status      = models.CharField(max_length=15, choices=STATUS, default='todo')
+    priority    = models.CharField(max_length=10, choices=PRIORITY, default='medium')
+    due_date    = models.DateField(null=True, blank=True)
+    notes       = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.title
+""")
+
+w("projects/forms.py", """
+from django import forms
+from .models import Project, Task
+
+class ProjectForm(forms.ModelForm):
+    class Meta:
+        model   = Project
+        fields  = ['name','client','status','budget','start_date','due_date','description']
+        widgets = {
+            'start_date':  forms.DateInput(attrs={'type':'date'}),
+            'due_date':    forms.DateInput(attrs={'type':'date'}),
+            'description': forms.Textarea(attrs={'rows':3}),
+        }
+
+class TaskForm(forms.ModelForm):
+    class Meta:
+        model   = Task
+        fields  = ['title','assigned_to','status','priority','due_date','notes']
+        widgets = {
+            'due_date': forms.DateInput(attrs={'type':'date'}),
+            'notes':    forms.Textarea(attrs={'rows':2}),
+        }
+""")
+
+w("projects/views.py", """
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from .models import Project, Task
+from .forms import ProjectForm, TaskForm
+
+@login_required
+def project_list(request):
+    qs = Project.objects.all() if request.user.is_admin else Project.objects.filter(owner=request.user)
+    return render(request, 'projects/list.html', {'projects': qs.select_related('client','owner')})
+
+@login_required
+def project_detail(request, pk):
+    p = get_object_or_404(Project, pk=pk)
+    return render(request, 'projects/detail.html', {
+        'project': p, 'tasks': p.tasks.select_related('assigned_to'), 'task_form': TaskForm()
+    })
+
+@login_required
+def add_project(request):
+    form = ProjectForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        p = form.save(commit=False)
+        p.owner = request.user
+        p.save()
+        messages.success(request, "Project created.")
+        return redirect('projects:detail', pk=p.pk)
+    return render(request, 'projects/form.html', {'form': form, 'title': 'New Project'})
+
+@login_required
+def edit_project(request, pk):
+    p    = get_object_or_404(Project, pk=pk)
+    form = ProjectForm(request.POST or None, instance=p)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, "Project updated.")
+        return redirect('projects:detail', pk=p.pk)
+    return render(request, 'projects/form.html', {'form': form, 'title': 'Edit Project', 'obj': p})
+
+@login_required
+def delete_project(request, pk):
+    p = get_object_or_404(Project, pk=pk)
+    if request.method == 'POST':
+        p.delete()
+        messages.success(request, "Deleted.")
+    return redirect('projects:list')
+
+@login_required
+def add_task(request, project_pk):
+    project = get_object_or_404(Project, pk=project_pk)
+    form    = TaskForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        t = form.save(commit=False)
+        t.project = project
+        t.save()
+        messages.success(request, "Task added.")
+    return redirect('projects:detail', pk=project_pk)
+
+@login_required
+def update_task_status(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    ns   = request.POST.get('status')
+    if ns in dict(Task.STATUS):
+        task.status = ns
+        task.save()
+    return redirect('projects:detail', pk=task.project_id)
+
+@login_required
+def delete_task(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    pid  = task.project_id
+    if request.method == 'POST':
+        task.delete()
+        messages.success(request, "Task removed.")
+    return redirect('projects:detail', pk=pid)
+""")
+
+w("projects/urls.py", """
+from django.urls import path
+from . import views
+app_name = 'projects'
+urlpatterns = [
+    path('',                            views.project_list,       name='list'),
+    path('add/',                        views.add_project,        name='add'),
+    path('<int:pk>/',                   views.project_detail,     name='detail'),
+    path('<int:pk>/edit/',              views.edit_project,       name='edit'),
+    path('<int:pk>/delete/',            views.delete_project,     name='delete'),
+    path('<int:project_pk>/tasks/add/', views.add_task,           name='add_task'),
+    path('tasks/<int:pk>/status/',      views.update_task_status, name='task_status'),
+    path('tasks/<int:pk>/delete/',      views.delete_task,        name='delete_task'),
+]
+""")
+
+w("projects/admin.py", """
+from django.contrib import admin
+from .models import Project, Task
+
+class TaskInline(admin.TabularInline):
+    model = Task
+    extra = 0
+
+@admin.register(Project)
+class ProjectAdmin(admin.ModelAdmin):
+    list_display = ('name','client','owner','status','start_date','due_date')
+    inlines      = [TaskInline]
+
+@admin.register(Task)
+class TaskAdmin(admin.ModelAdmin):
+    list_display = ('title','project','status','priority','due_date')
+""")
+
+# ── clients ─────────────────────────────────────────
+w("clients/__init__.py", "")
+
+w("clients/models.py", """
+from django.db import models
+from django.conf import settings
+
+class Client(models.Model):
+    name       = models.CharField(max_length=200)
+    email      = models.EmailField(blank=True)
+    phone      = models.CharField(max_length=30, blank=True)
+    company    = models.CharField(max_length=200, blank=True)
+    address    = models.TextField(blank=True)
+    website    = models.URLField(blank=True)
+    notes      = models.TextField(blank=True)
+    added_by   = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='clients')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+""")
+
+w("clients/forms.py", """
+from django import forms
+from .models import Client
+
+class ClientForm(forms.ModelForm):
+    class Meta:
+        model   = Client
+        fields  = ['name','email','phone','company','address','website','notes']
+        widgets = {
+            'address': forms.Textarea(attrs={'rows':2}),
+            'notes':   forms.Textarea(attrs={'rows':2}),
+        }
+""")
+
+w("clients/views.py", """
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from .models import Client
+from .forms import ClientForm
+
+@login_required
+def client_list(request):
+    q  = request.GET.get('q', '')
+    qs = Client.objects.all() if request.user.is_admin else Client.objects.filter(added_by=request.user)
+    if q:
+        qs = qs.filter(name__icontains=q) | qs.filter(company__icontains=q) | qs.filter(email__icontains=q)
+    return render(request, 'clients/list.html', {'clients': qs.distinct(), 'q': q})
+
+@login_required
+def client_detail(request, pk):
+    c = get_object_or_404(Client, pk=pk)
+    return render(request, 'clients/detail.html', {'client': c, 'projects': c.projects.all()})
+
+@login_required
+def add_client(request):
+    form = ClientForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        c = form.save(commit=False)
+        c.added_by = request.user
+        c.save()
+        messages.success(request, "Client added.")
+        return redirect('clients:detail', pk=c.pk)
+    return render(request, 'clients/form.html', {'form': form, 'title': 'Add Client'})
+
+@login_required
+def edit_client(request, pk):
+    c    = get_object_or_404(Client, pk=pk)
+    form = ClientForm(request.POST or None, instance=c)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, "Updated.")
+        return redirect('clients:detail', pk=c.pk)
+    return render(request, 'clients/form.html', {'form': form, 'title': 'Edit Client', 'obj': c})
+
+@login_required
+def delete_client(request, pk):
+    c = get_object_or_404(Client, pk=pk)
+    if request.method == 'POST':
+        c.delete()
+        messages.success(request, "Deleted.")
+    return redirect('clients:list')
+""")
+
+w("clients/urls.py", """
+from django.urls import path
+from . import views
+app_name = 'clients'
+urlpatterns = [
+    path('',                 views.client_list,   name='list'),
+    path('add/',             views.add_client,    name='add'),
+    path('<int:pk>/',        views.client_detail, name='detail'),
+    path('<int:pk>/edit/',   views.edit_client,   name='edit'),
+    path('<int:pk>/delete/', views.delete_client, name='delete'),
+]
+""")
+
+w("clients/admin.py", """
+from django.contrib import admin
+from .models import Client
+
+@admin.register(Client)
+class ClientAdmin(admin.ModelAdmin):
+    list_display  = ('name','company','email','phone','added_by')
+    search_fields = ('name','company','email')
+""")
+
+# ── invoices ─────────────────────────────────────────
+w("invoices/__init__.py", "")
+
+w("invoices/models.py", """
+from django.db import models
+from django.conf import settings
+
+class Invoice(models.Model):
+    STATUS = (('draft','Draft'),('sent','Sent'),('paid','Paid'),('overdue','Overdue'))
+    invoice_number = models.CharField(max_length=50, unique=True)
+    client         = models.ForeignKey('clients.Client', on_delete=models.CASCADE, related_name='invoices')
+    project        = models.ForeignKey('projects.Project', on_delete=models.SET_NULL, null=True, blank=True, related_name='invoices')
+    created_by     = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    status         = models.CharField(max_length=10, choices=STATUS, default='draft')
+    issue_date     = models.DateField()
+    due_date       = models.DateField()
+    tax_rate       = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    notes          = models.TextField(blank=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-issue_date']
+
+    def __str__(self):
+        return self.invoice_number
+
+    @property
+    def subtotal(self):
+        return sum(item.line_total for item in self.items.all())
+
+    @property
+    def tax_amount(self):
+        return round(self.subtotal * (self.tax_rate / 100), 2)
+
+    @property
+    def total(self):
+        return self.subtotal + self.tax_amount
+
+class InvoiceItem(models.Model):
+    invoice     = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
+    description = models.CharField(max_length=300)
+    quantity    = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    rate        = models.DecimalField(max_digits=12, decimal_places=2)
+
+    @property
+    def line_total(self):
+        return self.quantity * self.rate
+
+    def __str__(self):
+        return self.description
+""")
+
+w("invoices/forms.py", """
+from django import forms
+from django.forms import inlineformset_factory
+from .models import Invoice, InvoiceItem
+import datetime, random
+
+class InvoiceForm(forms.ModelForm):
+    class Meta:
+        model   = Invoice
+        fields  = ['invoice_number','client','project','status','issue_date','due_date','tax_rate','notes']
+        widgets = {
+            'issue_date': forms.DateInput(attrs={'type':'date'}),
+            'due_date':   forms.DateInput(attrs={'type':'date'}),
+            'notes':      forms.Textarea(attrs={'rows':2}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            yr  = datetime.date.today().strftime('%Y%m')
+            rnd = random.randint(100, 999)
+            self.fields['invoice_number'].initial = 'INV-' + yr + '-' + str(rnd)
+        self.fields['project'].required = False
+
+ItemFormSet = inlineformset_factory(
+    Invoice, InvoiceItem,
+    fields=['description','quantity','rate'],
+    extra=2, can_delete=True,
+    widgets={
+        'description': forms.TextInput(attrs={'placeholder':'Service or item description'}),
+        'quantity':    forms.NumberInput(attrs={'placeholder':'1','step':'0.01'}),
+        'rate':        forms.NumberInput(attrs={'placeholder':'0.00','step':'0.01'}),
+    }
+)
+""")
+
+w("invoices/views.py", """
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from .models import Invoice
+from .forms import InvoiceForm, ItemFormSet
+
+@login_required
+def invoice_list(request):
+    status = request.GET.get('status', '')
+    qs     = Invoice.objects.all() if request.user.is_admin else Invoice.objects.filter(created_by=request.user)
+    if status:
+        qs = qs.filter(status=status)
+    return render(request, 'invoices/list.html', {
+        'invoices': qs.select_related('client'), 'status_filter': status
+    })
+
+@login_required
+def invoice_detail(request, pk):
+    return render(request, 'invoices/detail.html', {'invoice': get_object_or_404(Invoice, pk=pk)})
+
+@login_required
+def add_invoice(request):
+    form    = InvoiceForm(request.POST or None)
+    formset = ItemFormSet(request.POST or None)
+    if request.method == 'POST' and form.is_valid() and formset.is_valid():
+        inv = form.save(commit=False)
+        inv.created_by = request.user
+        inv.save()
+        formset.instance = inv
+        formset.save()
+        messages.success(request, 'Invoice ' + inv.invoice_number + ' created.')
+        return redirect('invoices:detail', pk=inv.pk)
+    return render(request, 'invoices/form.html', {'form': form, 'formset': formset, 'title': 'New Invoice'})
+
+@login_required
+def edit_invoice(request, pk):
+    inv     = get_object_or_404(Invoice, pk=pk)
+    form    = InvoiceForm(request.POST or None, instance=inv)
+    formset = ItemFormSet(request.POST or None, instance=inv)
+    if request.method == 'POST' and form.is_valid() and formset.is_valid():
+        form.save()
+        formset.save()
+        messages.success(request, "Invoice updated.")
+        return redirect('invoices:detail', pk=inv.pk)
+    return render(request, 'invoices/form.html', {'form': form, 'formset': formset, 'title': 'Edit Invoice', 'obj': inv})
+
+@login_required
+def delete_invoice(request, pk):
+    inv = get_object_or_404(Invoice, pk=pk)
+    if request.method == 'POST':
+        inv.delete()
+        messages.success(request, "Deleted.")
+    return redirect('invoices:list')
+
+@login_required
+def mark_paid(request, pk):
+    inv = get_object_or_404(Invoice, pk=pk)
+    if request.method == 'POST':
+        inv.status = 'paid'
+        inv.save()
+        messages.success(request, "Marked as paid.")
+    return redirect('invoices:detail', pk=pk)
+""")
+
+w("invoices/urls.py", """
+from django.urls import path
+from . import views
+app_name = 'invoices'
+urlpatterns = [
+    path('',                 views.invoice_list,   name='list'),
+    path('add/',             views.add_invoice,    name='add'),
+    path('<int:pk>/',        views.invoice_detail, name='detail'),
+    path('<int:pk>/edit/',   views.edit_invoice,   name='edit'),
+    path('<int:pk>/delete/', views.delete_invoice, name='delete'),
+    path('<int:pk>/paid/',   views.mark_paid,      name='mark_paid'),
+]
+""")
+
+w("invoices/admin.py", """
+from django.contrib import admin
+from .models import Invoice, InvoiceItem
+
+class ItemInline(admin.TabularInline):
+    model = InvoiceItem
+    extra = 1
+
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    list_display = ('invoice_number','client','status','issue_date','due_date')
+    inlines      = [ItemInline]
+""")
+
+# ── dashboard ────────────────────────────────────────
+w("dashboard/__init__.py", "")
+
+w("dashboard/views.py", """
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+from django.db.models import Sum
+from django.utils import timezone
+from finance.models import Transaction
+from projects.models import Project
+from invoices.models import Invoice
+from dateutil.relativedelta import relativedelta
+import json
+
+@login_required
+def index(request):
+    user  = request.user
+    today = timezone.now().date()
+
+    txns     = Transaction.objects.all() if user.is_admin else Transaction.objects.filter(user=user)
+    projects = Project.objects.all()     if user.is_admin else Project.objects.filter(owner=user)
+    invoices = Invoice.objects.all()     if user.is_admin else Invoice.objects.filter(created_by=user)
+
+    total_income  = txns.filter(type='income').aggregate(t=Sum('amount'))['t']  or 0
+    total_expense = txns.filter(type='expense').aggregate(t=Sum('amount'))['t'] or 0
+
+    chart = []
+    for i in range(5, -1, -1):
+        ms  = today.replace(day=1) - relativedelta(months=i)
+        me  = ms + relativedelta(months=1)
+        inc = txns.filter(type='income',  date__gte=ms, date__lt=me).aggregate(t=Sum('amount'))['t'] or 0
+        exp = txns.filter(type='expense', date__gte=ms, date__lt=me).aggregate(t=Sum('amount'))['t'] or 0
+        chart.append({'month': ms.strftime('%b %y'), 'income': float(inc), 'expense': float(exp)})
+
+    return render(request, 'dashboard/index.html', {
+        'balance':          total_income - total_expense,
+        'total_income':     total_income,
+        'total_expense':    total_expense,
+        'active_projects':  projects.filter(status='active').count(),
+        'pending_invoices': invoices.filter(status__in=['sent','draft']).count(),
+        'overdue_invoices': invoices.filter(status='overdue').count(),
+        'recent_txns':      txns.select_related('category').order_by('-date','-created_at')[:8],
+        'chart_data':       json.dumps(chart),
+    })
+""")
+
+w("dashboard/urls.py", """
+from django.urls import path
+from . import views
+app_name = 'dashboard'
+urlpatterns = [path('', views.index, name='index')]
+""")
+
+# ── reports ──────────────────────────────────────────
+w("reports/__init__.py", "")
+
+w("reports/views.py", """
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+from django.db.models import Sum
+from django.utils import timezone
+from finance.models import Transaction, Category
+import json
+
+@login_required
+def reports_index(request):
+    user = request.user
+    year = int(request.GET.get('year', timezone.now().year))
+    txns = Transaction.objects.filter(date__year=year) if user.is_admin else Transaction.objects.filter(user=user, date__year=year)
+
+    monthly = []
+    for m in range(1, 13):
+        inc = txns.filter(type='income',  date__month=m).aggregate(t=Sum('amount'))['t'] or 0
+        exp = txns.filter(type='expense', date__month=m).aggregate(t=Sum('amount'))['t'] or 0
+        monthly.append({'month': m, 'label': str(m).zfill(2) + '/' + str(year), 'income': float(inc), 'expense': float(exp)})
+
+    exp_cats = []
+    for cat in Category.objects.filter(type='expense'):
+        total = txns.filter(type='expense', category=cat).aggregate(t=Sum('amount'))['t'] or 0
+        if total:
+            exp_cats.append({'name': cat.name, 'total': float(total), 'color': cat.color})
+
+    total_income  = txns.filter(type='income').aggregate(t=Sum('amount'))['t']  or 0
+    total_expense = txns.filter(type='expense').aggregate(t=Sum('amount'))['t'] or 0
+
+    return render(request, 'reports/index.html', {
+        'monthly_data':  json.dumps(monthly),
+        'category_data': json.dumps(exp_cats),
+        'total_income':  total_income,
+        'total_expense': total_expense,
+        'net':           total_income - total_expense,
+        'year':          year,
+        'years':         list(range(2022, timezone.now().year + 2)),
+    })
+""")
+
+w("reports/urls.py", """
+from django.urls import path
+from . import views
+app_name = 'reports'
+urlpatterns = [path('', views.reports_index, name='index')]
+""")
+
+# ── static ───────────────────────────────────────────
+w("static/js/main.js", """
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.alert-msg').forEach(function(el) {
+        setTimeout(function() {
+            el.style.transition = 'opacity 0.5s';
+            el.style.opacity = '0';
+            setTimeout(function() { el.remove(); }, 500);
+        }, 3500);
+    });
+    var menuBtn  = document.getElementById('menu-btn');
+    var overlay  = document.getElementById('sidebar-overlay');
+    var mobileSb = document.getElementById('mobile-sidebar');
+    if (menuBtn && mobileSb) {
+        menuBtn.addEventListener('click', function() {
+            mobileSb.classList.toggle('-translate-x-full');
+            if (overlay) overlay.classList.toggle('hidden');
+        });
+    }
+    if (overlay) {
+        overlay.addEventListener('click', function() {
+            if (mobileSb) mobileSb.classList.add('-translate-x-full');
+            overlay.classList.add('hidden');
+        });
+    }
+});
+""")
+
+print("\n  Backend done! Now run: python setup_financehub_templates.py\n")

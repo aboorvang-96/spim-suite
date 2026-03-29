@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Expense Manager{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}Record a new expense transaction{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100 bg-gray-50/50">
+            <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-rose-100 text-rose-500 flex items-center justify-center">
+                    <i class="fa-solid fa-money-bill-wave"></i>
+                </div>
+                Expense Details
+            </h3>
+        </div>
+        
+        <form method="POST" enctype="multipart/form-data" class="p-6 md:p-8" id="ajaxForm">
+            {% csrf_token %}
+            
+            <div class="space-y-6">
+                <!-- Row 1: Title & Amount -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="{{ form.title.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Title <span class="text-rose-500">*</span></label>
+                        {{ form.title }}
+                        {% if form.title.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.title.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.amount.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Amount (₹) <span class="text-rose-500">*</span></label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 font-medium">₹</span>
+                            </div>
+                            <!-- Ensure padding-left is larger to accommodate the ₹ symbol -->
+                            <div class="[&>input]:pl-8">{{ form.amount }}</div>
+                        </div>
+                        {% if form.amount.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.amount.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Row 2: Category & Date -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <div class="flex justify-between items-end mb-2">
+                            <label for="{{ form.category.id_for_label }}" class="block text-sm font-semibold text-gray-700">Category</label>
+                            <a href="{% url 'categories:expense_add' %}" class="text-xs text-indigo-500 hover:text-indigo-700 font-medium flex items-center gap-1"><i class="fa-solid fa-plus"></i> New</a>
+                        </div>
+                        {{ form.category }}
+                        {% if form.category.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.category.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.date.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Date <span class="text-rose-500">*</span></label>
+                        {{ form.date }}
+                        {% if form.date.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.date.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Row 3: Method & Status -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 bg-gray-50 rounded-xl border border-gray-100">
+                    <div>
+                        <label for="{{ form.payment_method.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Payment Method</label>
+                        {{ form.payment_method }}
+                    </div>
+                    <div>
+                        <label for="{{ form.status.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Status</label>
+                        {{ form.status }}
+                    </div>
+                </div>
+                
+                <!-- Description -->
+                <div>
+                    <label for="{{ form.description.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Description / Notes</label>
+                    {{ form.description }}
+                </div>
+                
+                <!-- Receipt Upload -->
+                <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:bg-gray-50 hover:border-indigo-300 transition-colors group cursor-pointer relative">
+                    <input type="file" name="file" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" id="id_file" accept=".jpg,.jpeg,.png,.pdf">
+                    <div class="w-12 h-12 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                    </div>
+                    <p class="font-medium text-gray-700">Upload Receipt Bill</p>
+                    <p class="text-xs text-gray-500 mt-1">PNG, JPG or PDF up to 10MB</p>
+                    <p id="fileNameDisplay" class="text-sm font-semibold text-indigo-600 mt-3 hidden"></p>
+                    
+                    {% if receipt_form.file.errors %}
+                        <p class="text-rose-500 text-xs mt-2">{{ receipt_form.file.errors.0 }}</p>
+                    {% endif %}
+                    
+                    {% if expense and expense.receipts.exists %}
+                        <div class="mt-4 pt-4 border-t border-gray-200 text-left">
+                            <p class="text-sm text-gray-500 mb-2"><i class="fa-solid fa-paperclip mr-1"></i> Current Receipt:</p>
+                            <a href="{{ expense.receipts.first.file.url }}" target="_blank" class="text-indigo-600 hover:underline text-sm font-medium flex items-center gap-2">
+                                <i class="fa-solid fa-file-invoice"></i> View Document
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+
+            </div>
+            
+            <!-- Actions -->
+            <div class="mt-8 pt-6 border-t border-gray-100 flex items-center justify-end gap-3">
+                <a href="{% url 'expenses:list' %}" class="px-6 py-2.5 rounded-xl text-gray-600 font-medium hover:bg-gray-100 transition-colors">Cancel</a>
+                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+                    <i class="fa-solid fa-check"></i> {{ action }} Expense
+                </button>
+            </div>
+            
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.getElementById('id_file').addEventListener('change', function(e) {
+        const fileName = e.target.files[0]?.name;
+        const display = document.getElementById('fileNameDisplay');
+        if(fileName) {
+            display.textContent = `Selected: ${fileName}`;
+            display.classList.remove('hidden');
+        } else {
+            display.classList.add('hidden');
+        }
+    });
+
+    // Handle AJAX submission logic inside main.js automatically via generic #ajaxForm handling
+</script>
+{% endblock %}

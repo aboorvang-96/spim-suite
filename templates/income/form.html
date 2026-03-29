@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Expense Manager{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}Record new incoming funds and sources{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100 bg-gray-50/50">
+            <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-500 flex items-center justify-center">
+                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                </div>
+                Income Details
+            </h3>
+        </div>
+        
+        <form method="POST" class="p-6 md:p-8" id="ajaxForm">
+            {% csrf_token %}
+            
+            <div class="space-y-6">
+                <!-- Row 1: Title & Amount -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="{{ form.title.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Title <span class="text-emerald-500">*</span></label>
+                        {{ form.title }}
+                        {% if form.title.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.title.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.amount.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Amount (₹) <span class="text-emerald-500">*</span></label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 font-medium">₹</span>
+                            </div>
+                            <div class="[&>input]:pl-8">{{ form.amount }}</div>
+                        </div>
+                        {% if form.amount.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.amount.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Row 2: Category & Date -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <div class="flex justify-between items-end mb-2">
+                            <label for="{{ form.category.id_for_label }}" class="block text-sm font-semibold text-gray-700">Category</label>
+                            <a href="{% url 'categories:income_add' %}" class="text-xs text-indigo-500 hover:text-indigo-700 font-medium flex items-center gap-1"><i class="fa-solid fa-plus"></i> New</a>
+                        </div>
+                        {{ form.category }}
+                        {% if form.category.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.category.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.date.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Date <span class="text-emerald-500">*</span></label>
+                        {{ form.date }}
+                        {% if form.date.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.date.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Row 3: Source & Mode -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 bg-gray-50 rounded-xl border border-gray-100">
+                    <div>
+                        <label for="{{ form.source.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Source / Sender</label>
+                        {{ form.source }}
+                        <p class="text-xs text-gray-400 mt-1">e.g. Acme Corp, Upwork, Client Name</p>
+                        {% if form.source.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.source.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.payment_mode.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Payment Mode</label>
+                        {{ form.payment_mode }}
+                        {% if form.payment_mode.errors %}
+                            <p class="text-rose-500 text-xs mt-1">{{ form.payment_mode.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Description -->
+                <div>
+                    <label for="{{ form.description.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-2">Description / Notes</label>
+                    {{ form.description }}
+                </div>
+                
+            </div>
+            
+            <!-- Actions -->
+            <div class="mt-8 pt-6 border-t border-gray-100 flex items-center justify-end gap-3">
+                <a href="{% url 'income:list' %}" class="px-6 py-2.5 rounded-xl text-gray-600 font-medium hover:bg-gray-100 transition-colors">Cancel</a>
+                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+                    <i class="fa-solid fa-check"></i> {{ action }} Income
+                </button>
+            </div>
+            
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Handle AJAX submission logic inside main.js automatically via generic #ajaxForm handling
+</script>
+{% endblock %}

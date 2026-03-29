@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Edit Employee - {{ employee.name }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
+{% endblock %}
+
+{% block nav_employees %}active{% endblock %}
+{% block page_title %}Edit Profile{% endblock %}
+{% block page_sub %}{{ employee.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="card p-6">
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <div class="form-group">
+                <label class="form-label">Full Name</label>
+                {{ form.name }}
+            </div>
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Role</label>
+                    {{ form.role }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Base Salary</label>
+                    {{ form.base_salary }}
+                </div>
+            </div>
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Location</label>
+                    {{ form.location }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Site</label>
+                    {{ form.site }}
+                </div>
+            </div>
+
+            <div class="pt-6 border-t border-slate-100 flex gap-3">
+                <button type="submit" class="btn btn-navy flex-1">Update Profile</button>
+                <a href="{% url 'employees:list' %}" class="btn btn-outline">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

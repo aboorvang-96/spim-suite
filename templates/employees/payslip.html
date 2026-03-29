@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Payslip - {{ employee.name }} - {{ salary.month|date:"F Y" }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
+<style>
+    @media print {
+        .sidebar, .header, .header-actions, .mobile-nav, .btn, .no-print { display: none !important; }
+        .main-content { margin: 0 !important; width: 100% !important; }
+        .content { padding: 0 !important; background: white !important; }
+        .payslip-container { box-shadow: none !important; border: none !important; margin: 0 !important; max-width: 100% !important; }
+        body { background: white !important; }
+    }
+</style>
+{% endblock %}
+
+{% block nav_employees %}active{% endblock %}
+
+{% block header_actions %}
+<button onclick="window.print()" class="btn btn-navy no-print">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h6a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4"/></svg>
+    Print Payslip
+</button>
+<a href="{% url 'employees:salary_management' employee.pk %}" class="btn btn-outline no-print">Back to History</a>
+{% endblock %}
+
+{% block content %}
+<div class="payslip-container">
+    <div class="payslip-header">
+        <div>
+            <h2 class="text-3xl font-black text-slate-800 mb-1">PAYSLIP</h2>
+            <p class="text-slate-500 font-medium">FinanceHub Corporate Payroll</p>
+        </div>
+        <div class="text-right">
+            <p class="ps-label">Reference No</p>
+            <p class="ps-value">{{ payslip.reference_number }}</p>
+            <p class="ps-label mt-2">Date Generated</p>
+            <p class="ps-value">{{ payslip.generated_at|date:"d M Y" }}</p>
+        </div>
+    </div>
+
+    <div class="grid grid-3 gap-6 mb-8">
+        <div class="card p-4 bg-slate-50 border-none">
+            <p class="ps-label">Employee</p>
+            <h3 class="text-lg font-bold text-slate-900 mb-2">{{ employee.name }}</h3>
+            <p class="text-xs text-slate-500">{{ employee.role }}</p>
+            <p class="text-xs text-slate-500">{{ employee.location }} | {{ employee.site }}</p>
+        </div>
+        <div class="card p-4 bg-slate-50 border-none">
+            <p class="ps-label">Period</p>
+            <h3 class="text-lg font-bold text-slate-900 mb-2">{{ salary.month|date:"F Y" }}</h3>
+            <p class="text-xs text-slate-500">Full Month Attendance</p>
+        </div>
+        <div class="card p-4 bg-slate-50 border-none">
+            <p class="ps-label">Payment Mode</p>
+            <h3 class="text-lg font-bold text-slate-900 mb-2">NEFT / Bank Transfer</h3>
+            <p class="text-xs text-slate-500">{% if employee.bank_details %}{{ employee.bank_details.bank_name }}{% else %}Bank details not specified{% endif %}</p>
+        </div>
+    </div>
+
+    <div class="space-y-4">
+        <h4 class="text-sm font-bold text-slate-800 uppercase tracking-widest border-b pb-2">Earnings & Deductions</h4>
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-left text-slate-400 border-b">
+                    <th class="py-2">Description</th>
+                    <th class="py-2 text-right">Earnings</th>
+                    <th class="py-2 text-right">Deductions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="border-b">
+                    <td class="py-4">Base Salary</td>
+                    <td class="py-4 text-right">₹ {{ salary.base_salary|floatformat:2 }}</td>
+                    <td class="py-4 text-right">-</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-4">Overtime Allowance</td>
+                    <td class="py-4 text-right">₹ {{ salary.overtime_allowance|floatformat:2 }}</td>
+                    <td class="py-4 text-right">-</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-4">Advance Adjustment</td>
+                    <td class="py-4 text-right">-</td>
+                    <td class="py-4 text-right text-red-600">₹ {{ salary.advance_pay|floatformat:2 }}</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-4">Professional Tax / Deductions</td>
+                    <td class="py-4 text-right">-</td>
+                    <td class="py-4 text-right text-red-600">₹ {{ salary.deduction|floatformat:2 }}</td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="py-6 font-bold text-lg">Total Net Payable</td>
+                    <td colspan="2" class="py-6 text-right font-black text-2xl text-blue-800">₹ {{ salary.net_pay|floatformat:2 }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="ps-divider mt-12"></div>
+    <div class="flex justify-between items-end pt-8">
+        <div class="text-slate-400 text-xs text-center border-t border-dashed w-32 pt-2">Employee Signature</div>
+        <div class="text-slate-400 text-xs">This is a system generated payslip.</div>
+        <div class="text-slate-900 text-xs font-bold text-center border-t border-slate-900 w-48 pt-2">Authorized Signatory</div>
+    </div>
+</div>
+{% endblock %}

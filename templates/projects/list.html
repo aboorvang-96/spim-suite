@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Projects - FinanceHub{% endblock %}
+{% block nav_projects %}active{% endblock %}
+{% block page_title %}Projects{% endblock %}
+{% block page_sub %}Track and manage your work{% endblock %}
+{% block header_actions %}<a href="{% url 'projects:add' %}" class="btn btn-navy">+ New Project</a>{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+  {% for p in projects %}
+  <div class="card hover:shadow-md transition-shadow">
+    <div class="flex items-start justify-between mb-3">
+      <div class="min-w-0"><a href="{% url 'projects:detail' p.pk %}" class="font-semibold text-slate-800 hover:text-blue-700 block truncate">{{ p.name }}</a>{% if p.client %}<p class="text-slate-400 text-xs mt-0.5 truncate">{{ p.client.name }}</p>{% endif %}</div>
+      {% if p.status == 'active' %}<span class="badge badge-green ml-2 flex-shrink-0">Active</span>{% elif p.status == 'completed' %}<span class="badge badge-blue ml-2 flex-shrink-0">Done</span>{% elif p.status == 'on_hold' %}<span class="badge badge-yellow ml-2 flex-shrink-0">On Hold</span>{% else %}<span class="badge badge-slate ml-2 flex-shrink-0">{{ p.get_status_display }}</span>{% endif %}
+    </div>
+    {% if p.description %}<p class="text-slate-500 text-xs mb-3">{{ p.description|truncatechars:80 }}</p>{% endif %}
+    <div class="mb-3">
+      <div class="flex justify-between text-xs text-slate-400 mb-1"><span>{{ p.tasks.count }} task{{ p.tasks.count|pluralize }}</span><span>{{ p.task_progress }}% done</span></div>
+      <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:{{ p.task_progress }}%;background:#0f2044"></div></div>
+    </div>
+    <div class="flex items-center justify-between text-xs text-slate-400">
+      <span>{% if p.due_date %}Due {{ p.due_date|date:"M d, Y" }}{% else %}No deadline{% endif %}</span>
+      {% if p.budget %}<span>₹{{ p.budget|floatformat:0 }} budget</span>{% endif %}
+    </div>
+  </div>
+  {% empty %}<div class="md:col-span-3 card text-center py-16"><p class="text-slate-400 text-sm mb-3">No projects yet.</p><a href="{% url 'projects:add' %}" class="btn btn-navy inline-flex">Create first project</a></div>{% endfor %}
+</div>
+{% endblock %}

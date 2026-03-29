@@ -1,0 +1,33 @@
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th class="text-end text-success">Income</th>
+                        <th class="text-end text-danger">Expense</th>
+                        <th class="text-end">Net Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data %}
+                    <tr>
+                        <td>{{ row.date_period }}</td>
+                        <td class="text-end text-success">${{ row.total_income|floatformat:2 }}</td>
+                        <td class="text-end text-danger">-${{ row.total_expense|floatformat:2 }}</td>
+                        <td
+                            class="text-end fw-bold {% if row.net_balance >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                            ${{ row.net_balance|floatformat:2 }}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">No records found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

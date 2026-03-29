@@ -1,0 +1,263 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Employee Directory - FinanceHub{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
+<style>
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .status-ok { background: #22c55e; }
+    .status-pending { background: #f59e0b; }
+</style>
+{% endblock %}
+
+{% block nav_employees %}active{% endblock %}
+{% block page_title %}Employee Module{% endblock %}
+{% block page_sub %}Manage your workforce, salaries, and bank details{% endblock %}
+
+{% block header_actions %}
+<button onclick="openModal('addEmployeeModal')" class="btn btn-navy">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+    Add Employee
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- SEARCH & FILTERS -->
+    <div class="card p-4">
+        <form method="get" class="toolbar">
+            <div class="search-wrap">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" name="q" value="{{ search_q }}" class="search-input" placeholder="Search by name...">
+            </div>
+            <select name="location" class="form-input w-full md:w-48">
+                <option value="">All Locations</option>
+                {% for loc in locations %}
+                <option value="{{ loc }}" {% if location_f == loc %}selected{% endif %}>{{ loc }}</option>
+                {% endfor %}
+            </select>
+            <select name="site" class="form-input w-full md:w-48">
+                <option value="">All Sites</option>
+                {% for s in sites %}
+                <option value="{{ s }}" {% if site_f == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-navy px-6">Apply</button>
+            {% if search_q or location_f or site_f %}
+            <a href="{% url 'employees:list' %}" class="btn btn-outline">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- EMPLOYEE GRID -->
+    <div class="emp-grid">
+        {% for employee in employees %}
+        <div class="emp-card">
+            <div class="flex justify-between items-start mb-4">
+                <div class="emp-avatar">
+                    {{ employee.name|first|upper }}
+                </div>
+                <div class="flex gap-1">
+                    <a href="{% url 'employees:edit' employee.pk %}" class="btn btn-outline btn-sm p-1.5" title="Edit Profile">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </a>
+                    <form method="post" action="{% url 'employees:delete' employee.pk %}" class="inline" onsubmit="return confirm('Remove employee {{ employee.name }}?')">
+                        {% csrf_token %}
+                        <button type="submit" class="emp-card-remove">
+                            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <h3 class="emp-name">{{ employee.name }}</h3>
+                <p class="emp-role">{{ employee.role }}</p>
+            </div>
+            
+            <div class="space-y-1 mb-4">
+                <div class="emp-meta">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                    {{ employee.location }}
+                </div>
+                <div class="emp-meta">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    {{ employee.site }}
+                </div>
+                <div class="emp-meta" style="color:#ffffff; font-weight:600">
+                    ₹ {{ employee.base_salary|floatformat:2 }} / month
+                </div>
+            </div>
+
+            <!-- STATUS BADGES -->
+            <div class="flex flex-wrap gap-2 mt-2">
+                {% if employee.has_bank_details %}
+                <span class="bank-badge bank-ok">
+                    <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
+                    Bank Details Added
+                </span>
+                {% else %}
+                <span class="bank-badge bank-miss">
+                    <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    Bank Details Missing
+                </span>
+                {% endif %}
+
+                {% if employee.has_pf_details %}
+                <span class="bank-badge bank-ok">
+                    <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
+                    PF Registered
+                </span>
+                {% else %}
+                <span class="bank-badge bank-miss">
+                    <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                    PF Pending
+                </span>
+                {% endif %}
+            </div>
+
+            <!-- ACTIONS -->
+            <div class="grid grid-cols-2 gap-2 mt-4">
+                <a href="{% url 'employees:bank_details' employee.pk %}" class="btn-bank-edit">🏦 Bank</a>
+                <a href="{% url 'employees:pf_details' employee.pk %}" class="btn-bank-edit">📄 PF</a>
+                <a href="{% url 'employees:salary_management' employee.pk %}" class="btn-bank-edit col-span-2" style="background: #2563eb; color: white">💰 Salary & History</a>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full card py-12 text-center">
+            <svg class="mx-auto mb-4 text-slate-300" width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            <p class="text-slate-500">No employees found matching your criteria.</p>
+            <button onclick="openModal('addEmployeeModal')" class="text-blue-600 font-semibold mt-2 hover:underline">Add your first employee &rarr;</button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- ADD EMPLOYEE MODAL (Stepper) -->
+<div id="addEmployeeModal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="font-bold text-slate-800">Add New Employee</h3>
+            <button onclick="closeModal('addEmployeeModal')" class="text-slate-400 hover:text-slate-600">&times;</button>
+        </div>
+        <form method="post" action="{% url 'employees:add' %}">
+            {% csrf_token %}
+            <div id="step1" class="modal-body">
+                <div class="stepper">
+                    <div class="step-item"><div class="step-circle active">1</div><div class="step-label active">Employee Info</div></div>
+                    <div class="step-line"></div>
+                    <div class="step-item"><div class="step-circle">2</div><div class="step-label">Bank Info (Opt)</div></div>
+                </div>
+                <div class="space-y-4">
+                    <div class="form-group">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" name="name" class="form-input" required placeholder="e.g. John Doe">
+                    </div>
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Role</label>
+                            <input type="text" name="role" class="form-input" required placeholder="e.g. Developer">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Base Salary</label>
+                            <input type="number" name="base_salary" class="form-input" required value="0">
+                        </div>
+                    </div>
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Location</label>
+                            <input type="text" name="location" class="form-input" required placeholder="e.g. Chennai">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Site</label>
+                            <input type="text" name="site" class="form-input" required placeholder="e.g. OMR Site">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="step2" class="modal-body hidden">
+                <div class="stepper">
+                    <div class="step-item"><div class="step-circle done">✓</div><div class="step-label done">Employee Info</div></div>
+                    <div class="step-line done"></div>
+                    <div class="step-item"><div class="step-circle active">2</div><div class="step-label active">Bank Info (Opt)</div></div>
+                </div>
+                <div class="space-y-4">
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Bank Name</label>
+                            <input type="text" name="bank_name" class="form-input" placeholder="e.g. HDFC">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Account Holder</label>
+                            <input type="text" name="account_holder" class="form-input" placeholder="Name on passbook">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Account Number</label>
+                        <input type="text" name="account_number" class="form-input" placeholder="1234xxxxxxx">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">IFSC Code</label>
+                        <input type="text" name="ifsc_code" class="form-input" placeholder="HDFC0001234">
+                    </div>
+                    <p class="text-xs text-slate-400">You can skip this step and add bank details later from the directory.</p>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('addEmployeeModal')" class="btn btn-outline" id="cancelBtn">Cancel</button>
+                <button type="button" onclick="nextStep()" class="btn btn-navy" id="nextBtn">Next: Bank Info &rarr;</button>
+                <button type="button" onclick="prevStep()" class="btn btn-outline hidden" id="prevBtn">&larr; Back</button>
+                <button type="submit" class="btn btn-success hidden" id="saveBtn">Save Employee</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+    function openModal(id) {
+        document.getElementById(id).classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('open');
+        document.body.style.overflow = 'auto';
+        // Reset steps if it's the add modal
+        if (id === 'addEmployeeModal') resetSteps();
+    }
+    
+    let currentStep = 1;
+    function nextStep() {
+        document.getElementById('step1').classList.add('hidden');
+        document.getElementById('step2').classList.remove('hidden');
+        document.getElementById('nextBtn').classList.add('hidden');
+        document.getElementById('cancelBtn').classList.add('hidden');
+        document.getElementById('prevBtn').classList.remove('hidden');
+        document.getElementById('saveBtn').classList.remove('hidden');
+        currentStep = 2;
+    }
+    function prevStep() {
+        document.getElementById('step1').classList.remove('hidden');
+        document.getElementById('step2').classList.add('hidden');
+        document.getElementById('nextBtn').classList.remove('hidden');
+        document.getElementById('cancelBtn').classList.remove('hidden');
+        document.getElementById('prevBtn').classList.add('hidden');
+        document.getElementById('saveBtn').classList.add('hidden');
+        currentStep = 1;
+    }
+    function resetSteps() {
+        currentStep = 1;
+        document.getElementById('step1').classList.remove('hidden');
+        document.getElementById('step2').classList.add('hidden');
+        document.getElementById('nextBtn').classList.remove('hidden');
+        document.getElementById('cancelBtn').classList.remove('hidden');
+        document.getElementById('prevBtn').classList.add('hidden');
+        document.getElementById('saveBtn').classList.add('hidden');
+    }
+</script>
+{% endblock %}
+{% endblock %}

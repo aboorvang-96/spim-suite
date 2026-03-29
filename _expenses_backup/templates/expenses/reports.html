@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2 class="mb-4">Financial Reports</h2>
+
+<ul class="nav nav-tabs mb-4" id="reportTabs" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#daily">Daily</button>
+    </li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#weekly">Weekly</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#monthly">Monthly</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#yearly">Yearly</button></li>
+</ul>
+
+<div class="tab-content">
+    <!-- Macro for table to avoid repetition -->
+
+    <div class="tab-pane fade show active" id="daily">
+        {% include 'expenses/report_table.html' with data=daily title="Daily" %}
+    </div>
+    <div class="tab-pane fade" id="weekly">
+        {% include 'expenses/report_table.html' with data=weekly title="Weekly" %}
+    </div>
+    <div class="tab-pane fade" id="monthly">
+        {% include 'expenses/report_table.html' with data=monthly title="Monthly" %}
+    </div>
+    <div class="tab-pane fade" id="yearly">
+        {% include 'expenses/report_table.html' with data=yearly title="Yearly" %}
+    </div>
+</div>
+{% endblock %}

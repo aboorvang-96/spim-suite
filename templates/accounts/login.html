@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - FinanceHub</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f1f5f9;
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            background: #0f2044;
+            width: 40%;
+            color: white;
+            padding: 3rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 3rem; }
+        .logo-icon { 
+            width: 32px; 
+            height: 32px; 
+            background: #c9a84c; 
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .logo-text { font-size: 1.1rem; font-weight: 600; }
+        .logo-text .accent { color: #c9a84c; }
+        .sidebar h2 { font-size: 1.8rem; margin-bottom: 1rem; font-weight: 300; }
+        .sidebar h2 b { font-weight: 600; }
+        .sidebar p { font-size: 0.9rem; opacity: 0.8; margin-bottom: 2rem; max-width: 300px; }
+        .features { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2rem; margin-top: 2rem; }
+        .feature-label { color: #c9a84c; font-weight: 600; font-size: 0.9rem; }
+        .feature-desc { font-size: 0.75rem; opacity: 0.6; margin-top: 0.3rem; }
+        .copyright { font-size: 0.75rem; opacity: 0.4; }
+        
+        .main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .login-box {
+            width: 100%;
+            max-width: 400px;
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .login-box h1 { font-size: 1.5rem; color: #1e293b; margin-bottom: 0.5rem; font-weight: 600; }
+        .login-box > p { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1.5rem; }
+        
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { 
+            display: block;
+            color: #64748b;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+            letter-spacing: 0.5px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 0.6rem 0.8rem;
+            border: 1px solid #d1d9e6;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: #f8fafc;
+            color: #1e293b;
+            transition: border 0.2s, box-shadow 0.2s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #2a4a7f;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(42,74,127,0.1);
+        }
+        .form-group input::placeholder { color: #94a3b8; }
+        .form-group input.error { border-color: #dc2626; }
+        .error-msg { color: #dc2626; font-size: 0.8rem; margin-top: 0.3rem; }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 0.7rem;
+            background: #0f2044;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 0.5rem;
+        }
+        .submit-btn:hover { background: #1a3260; }
+        
+        .signup-link { 
+            text-align: center; 
+            margin-top: 1.5rem; 
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        .signup-link a { color: #0f2044; text-decoration: none; font-weight: 600; }
+        .signup-link a:hover { text-decoration: underline; }
+        
+        .error-box {
+            background: #fee2e2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            .sidebar { display: none; }
+            .main { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div>
+            <div class="logo">
+                <div class="logo-icon">📊</div>
+                <div class="logo-text">Finance<span class="accent">Hub</span></div>
+            </div>
+            <h2>Manage your<br><b>business finances</b><br>in one place.</h2>
+            <p>Track expenses, invoices, clients and projects — all in one professional platform.</p>
+            <div class="features">
+                <div>
+                    <div class="feature-label">Real-time</div>
+                    <div class="feature-desc">Reports</div>
+                </div>
+                <div>
+                    <div class="feature-label">Multi-role</div>
+                    <div class="feature-desc">Access</div>
+                </div>
+                <div>
+                    <div class="feature-label">Full</div>
+                    <div class="feature-desc">Control</div>
+                </div>
+            </div>
+        </div>
+        <div class="copyright">© 2025 FinanceHub</div>
+    </div>
+    
+    <div class="main">
+        <div class="login-box">
+            <h1>Welcome back</h1>
+            <p>Sign in to your account</p>
+            
+            {% if form.non_field_errors %}
+                <div class="error-box">
+                    {% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}
+                </div>
+            {% endif %}
+            
+            <form method="post" novalidate>
+                {% csrf_token %}
+                
+                <div class="form-group">
+                    <label>Email</label>
+                    <input 
+                        type="email" 
+                        name="email" 
+                        value="{{ form.email.value|default:'' }}"
+                        placeholder="you@company.com"
+                        {% if form.email.errors %}class="error"{% endif %}
+                    >
+                    {% if form.email.errors %}<p class="error-msg">{{ form.email.errors.0 }}</p>{% endif %}
+                </div>
+                
+                <div class="form-group">
+                    <label>Password</label>
+                    <input 
+                        type="password" 
+                        name="password" 
+                        id="pwd"
+                        placeholder="••••••••"
+                        {% if form.password.errors %}class="error"{% endif %}
+                    >
+                    {% if form.password.errors %}<p class="error-msg">{{ form.password.errors.0 }}</p>{% endif %}
+                </div>
+                
+                <button type="submit" class="submit-btn">Sign in to FinanceHub</button>
+            </form>
+            
+            <p style="text-align:center;margin-top:1.5rem;color:#94a3b8;font-size:0.9rem;">
+                <a href="{% url 'accounts:forgot_password' %}" style="color:#0f2044;text-decoration:none;font-weight:600;">Forgot password?</a> · 
+                <a href="{% url 'accounts:register' %}" style="color:#0f2044;text-decoration:none;font-weight:600;">Create account</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

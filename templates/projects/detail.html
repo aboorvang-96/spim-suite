@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block title %}{{ project.name }} - FinanceHub{% endblock %}
+{% block nav_projects %}active{% endblock %}
+{% block page_title %}{{ project.name }}{% endblock %}
+{% block page_sub %}{% if project.client %}{{ project.client.name }}{% endif %}{% endblock %}
+{% block header_actions %}
+  <a href="{% url 'projects:edit' project.pk %}" class="btn btn-outline">Edit</a>
+  <form method="post" action="{% url 'projects:delete' project.pk %}" onsubmit="return confirm('Delete project?')" style="display:inline">{% csrf_token %}<button class="btn btn-danger">Delete</button></form>
+{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+  <div class="xl:col-span-2 space-y-4">
+    <div class="card">
+      <div class="flex items-center justify-between mb-2"><h3 class="font-semibold text-slate-700 text-sm">Progress</h3><span class="text-sm font-bold text-slate-800">{{ project.task_progress }}%</span></div>
+      <div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:{{ project.task_progress }}%;background:linear-gradient(90deg,#0f2044,#2a4a7f)"></div></div>
+    </div>
+    <div class="card">
+      <h3 class="font-semibold text-slate-700 text-sm mb-3">Add Task</h3>
+      <form method="post" action="{% url 'projects:add_task' project.pk %}" novalidate>{% csrf_token %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+          {% for field in task_form %}<div class="{% if forloop.first %}sm:col-span-2{% endif %}"><label class="block text-slate-400 text-xs mb-1">{{ field.label }}</label>{{ field }}</div>{% endfor %}
+        </div>
+        <button type="submit" class="btn btn-navy">Add Task</button>
+      </form>
+    </div>
+    <div class="card p-0 overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-slate-100 font-semibold text-slate-700 text-sm">Tasks</div>
+      {% for task in tasks %}
+      <div class="flex items-center gap-3 px-5 py-3 border-b border-slate-50 hover:bg-slate-50 last:border-0">
+        <div class="flex-1 min-w-0">
+          <p class="text-slate-700 text-sm font-medium {% if task.status == 'done' %}line-through text-slate-400{% endif %}">{{ task.title }}</p>
+          <div class="flex gap-3 mt-0.5 text-xs text-slate-400">
+            {% if task.assigned_to %}<span>{{ task.assigned_to.full_name|default:task.assigned_to.username }}</span>{% endif %}
+            {% if task.due_date %}<span>Due {{ task.due_date|date:"M d" }}</span>{% endif %}
+            {% if task.priority == 'high' %}<span class="text-red-500 font-medium">High</span>{% elif task.priority == 'medium' %}<span class="text-yellow-600">Medium</span>{% endif %}
+          </div>
+        </div>
+        <form method="post" action="{% url 'projects:task_status' task.pk %}">{% csrf_token %}
+          <select name="status" onchange="this.form.submit()" class="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white cursor-pointer outline-none">
+            {% for val, lbl in task.STATUS %}<option value="{{ val }}" {% if task.status == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+          </select>
+        </form>
+        <form method="post" action="{% url 'projects:delete_task' task.pk %}" onsubmit="return confirm('Remove?')">{% csrf_token %}<button class="text-red-400 hover:text-red-600 text-xs">&#x2715;</button></form>
+      </div>
+      {% empty %}<p class="px-5 py-8 text-center text-slate-400 text-sm">No tasks yet.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="space-y-4">
+    <div class="card">
+      <h3 class="font-semibold text-slate-700 text-sm mb-4">Project Details</h3>
+      <dl class="space-y-3 text-sm">
+        <div class="flex justify-between"><dt class="text-slate-400">Status</dt><dd>{% if project.status == 'active' %}<span class="badge badge-green">Active</span>{% elif project.status == 'completed' %}<span class="badge badge-blue">Done</span>{% else %}<span class="badge badge-slate">{{ project.get_status_display }}</span>{% endif %}</dd></div>
+        {% if project.client %}<div class="flex justify-between"><dt class="text-slate-400">Client</dt><dd class="font-medium"><a href="{% url 'clients:detail' project.client.pk %}" class="hover:text-blue-600">{{ project.client.name }}</a></dd></div>{% endif %}
+        <div class="flex justify-between"><dt class="text-slate-400">Owner</dt><dd class="font-medium text-slate-700">{{ project.owner.full_name|default:project.owner.username }}</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-400">Start</dt><dd class="font-medium text-slate-700">{{ project.start_date|date:"M d, Y" }}</dd></div>
+        {% if project.due_date %}<div class="flex justify-between"><dt class="text-slate-400">Due</dt><dd class="font-medium text-slate-700">{{ project.due_date|date:"M d, Y" }}</dd></div>{% endif %}
+        {% if project.budget %}<div class="flex justify-between"><dt class="text-slate-400">Budget</dt><dd class="font-semibold text-slate-800">₹{{ project.budget|floatformat:2 }}</dd></div>{% endif %}
+      </dl>
+    </div>
+    {% if project.description %}<div class="card"><h3 class="font-semibold text-slate-700 text-sm mb-2">Description</h3><p class="text-slate-500 text-sm leading-relaxed">{{ project.description }}</p></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

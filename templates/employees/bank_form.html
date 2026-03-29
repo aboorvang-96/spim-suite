@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Bank Details - {{ employee.name }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
+{% endblock %}
+
+{% block nav_employees %}active{% endblock %}
+{% block page_title %}Bank Details{% endblock %}
+{% block page_sub %}{{ employee.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="card p-6">
+        <div class="flex items-center gap-4 mb-6 pb-4 border-b border-slate-100">
+            <div class="emp-avatar">{{ employee.name|first|upper }}</div>
+            <div>
+                <h3 class="font-bold text-slate-800">{{ employee.name }}</h3>
+                <p class="text-slate-500 text-sm">{{ employee.role }}</p>
+            </div>
+        </div>
+
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Bank Name</label>
+                    {{ form.bank_name }}
+                    {% if form.bank_name.errors %}<p class="error-msg">{{ form.bank_name.errors.0 }}</p>{% endif %}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Account Holder Name</label>
+                    {{ form.account_holder }}
+                    {% if form.account_holder.errors %}<p class="error-msg">{{ form.account_holder.errors.0 }}</p>{% endif %}
+                </div>
+            </div>
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Account Number</label>
+                    {{ form.account_number }}
+                    {% if form.account_number.errors %}<p class="error-msg">{{ form.account_number.errors.0 }}</p>{% endif %}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">IFSC Code</label>
+                    {{ form.ifsc_code }}
+                    {% if form.ifsc_code.errors %}<p class="error-msg">{{ form.ifsc_code.errors.0 }}</p>{% endif %}
+                </div>
+            </div>
+            <div class="flex items-center gap-3 py-2">
+                {{ form.is_verified }}
+                <label class="text-sm font-medium text-slate-700">Verify Bank Details</label>
+                {% if form.is_verified.value %}<span class="badge badge-green ml-2">✓ Verified</span>{% endif %}
+            </div>
+
+            <div class="pt-4 border-t border-slate-100 flex gap-3">
+                <button type="submit" class="btn btn-navy flex-1">Save Bank Details</button>
+                <a href="{% url 'employees:list' %}" class="btn btn-outline">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

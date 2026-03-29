@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Clients - FinanceHub{% endblock %}
+{% block nav_clients %}active{% endblock %}
+{% block page_title %}Clients{% endblock %}
+{% block page_sub %}Your client directory{% endblock %}
+{% block header_actions %}<a href="{% url 'clients:add' %}" class="btn btn-navy">+ Add Client</a>{% endblock %}
+{% block content %}
+<div class="space-y-4">
+  <div class="card"><form method="get" class="flex gap-3"><input type="text" name="q" value="{{ q }}" class="form-input max-w-xs" placeholder="Search by name, company, email..."/><button type="submit" class="btn btn-navy">Search</button>{% if q %}<a href="{% url 'clients:list' %}" class="btn btn-outline">Clear</a>{% endif %}</form></div>
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    {% for c in clients %}
+    <div class="card hover:shadow-md transition-shadow">
+      <div class="flex items-start gap-3">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style="background:#1e3a5f">{{ c.name|first|upper }}</div>
+        <div class="flex-1 min-w-0"><a href="{% url 'clients:detail' c.pk %}" class="font-semibold text-slate-800 hover:text-blue-700 block truncate">{{ c.name }}</a>{% if c.company %}<p class="text-slate-400 text-xs truncate">{{ c.company }}</p>{% endif %}</div>
+      </div>
+      <div class="mt-3 space-y-1.5 text-xs text-slate-500">
+        {% if c.email %}<div>{{ c.email }}</div>{% endif %}
+        {% if c.phone %}<div>{{ c.phone }}</div>{% endif %}
+      </div>
+      <div class="mt-3 flex gap-2 text-xs"><a href="{% url 'clients:detail' c.pk %}" class="text-blue-600">View</a><a href="{% url 'clients:edit' c.pk %}" class="text-slate-500">Edit</a></div>
+    </div>
+    {% empty %}<div class="md:col-span-3 card text-center py-16"><p class="text-slate-400 text-sm mb-3">{% if q %}No clients match.{% else %}No clients yet.{% endif %}</p><a href="{% url 'clients:add' %}" class="btn btn-navy inline-flex">Add first client</a></div>{% endfor %}
+  </div>
+</div>
+{% endblock %}

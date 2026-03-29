@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}{{ invoice.invoice_number }} - FinanceHub{% endblock %}
+{% block nav_invoices %}active{% endblock %}
+{% block page_title %}{{ invoice.invoice_number }}{% endblock %}
+{% block page_sub %}{{ invoice.client.name }}{% endblock %}
+{% block header_actions %}
+  {% if invoice.status != 'paid' %}<form method="post" action="{% url 'invoices:mark_paid' invoice.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-success">Mark as Paid</button></form>{% endif %}
+  <a href="{% url 'invoices:edit' invoice.pk %}" class="btn btn-outline">Edit</a>
+{% endblock %}
+{% block content %}
+<div class="max-w-3xl"><div class="card">
+  <div class="flex items-start justify-between mb-8 pb-6 border-b border-slate-100">
+    <div>
+      <div class="flex items-center gap-2 mb-1"><h2 class="text-xl font-bold text-slate-800">{{ invoice.invoice_number }}</h2>{% if invoice.status == 'paid' %}<span class="badge badge-green">Paid</span>{% elif invoice.status == 'overdue' %}<span class="badge badge-red">Overdue</span>{% elif invoice.status == 'sent' %}<span class="badge badge-blue">Sent</span>{% else %}<span class="badge badge-slate">Draft</span>{% endif %}</div>
+      <p class="text-slate-400 text-sm">Issued {{ invoice.issue_date|date:"M d, Y" }} &middot; Due {{ invoice.due_date|date:"M d, Y" }}</p>
+    </div>
+    <div class="text-right"><p class="text-slate-400 text-xs uppercase tracking-wide">Total Due</p><p class="text-3xl font-bold text-slate-800">₹{{ invoice.total|floatformat:2 }}</p></div>
+  </div>
+  <div class="mb-6">
+    <p class="text-slate-400 text-xs uppercase tracking-wide font-medium mb-1">Bill to</p>
+    <p class="font-semibold text-slate-800">{{ invoice.client.name }}</p>
+    {% if invoice.client.company %}<p class="text-slate-500 text-sm">{{ invoice.client.company }}</p>{% endif %}
+    {% if invoice.client.email %}<p class="text-slate-500 text-sm">{{ invoice.client.email }}</p>{% endif %}
+  </div>
+  <table class="w-full text-sm mb-4">
+    <thead><tr class="bg-slate-50 rounded-lg">
+      <th class="text-left px-4 py-2.5 text-slate-500 text-xs font-semibold uppercase tracking-wide rounded-l-lg">Description</th>
+      <th class="text-right px-4 py-2.5 text-slate-500 text-xs font-semibold uppercase tracking-wide">Qty</th>
+      <th class="text-right px-4 py-2.5 text-slate-500 text-xs font-semibold uppercase tracking-wide">Rate</th>
+      <th class="text-right px-4 py-2.5 text-slate-500 text-xs font-semibold uppercase tracking-wide rounded-r-lg">Total</th>
+    </tr></thead>
+    <tbody>{% for item in invoice.items.all %}
+      <tr class="border-b border-slate-50">
+        <td class="px-4 py-3 text-slate-700">{{ item.description }}</td>
+        <td class="px-4 py-3 text-right text-slate-500">{{ item.quantity }}</td>
+        <td class="px-4 py-3 text-right text-slate-500">₹{{ item.rate|floatformat:2 }}</td>
+        <td class="px-4 py-3 text-right font-medium text-slate-800">₹{{ item.line_total|floatformat:2 }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+  <div class="flex justify-end"><div class="w-56 space-y-1.5 text-sm">
+    <div class="flex justify-between text-slate-500"><span>Subtotal</span><span>₹{{ invoice.subtotal|floatformat:2 }}</span></div>
+    {% if invoice.tax_rate %}<div class="flex justify-between text-slate-500"><span>Tax ({{ invoice.tax_rate }}%)</span><span>₹{{ invoice.tax_amount|floatformat:2 }}</span></div>{% endif %}
+    <div class="flex justify-between font-bold text-slate-800 pt-2 border-t border-slate-200 text-base"><span>Total</span><span>₹{{ invoice.total|floatformat:2 }}</span></div>
+  </div></div>
+  {% if invoice.notes %}<div class="mt-6 pt-5 border-t border-slate-100"><p class="text-slate-400 text-xs uppercase tracking-wide font-medium mb-1">Notes</p><p class="text-slate-600 text-sm">{{ invoice.notes }}</p></div>{% endif %}
+</div></div>
+{% endblock %}

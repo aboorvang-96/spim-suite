@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Salary History - {{ employee.name }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
+{% endblock %}
+
+{% block nav_employees %}active{% endblock %}
+{% block page_title %}Salary Management{% endblock %}
+{% block page_sub %}{{ employee.name }}{% endblock %}
+
+{% block header_actions %}
+<button onclick="openModal('addSalaryModal')" class="btn btn-navy">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+    Add Monthly Salary
+</button>
+<a href="{% url 'employees:list' %}" class="btn btn-outline">Back to Directory</a>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="grid grid-3 gap-4">
+        <div class="card p-4 flex items-center justify-between">
+            <div><p class="text-xs text-slate-400 font-semibold uppercase">Base Salary</p><p class="text-2xl font-bold">₹ {{ employee.base_salary|floatformat:0 }}</p></div>
+            <div class="p-3 bg-blue-50 text-blue-600 rounded-xl"><svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+        </div>
+        <div class="card p-4 flex items-center justify-between">
+            <div><p class="text-xs text-slate-400 font-semibold uppercase">Location</p><p class="text-xl font-bold">{{ employee.location }}</p></div>
+            <div class="p-3 bg-slate-50 text-slate-600 rounded-xl"><svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg></div>
+        </div>
+        <div class="card p-4 flex items-center justify-between">
+            <div><p class="text-xs text-slate-400 font-semibold uppercase">History Count</p><p class="text-2xl font-bold">{{ salaries|length }} Months</p></div>
+            <div class="p-3 bg-green-50 text-green-600 rounded-xl"><svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+        </div>
+    </div>
+
+    <div class="card overflow-hidden">
+        <div class="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h3 class="font-bold text-slate-700">Earnings History</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200">
+                        <th class="px-6 py-4 font-semibold text-slate-600">Month</th>
+                        <th class="px-6 py-4 font-semibold text-slate-600">Base Salary</th>
+                        <th class="px-6 py-4 font-semibold text-slate-600">OT</th>
+                        <th class="px-6 py-4 font-semibold text-slate-600">Adv / Ded</th>
+                        <th class="px-6 py-4 font-semibold text-slate-600">Net Pay</th>
+                        <th class="px-6 py-4 font-semibold text-slate-600">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for s in salaries %}
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-6 py-4 font-bold text-slate-800">{{ s.month|date:"F Y" }}</td>
+                        <td class="px-6 py-4">₹ {{ s.base_salary|floatformat:2 }}</td>
+                        <td class="px-6 py-4 text-green-600 font-medium">+₹ {{ s.overtime_allowance|floatformat:2 }}</td>
+                        <td class="px-6 py-4 text-red-500 font-medium">-₹ {{ s.advance_pay|add:s.deduction|floatformat:2 }}</td>
+                        <td class="px-6 py-4"><span class="badge badge-blue">₹ {{ s.net_pay|floatformat:2 }}</span></td>
+                        <td class="px-6 py-4">
+                            <a href="{% url 'employees:generate_payslip' s.pk %}" class="btn btn-outline btn-sm">
+                                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                Payslip
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-slate-400">No salary records found for this employee.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ADD SALARY MODAL -->
+<div id="addSalaryModal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="font-bold text-slate-800">Add Monthly Salary</h3>
+            <button onclick="closeModal('addSalaryModal')" class="text-slate-400 hover:text-slate-600">&times;</button>
+        </div>
+        <form method="post" action="{% url 'employees:add_salary' %}" oninput="calcNet()">
+            {% csrf_token %}
+            <input type="hidden" name="employee_id" value="{{ employee.id }}">
+            <div class="modal-body space-y-4">
+                <div class="form-group">
+                    <label class="form-label">Salary Month</label>
+                    <input type="date" name="month" class="form-input" required value="{{ today|date:'Y-m-d' }}">
+                </div>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label class="form-label">Base Salary</label>
+                        <input type="number" name="base_salary" id="bs" class="form-input" required value="{{ employee.base_salary }}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Overtime (OT)</label>
+                        <input type="number" name="overtime_allowance" id="ot" class="form-input" value="0">
+                    </div>
+                </div>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label class="form-label">Advance Pay</label>
+                        <input type="number" name="advance_pay" id="ap" class="form-input" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Deduction</label>
+                        <input type="number" name="deduction" id="dd" class="form-input" value="0">
+                    </div>
+                </div>
+                <div class="p-4 bg-slate-900 rounded-xl text-center">
+                    <p class="text-slate-400 text-xs uppercase font-bold tracking-wider mb-1">Calculated Net Pay</p>
+                    <p class="text-3xl font-black text-white">₹ <span id="net_res">{{ employee.base_salary }}</span></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('addSalaryModal')" class="btn btn-outline">Cancel</button>
+                <button type="submit" class="btn btn-navy">Save Salary Record</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+    function openModal(id) {
+        document.getElementById(id).classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('open');
+        document.body.style.overflow = 'auto';
+    }
+    function calcNet() {
+        const bs = parseFloat(document.getElementById('bs').value) || 0;
+        const ot = parseFloat(document.getElementById('ot').value) || 0;
+        const ap = parseFloat(document.getElementById('ap').value) || 0;
+        const dd = parseFloat(document.getElementById('dd').value) || 0;
+        document.getElementById('net_res').textContent = (bs + ot - ap - dd).toFixed(2);
+    }
+</script>
+{% endblock %}
+{% endblock %}
