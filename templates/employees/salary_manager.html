@@ -869,18 +869,31 @@
         const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
         const net = s.net_payable !== undefined ? s.net_payable : ((s.base_salary||0) + (s.overtime||0) - (s.advance_pay||0) - (s.deduction||0));
 
-        // Header band
+        // Header band with SPIM branding
         doc.setFillColor(37, 99, 235);
-        doc.rect(0, 0, pageW, 22, 'F');
+        doc.rect(0, 0, pageW, 30, 'F');
         doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(16);
-        doc.text('SALARY PAYSLIP', 14, 14);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Period: ' + (s.month || '-') + ' ' + (s.year || ''), pageW - 14, 14, { align: 'right' });
 
-        let y = 32;
+        // SPIM centered at top
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text('SPIM', pageW / 2, 6, { align: 'center' });
+
+        // Company name centered below SPIM
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text('Spectro Inspection and Maintenance', pageW / 2, 11, { align: 'center' });
+
+        // SALARY PAYSLIP at bottom-left, Period at bottom-right
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('SALARY PAYSLIP', 14, 27);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        const periodText = (s.month || '-') + ' ' + (s.year || '');
+        doc.text('Period: ' + periodText, pageW - 14, 27, { align: 'right' });
+
+        let y = 35;
         doc.setTextColor(31, 41, 55);
 
         // Employee Information
