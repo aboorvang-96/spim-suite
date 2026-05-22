@@ -1,0 +1,1089 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Salary Management - SPIM Suite{% endblock %}
+
+{% block active_salary %}sidebar-active{% endblock %}
+{% block nav_salary %}sidebar-active{% endblock %}
+
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="{% static 'css/salary_manager.css' %}">
+{% endblock %}
+
+{% block page_title %}Salary Management{% endblock %}
+{% block page_sub %}Payroll Dashboard & Report Generator{% endblock %}
+
+{% block header_actions %}
+<div class="flex gap-2">
+    <div id="download-report-wrapper" style="position:relative;display:inline-block;">
+        <button onclick="toggleDownloadDropdown()" class="btn btn-outline btn-sm bg-white" title="Download salary report">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Download Report
+            <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="margin-left:2px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div id="download-dropdown" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:180px;z-index:200;overflow:hidden;">
+            <button onclick="generatePDF();closeDownloadDropdown()" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:0.8rem;color:#1e293b;text-align:left;white-space:nowrap;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                Download PDF
+            </button>
+            <button onclick="generateExcel();closeDownloadDropdown()" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:0.8rem;color:#1e293b;text-align:left;white-space:nowrap;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Download Excel (.xlsx)
+            </button>
+        </div>
+    </div>
+    <button onclick="generateBulkZip()" class="btn btn-primary btn-sm">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Bulk Payslips
+    </button>
+    <button onclick="generateExpenseReport()" class="btn btn-outline btn-sm bg-white" title="Generate expense entries in Expense Module from current payroll">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
+        Generate Expense Report
+    </button>
+    <button onclick="openSalaryConfigModal()" class="btn btn-outline btn-sm bg-white" title="Manage Role + Level base salary mappings">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Salary Config
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="salary-dashboard">
+    <!-- Stat Cards -->
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-icon icon-blue">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            </div>
+            <div>
+                <span class="stat-label">Total Staff</span>
+                <span class="stat-value" id="st-total">0</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon icon-emerald">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+                <span class="stat-label">Total Payout</span>
+                <span class="stat-value" id="st-net">₹0</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon icon-amber">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+                <span class="stat-label">Total OT</span>
+                <span class="stat-value" id="st-ot">₹0</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon icon-purple">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            </div>
+            <div>
+                <span class="stat-label">Total Advance</span>
+                <span class="stat-value" id="st-adv">₹0</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon icon-rose">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+                <span class="stat-label">Deductions</span>
+                <span class="stat-value" id="st-ded">₹0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-card">
+        <div class="filter-group flex-1.5">
+            <label>Search Employee</label>
+            <input type="text" id="f-search" class="filter-input" placeholder="Name or ID..." oninput="fetchData()" title="Search by Name or ID">
+        </div>
+        <div class="filter-group">
+            <label>Location</label>
+            <select id="f-location" class="filter-select" onchange="fetchData()" title="Filter by Location">
+                <option value="">All Locations</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Site</label>
+            <select id="f-site" class="filter-select" onchange="fetchData()" title="Filter by Site">
+                <option value="">All Sites</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Bank</label>
+            <select id="f-bank" class="filter-select" onchange="fetchData()" title="Filter by Bank">
+                <option value="">All Banks</option>
+            </select>
+        </div>
+        <div class="filter-group min-w-100">
+            <label>Month</label>
+            <select id="f-month" class="filter-select" onchange="fetchData()" title="Filter by Month">
+                <option value="January">January</option>
+                <option value="February">February</option>
+                <option value="March">March</option>
+                <option value="April">April</option>
+                <option value="May">May</option>
+                <option value="June">June</option>
+                <option value="July">July</option>
+                <option value="August">August</option>
+                <option value="September">September</option>
+                <option value="October">October</option>
+                <option value="November">November</option>
+                <option value="December">December</option>
+            </select>
+        </div>
+        <div class="filter-group min-w-80">
+            <label>Year</label>
+            <select id="f-year" class="filter-select" onchange="fetchData()" title="Filter by Year">
+                <option value="2024">2024</option>
+                <option value="2025" selected>2025</option>
+                <option value="2026">2026</option>
+            </select>
+        </div>
+        <button class="btn btn-outline h-38 px-4 text-xs" onclick="resetFilters()" title="Reset all filters">Reset</button>
+    </div>
+
+    <!-- Table -->
+    <div class="table-container">
+        <table class="salary-table">
+            <thead>
+                <tr>
+                    <th class="sticky-col">Emp ID</th>
+                    <th>Emp Name</th>
+                    <th>Site</th>
+                    <th class="bg-emerald-600">Salary</th>
+                    <th>Bank Name</th>
+                    <th>Account Holder</th>
+                    <th>Account Number</th>
+                    <th>IFSC Code</th>
+                    <th class="text-right">Action</th>
+                    <th class="text-right">Payslip</th>
+                </tr>
+            </thead>
+            <tbody id="salary-tbody">
+                <!-- Data via AJAX -->
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- Edit Modal -->
+<div id="edit-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modal-title" class="text-base font-bold text-slate-800">Edit Salary Record</h3>
+            <button onclick="closeModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="edit-form">
+                {% csrf_token %}
+                <input type="hidden" name="id" id="edit-id">
+                <input type="hidden" name="month" id="edit-month">
+                <input type="hidden" name="year" id="edit-year">
+                <input type="hidden" name="action" value="salary">
+
+                <div class="sec-title">Role &amp; Level</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="stat-label">Role</label>
+                        <input type="text" id="edit-role" class="filter-input" list="role-datalist" oninput="autofillBaseFromConfig()" title="Employee role">
+                        <datalist id="role-datalist"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label">Level</label>
+                        <select id="edit-level" class="filter-select" onchange="autofillBaseFromConfig()" title="Employee level">
+                            <option value="">— Select —</option>
+                            <option value="Junior">Junior</option>
+                            <option value="Mid">Mid</option>
+                            <option value="Senior">Senior</option>
+                            <option value="Lead">Lead</option>
+                            <option value="Manager">Manager</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="sec-title">Salary Details</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="stat-label">Base Salary (₹) <span style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(auto-filled from Role + Level)</span></label>
+                        <input type="number" name="salary" id="edit-salary" class="filter-input" oninput="calcNet()" required title="Base Salary">
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label">Advance Pay (₹)</label>
+                        <input type="number" name="advance" id="edit-advance" class="filter-input" oninput="calcNet()" title="Advance Pay">
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label">Attendance Earnings (₹) <span style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(from attendance records)</span></label>
+                        <input type="number" id="edit-att-earnings" class="filter-input" readonly style="background:var(--slate-50);cursor:not-allowed;" title="Auto-calculated from attendance records for this cycle" placeholder="No records — base used">
+                        <input type="hidden" name="attendance_earnings" id="edit-att-earnings-hidden">
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label">Total Deduction (₹)</label>
+                        <input type="number" name="deduction" id="edit-ded" class="filter-input" oninput="calcNet()" title="Total Deductions">
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label">OT / Extra Allowance (₹)</label>
+                        <input type="number" name="ot" id="edit-ot" class="filter-input" oninput="calcNet()" title="Overtime Allowance">
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label">PF Amount (₹)</label>
+                        <input type="number" name="pf_amount" id="edit-pf-amount" class="filter-input" title="PF Amount">
+                    </div>
+                </div>
+
+                <div class="net-preview">
+                    <div>
+                        <div class="text-xxs-bold text-emerald-900">Net Pay = Attendance Earnings + OT − Advance − Deduction</div>
+                        <div class="text-2xl-bold text-emerald-800" id="net-val">₹0</div>
+                    </div>
+                </div>
+
+                <div class="sec-title">Bank Details <span style="font-size:0.7rem;font-weight:600;color:var(--slate-500);margin-left:6px">🔒 Locked</span></div>
+                <div class="locked-section">
+                    <div style="font-size:0.7rem;color:var(--slate-500);margin-bottom:8px">Bank details are read-only here. Edit via the employee card on the Employees page.</div>
+                    <div class="form-grid">
+                        <div>
+                            <label class="stat-label text-3xs">Bank Name</label>
+                            <div class="text-sm font-semibold text-slate-700" id="l-bank">-</div>
+                        </div>
+                        <div>
+                            <label class="stat-label text-3xs">Account Holder</label>
+                            <div class="text-sm font-semibold text-slate-700" id="l-holder">-</div>
+                        </div>
+                        <div>
+                            <label class="stat-label text-3xs">Account Number</label>
+                            <div class="text-sm font-semibold text-slate-700" id="l-acc">-</div>
+                        </div>
+                        <div>
+                            <label class="stat-label text-3xs">IFSC Code</label>
+                            <div class="text-sm font-semibold text-slate-700" id="l-ifsc">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sec-title">PF Details <span style="font-size:0.7rem;font-weight:600;color:var(--slate-500);margin-left:6px">🔒 Locked</span></div>
+                <div class="locked-section">
+                    <div style="font-size:0.7rem;color:var(--slate-500);margin-bottom:8px">PF details are read-only here. Edit via the employee card on the Employees page.</div>
+                    <div class="form-grid">
+                        <div>
+                            <label class="stat-label text-3xs">PF Number</label>
+                            <div class="text-sm font-semibold text-slate-700" id="l-pf-number">-</div>
+                        </div>
+                        <div>
+                            <label class="stat-label text-3xs">ESIC Number</label>
+                            <div class="text-sm font-semibold text-slate-700" id="l-esic-number">-</div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveEdit()">Update Payroll</button>
+        </div>
+    </div>
+</div>
+
+<!-- Salary Config Modal -->
+<div id="salary-config-modal" class="modal">
+    <div class="modal-content" style="max-width:680px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Salary Config — Role + Level</h3>
+            <button onclick="closeSalaryConfigModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:0.75rem;color:var(--slate-500);margin-bottom:1rem;">
+                Map each Role + Level to a Base Salary. When the Edit modal opens, Base Salary auto-fills from this table.
+            </p>
+
+            <!-- Add / Update row -->
+            <div class="filter-card" style="margin-bottom:1rem;background:var(--slate-50);padding:0.75rem 1rem;gap:0.5rem;">
+                <div class="filter-group" style="min-width:140px;">
+                    <label>Role</label>
+                    <input type="text" id="sc-role" class="filter-input" placeholder="e.g. Site Engineer" list="sc-role-list">
+                    <datalist id="sc-role-list"></datalist>
+                </div>
+                <div class="filter-group" style="min-width:110px;">
+                    <label>Level</label>
+                    <select id="sc-level" class="filter-select">
+                        <option value="Junior">Junior</option>
+                        <option value="Mid">Mid</option>
+                        <option value="Senior">Senior</option>
+                        <option value="Lead">Lead</option>
+                        <option value="Manager">Manager</option>
+                    </select>
+                </div>
+                <div class="filter-group" style="min-width:130px;">
+                    <label>Base Salary (₹)</label>
+                    <input type="number" min="0" id="sc-base" class="filter-input" placeholder="e.g. 45000">
+                </div>
+                <div style="display:flex;gap:0.4rem;align-items:flex-end;">
+                    <button class="btn btn-primary btn-sm" onclick="saveSalaryConfigEntry()">
+                        <span id="sc-submit-label">Add</span>
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="resetSalaryConfigForm()">Clear</button>
+                </div>
+            </div>
+
+            <!-- Mappings table -->
+            <div class="table-container" style="max-height:320px;overflow-y:auto;">
+                <table class="salary-table">
+                    <thead>
+                        <tr>
+                            <th>Role</th>
+                            <th>Level</th>
+                            <th>Base Salary (₹)</th>
+                            <th class="text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sc-tbody"></tbody>
+                </table>
+            </div>
+            <div id="sc-empty" style="display:none;padding:1.5rem 0;text-align:center;color:var(--slate-400);font-size:0.82rem;">
+                No mappings yet. Add one above to enable auto-fill.
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeSalaryConfigModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast">Record Updated Successfully</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let salaryData = [];
+    let filterOptions = { locations: [], sites: [], banks: [] };
+    let companySettings = {};
+    const modal = document.getElementById('edit-modal');
+
+    // ── Local salary configuration: Role + Level → Base Salary ──
+    const SC_KEY = 'spim_salary_config_v1';
+    const LVL_KEY = 'spim_employee_levels_v1';   // map: { [employeeId]: level }
+    const ROLE_KEY = 'spim_employee_roles_v1';   // map: { [employeeId]: role override }
+    let salaryConfig = loadSalaryConfig();
+    let employeeLevels = loadEmployeeLevels();
+    let employeeRoleOverrides = loadEmployeeRoles();
+
+    function loadSalaryConfig() {
+        try {
+            const raw = localStorage.getItem(SC_KEY);
+            if (raw) return JSON.parse(raw) || [];
+        } catch (e) {}
+        return defaultSalaryConfig();
+    }
+    function persistSalaryConfig() {
+        try { localStorage.setItem(SC_KEY, JSON.stringify(salaryConfig)); } catch (e) {}
+    }
+    function defaultSalaryConfig() {
+        return [
+            { role: 'Site Engineer',      level: 'Junior',  baseSalary: 30000 },
+            { role: 'Site Engineer',      level: 'Senior',  baseSalary: 45000 },
+            { role: 'HR Manager',         level: 'Manager', baseSalary: 55000 },
+            { role: 'Supervisor',         level: 'Mid',     baseSalary: 38000 },
+            { role: 'Accounts Executive', level: 'Mid',     baseSalary: 42000 },
+            { role: 'Project Manager',    level: 'Lead',    baseSalary: 68000 },
+            { role: 'Safety Officer',     level: 'Junior',  baseSalary: 36000 }
+        ];
+    }
+    function loadEmployeeLevels() {
+        try { return JSON.parse(localStorage.getItem(LVL_KEY) || '{}'); } catch (e) { return {}; }
+    }
+    function persistEmployeeLevels() {
+        try { localStorage.setItem(LVL_KEY, JSON.stringify(employeeLevels)); } catch (e) {}
+    }
+    function loadEmployeeRoles() {
+        try { return JSON.parse(localStorage.getItem(ROLE_KEY) || '{}'); } catch (e) { return {}; }
+    }
+    function persistEmployeeRoles() {
+        try { localStorage.setItem(ROLE_KEY, JSON.stringify(employeeRoleOverrides)); } catch (e) {}
+    }
+    function getBaseSalaryFor(role, level) {
+        if (!role) return null;
+        const r = String(role).trim().toLowerCase();
+        const l = String(level || '').trim().toLowerCase();
+        const exact = salaryConfig.find(c =>
+            (c.role || '').trim().toLowerCase() === r &&
+            (c.level || '').trim().toLowerCase() === l
+        );
+        if (exact) return Number(exact.baseSalary) || 0;
+        const roleOnly = salaryConfig.find(c => (c.role || '').trim().toLowerCase() === r);
+        return roleOnly ? Number(roleOnly.baseSalary) || 0 : null;
+    }
+    function effectiveRole(s) {
+        return employeeRoleOverrides[s.id] || s.role || '';
+    }
+    function effectiveLevel(s) {
+        return employeeLevels[s.id] || '';
+    }
+    function refreshRoleDatalist() {
+        const dl = document.getElementById('role-datalist');
+        if (!dl) return;
+        const roles = [...new Set(salaryConfig.map(c => c.role).filter(Boolean))].sort();
+        dl.innerHTML = roles.map(r => `<option value="${r}"></option>`).join('');
+    }
+
+    async function fetchCompanySettings() {
+        try {
+            const res = await fetch("{% url 'dashboard:company_settings_json' %}", {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            if (res.ok) {
+                companySettings = await res.json();
+            }
+        } catch (e) {
+            console.error('Failed to fetch company settings:', e);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        const d = new Date();
+        document.getElementById('f-month').value = months[d.getMonth()];
+        document.getElementById('f-year').value = String(d.getFullYear());
+        refreshRoleDatalist();
+        fetchCompanySettings();
+        fetchData();
+    });
+
+    async function fetchData() {
+        const month = document.getElementById('f-month').value;
+        const year = document.getElementById('f-year').value;
+        const search = document.getElementById('f-search').value;
+        const location = document.getElementById('f-location').value;
+        const site = document.getElementById('f-site').value;
+        const bank = document.getElementById('f-bank').value;
+        
+        let url = `{% url 'employees:salary_dashboard' %}?format=json&month=${month}&year=${year}`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+        if (location) url += `&location=${encodeURIComponent(location)}`;
+        if (site) url += `&site=${encodeURIComponent(site)}`;
+        if (bank) url += `&bank=${encodeURIComponent(bank)}`;
+
+        try {
+            const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const data = await res.json();
+            salaryData = data.salaries;
+            updateStats(data.stats);
+            updateFilterDropdowns(data.filters);
+            renderTable();
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to fetch data", "error");
+        }
+    }
+
+    function updateStats(stats) {
+        document.getElementById('st-total').innerText = stats.total_employees;
+        document.getElementById('st-net').innerText = '₹' + stats.total_net_payable.toLocaleString();
+        document.getElementById('st-ot').innerText = '₹' + stats.total_ot.toLocaleString();
+        document.getElementById('st-adv').innerText = '₹' + stats.total_advance.toLocaleString();
+        document.getElementById('st-ded').innerText = '₹' + stats.total_deductions.toLocaleString();
+    }
+
+    function updateFilterDropdowns(filters) {
+        const syncSelect = (id, list, current) => {
+            const el = document.getElementById(id);
+            const val = el.value;
+            el.innerHTML = `<option value="">All ${id.replace('f-', '')}s</option>`;
+            list.forEach(item => {
+                if(item) {
+                    const opt = document.createElement('option');
+                    opt.value = item;
+                    opt.innerText = item;
+                    if(item === val) opt.selected = true;
+                    el.appendChild(opt);
+                }
+            });
+        };
+        syncSelect('f-location', filters.locations);
+        syncSelect('f-site', filters.sites);
+        syncSelect('f-bank', filters.banks);
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('salary-tbody');
+        tbody.innerHTML = '';
+
+        if (salaryData.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:3rem; color:var(--slate-400);">No payroll records found matching the criteria.</td></tr>`;
+            return;
+        }
+
+        salaryData.forEach(s => {
+            const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+            const row = `
+                <tr>
+                    <td class="sticky-col"><strong>${empIdDisplay}</strong></td>
+                    <td>
+                        <div class="emp-info">
+                            <div class="emp-avatar">${(s.employee_name||'?').charAt(0)}</div>
+                            <div>
+                                <div style="font-weight:700; color:var(--slate-900);">${s.employee_name}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${s.site || '-'}</td>
+                    <td style="color:#059669; font-weight:800; background:#f0fdf4;">₹${(s.net_payable||0).toLocaleString()}</td>
+                    <td>${s.bank_name || '-'}</td>
+                    <td>${s.account_holder || '-'}</td>
+                    <td>${s.account_number || '-'}</td>
+                    <td>${s.ifsc_code || '-'}</td>
+                    <td style="text-align: right;">
+                        <button class="btn-action-text" onclick="openEdit(${s.id})">Edit</button>
+                    </td>
+                    <td style="text-align: right;">
+                        <button class="btn-action-text btn-payslip" onclick="downloadPayslip(${s.id})">Payslip</button>
+                    </td>
+                </tr>
+            `;
+            tbody.insertAdjacentHTML('beforeend', row);
+        });
+    }
+
+    function openEdit(id) {
+        const s = salaryData.find(x => x.id === id);
+        if (!s) return;
+
+        document.getElementById('edit-id').value = s.id;
+        document.getElementById('edit-month').value = document.getElementById('f-month').value;
+        document.getElementById('edit-year').value = document.getElementById('f-year').value;
+
+        // Role + Level (level is frontend-only; role can be overridden locally)
+        refreshRoleDatalist();
+        const curRole = effectiveRole(s);
+        const curLevel = effectiveLevel(s);
+        document.getElementById('edit-role').value = curRole;
+        document.getElementById('edit-level').value = curLevel;
+
+        // Auto-populate Base Salary from Role + Level mapping (fallback: stored base_salary)
+        const cfgBase = getBaseSalaryFor(curRole, curLevel);
+        const baseToShow = (cfgBase !== null) ? cfgBase : (s.base_salary || 0);
+
+        document.getElementById('edit-salary').value = baseToShow;
+        document.getElementById('edit-ot').value = s.overtime || 0;
+        document.getElementById('edit-advance').value = s.advance_pay || 0;
+        document.getElementById('edit-ded').value = s.deduction || 0;
+        document.getElementById('edit-pf-amount').value = s.pf_amount || 0;
+
+        document.getElementById('l-bank').innerText = s.bank_name || 'Not Provided';
+        document.getElementById('l-holder').innerText = s.account_holder || 'Not Provided';
+        document.getElementById('l-acc').innerText = s.account_number || 'Not Provided';
+        document.getElementById('l-ifsc').innerText = s.ifsc_code || 'Not Provided';
+        document.getElementById('l-pf-number').innerText = s.pf_number || 'Not Provided';
+        document.getElementById('l-esic-number').innerText = s.esi_number || 'Not Provided';
+
+        document.getElementById('modal-title').innerText = `Edit Salary — ${s.employee_name}`;
+        calcNet();
+        modal.classList.add('active');
+    }
+
+    // Recompute Base when Role/Level changes inside the open modal
+    function autofillBaseFromConfig() {
+        const role = document.getElementById('edit-role').value;
+        const level = document.getElementById('edit-level').value;
+        const cfgBase = getBaseSalaryFor(role, level);
+        if (cfgBase !== null) {
+            document.getElementById('edit-salary').value = cfgBase;
+            calcNet();
+        }
+        // Persist role/level locally for this employee (used on next open)
+        const id = parseInt(document.getElementById('edit-id').value, 10);
+        if (!isNaN(id)) {
+            employeeLevels[id] = level;
+            employeeRoleOverrides[id] = role;
+            persistEmployeeLevels();
+            persistEmployeeRoles();
+        }
+    }
+
+    /* ── Attendance earnings: read localStorage, compute payable days × per-day ── */
+    function calcAttendanceEarnings() {
+        const recId  = parseInt(document.getElementById('edit-id').value, 10);
+        const base   = parseFloat(document.getElementById('edit-salary').value) || 0;
+        const month  = document.getElementById('edit-month').value;   // e.g. "May"
+        const year   = parseInt(document.getElementById('edit-year').value, 10);
+
+        if (!base || !recId || !month || !year) return 0;
+
+        const s = salaryData.find(x => x.id === recId);
+        if (!s) return 0;
+
+        // Match the empId used in attendance localStorage
+        const empId = (s.employee_id && String(s.employee_id).trim())
+                      ? String(s.employee_id).trim()
+                      : String(s.id);
+
+        const MONTHS = ["January","February","March","April","May","June",
+                        "July","August","September","October","November","December"];
+        const mIdx = MONTHS.indexOf(month);
+        if (mIdx < 0) return 0;
+
+        // 26→25 cycle for the selected month
+        const cycleEnd   = new Date(year, mIdx,     25);
+        const cycleStart = new Date(year, mIdx - 1, 26);
+
+        function _dts(d) {
+            return d.getFullYear() + '-'
+                + String(d.getMonth() + 1).padStart(2, '0') + '-'
+                + String(d.getDate()).padStart(2, '0');
+        }
+        const cStart = _dts(cycleStart);
+        const cEnd   = _dts(cycleEnd);
+
+        const attendance = JSON.parse(localStorage.getItem('attendance') || '[]');
+        const records = attendance.filter(r =>
+            String(r.empId) === empId && r.date >= cStart && r.date <= cEnd
+        );
+
+        if (records.length === 0) return 0;
+
+        // Fixed 26-day divisor — ensures full attendance always equals basic salary
+        // regardless of whether the calendar month has 28, 29, 30, or 31 days.
+        const perDay = base / 26;
+        let payable  = 0;
+        records.forEach(r => {
+            const st = (r.status || '').trim();
+            if      (st === 'Present')    payable += 1;
+            else if (st === 'Half Day')   payable += 0.5;
+            else if (st === 'Holiday')    payable += 1;
+            else if (st === 'Weekly Off') payable += 1;
+            // Leave = 0 (unpaid)
+        });
+
+        // Cap at basic salary so no over-payment in longer cycles
+        const computed = Math.round(payable * perDay * 100) / 100;
+        return Math.min(computed, base);
+    }
+
+    function calcNet() {
+        const base   = parseFloat(document.getElementById('edit-salary').value) || 0;
+        const ot     = parseFloat(document.getElementById('edit-ot').value)     || 0;
+        const adv    = parseFloat(document.getElementById('edit-advance').value)|| 0;
+        const ded    = parseFloat(document.getElementById('edit-ded').value)    || 0;
+
+        const attEarnings  = calcAttendanceEarnings();
+        const attInput     = document.getElementById('edit-att-earnings');
+        const attHidden    = document.getElementById('edit-att-earnings-hidden');
+
+        let effectiveBase;
+        if (attEarnings > 0) {
+            attInput.value  = attEarnings.toFixed(2);
+            attHidden.value = attEarnings.toFixed(2);
+            effectiveBase   = attEarnings;
+        } else {
+            attInput.value  = '';
+            attHidden.value = '';
+            effectiveBase   = base;
+        }
+
+        const net = effectiveBase + ot - adv - ded;
+        document.getElementById('net-val').innerText = '₹' + Math.round(net).toLocaleString();
+    }
+
+    function closeModal() {
+        modal.classList.remove('active');
+    }
+
+    async function saveEdit() {
+        const form = document.getElementById('edit-form');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        
+        try {
+            const res = await fetch(`{% url 'employees:manage_ajax' %}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': data.csrfmiddlewaretoken
+                },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast("Payroll updated successfully");
+                closeModal();
+                fetchData();
+            } else {
+                showToast(result.error || "Update failed", "error");
+            }
+        } catch (e) {
+            showToast("Network error", "error");
+        }
+    }
+
+    function showToast(msg, type = "success") {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.style.background = type === "success" ? "#059669" : "#dc2626";
+        t.classList.add('active');
+        setTimeout(() => t.classList.remove('active'), 3000);
+    }
+
+    async function generateExpenseReport() {
+        const month = document.getElementById('f-month').value;
+        const year  = document.getElementById('f-year').value;
+        if (!confirm(`Generate expense entries in Expense Module for ${month} ${year}?\n\nDuplicates will be skipped automatically.`)) return;
+
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        try {
+            const res = await fetch("{% url 'employees:generate_salary_expenses' %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({ month, year }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast(result.message);
+            } else {
+                showToast(result.error || 'Failed to generate expenses', 'error');
+            }
+        } catch (e) {
+            showToast('Network error', 'error');
+        }
+    }
+
+    function resetFilters() {
+        document.getElementById('f-search').value = '';
+        document.getElementById('f-location').value = '';
+        document.getElementById('f-site').value = '';
+        document.getElementById('f-bank').value = '';
+        const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        document.getElementById('f-month').value = months[new Date().getMonth()];
+        fetchData();
+    }
+
+    // Download Report — dropdown helpers
+    function toggleDownloadDropdown() {
+        const dd = document.getElementById('download-dropdown');
+        dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+    }
+    function closeDownloadDropdown() {
+        const dd = document.getElementById('download-dropdown');
+        if (dd) dd.style.display = 'none';
+    }
+    document.addEventListener('click', function(e) {
+        const wrapper = document.getElementById('download-report-wrapper');
+        if (wrapper && !wrapper.contains(e.target)) closeDownloadDropdown();
+    });
+
+    // PDF / Excel Generation
+    function generatePDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('l', 'mm', 'a4');
+        const month = document.getElementById('f-month').value;
+        const year  = document.getElementById('f-year').value;
+
+        doc.setFontSize(16);
+        doc.text(`Salary Report — ${month} ${year}`, 14, 14);
+        doc.setFontSize(8);
+        doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 20);
+
+        const totalSalary = salaryData.reduce((sum, s) => sum + (s.net_payable || 0), 0);
+
+        const tableData = salaryData.map((s, idx) => {
+            const locSite = [s.location, s.site].filter(Boolean).join('/');
+            const empId   = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+            return [
+                idx + 1,
+                s.employee_name || '-',
+                empId,
+                locSite || '-',
+                s.bank_name     || '-',
+                s.ifsc_code     || '-',
+                s.account_number || '-',
+                (s.net_payable  || 0).toLocaleString('en-IN'),
+            ];
+        });
+
+        doc.autoTable({
+            startY: 25,
+            head: [['Sl No', 'Name', 'ID', 'Loc/Site', 'Bank', 'IFSC Code', 'Acc No', 'Salary (₹)']],
+            body: tableData,
+            foot: [[
+                '', `Total Employees: ${salaryData.length}`, '', '', '', '',
+                'Total Salary Paid:',
+                `₹${totalSalary.toLocaleString('en-IN')}`,
+            ]],
+            theme: 'grid',
+            styles: { fontSize: 7 },
+            headStyles: { fillColor: [30, 41, 59] },
+            footStyles: { fillColor: [240, 253, 244], textColor: [5, 150, 105], fontStyle: 'bold' },
+            columnStyles: { 7: { halign: 'right' } },
+        });
+
+        doc.save(`SPIM_Salary_Report_${month}_${year}.pdf`);
+    }
+
+    function generateExcel() {
+        const month = document.getElementById('f-month').value;
+        const year  = document.getElementById('f-year').value;
+        const totalSalary = salaryData.reduce((sum, s) => sum + (s.net_payable || 0), 0);
+
+        const rows = salaryData.map((s, idx) => ({
+            'Sl No':      idx + 1,
+            'Name':       s.employee_name || '',
+            'ID':         s.employee_id   || ('EMP-' + String(s.id).padStart(3, '0')),
+            'Loc/Site':   [s.location, s.site].filter(Boolean).join('/'),
+            'Bank':       s.bank_name      || '',
+            'IFSC Code':  s.ifsc_code      || '',
+            'Acc No':     s.account_number || '',
+            'Salary (₹)': s.net_payable    || 0,
+        }));
+
+        rows.push({});  // blank separator
+        rows.push({ 'Sl No': 'Total Employees',  'Name': salaryData.length });
+        rows.push({ 'Sl No': 'Total Salary Paid', 'Name': `₹${totalSalary.toLocaleString('en-IN')}` });
+
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook  = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Salary Report');
+        XLSX.writeFile(workbook, `SPIM_Salary_Report_${month}_${year}.xlsx`);
+    }
+
+    async function generateBulkZip() {
+        const zip = new JSZip();
+        const { jsPDF } = window.jspdf;
+        showToast("Preparing ZIP package...", "info");
+
+        const companyName = companySettings.name || 'SPIM Suite';
+        salaryData.forEach(s => {
+            const doc = new jsPDF();
+            // Simple Payslip Layout
+            doc.setFontSize(22);
+            doc.text("PAYSLIP", 105, 25, { align: 'center' });
+            doc.setFontSize(10);
+            doc.text(companyName, 105, 32, { align: 'center' });
+            
+            doc.line(20, 40, 190, 40);
+            doc.setFontSize(12);
+            doc.text(`Employee: ${s.employee_name}`, 20, 50);
+            doc.text(`ID: ${s.employee_id}`, 140, 50);
+            doc.text(`Period: ${s.month} ${s.year}`, 20, 58);
+            doc.text(`Site: ${s.site}`, 140, 58);
+            
+            doc.line(20, 65, 190, 65);
+            doc.text("Earnings", 20, 72); doc.text("Amount", 160, 72);
+            doc.line(20, 75, 190, 75);
+            
+            doc.text("Basic Salary", 20, 85); doc.text(s.base_salary.toFixed(2), 160, 85);
+            doc.text("OT / Allowance", 20, 93); doc.text(s.overtime.toFixed(2), 160, 93);
+            
+            doc.text("Deductions", 20, 105);
+            doc.line(20, 108, 190, 108);
+            doc.text("Advance Payment", 20, 118); doc.text("-" + s.advance_pay.toFixed(2), 160, 118);
+            doc.text("Other Deductions", 20, 126); doc.text("-" + s.deduction.toFixed(2), 160, 126);
+            
+            doc.line(20, 140, 190, 140);
+            doc.setFontSize(14);
+            doc.text("NET PAYABLE", 20, 150);
+            doc.text("INR " + s.net_payable.toFixed(2), 160, 150);
+            
+            const pdfBlob = doc.output('blob');
+            zip.file(`Payslip_${s.employee_id}_${s.month}.pdf`, pdfBlob);
+        });
+
+        const content = await zip.generateAsync({ type: "blob" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(content);
+        link.download = `Bulk_Payslips_${document.getElementById('f-month').value}.zip`;
+        link.click();
+        showToast("ZIP downloaded successfully");
+    }
+
+    function downloadPayslip(id) {
+        const s = salaryData.find(x => x.id === id);
+        if (!s) return;
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const pageW = doc.internal.pageSize.width;
+        const pageH = doc.internal.pageSize.height;
+        const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+        const net = s.net_payable !== undefined ? s.net_payable : ((s.base_salary||0) + (s.overtime||0) - (s.advance_pay||0) - (s.deduction||0));
+
+        // Company header
+        doc.setFillColor(37, 99, 235);
+        doc.rect(0, 0, pageW, 22, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.text('SALARY PAYSLIP', 14, 14);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Period: ' + (s.month || '-') + ' ' + (s.year || ''), pageW - 14, 14, { align: 'right' });
+
+        let y = 32;
+        doc.setTextColor(31, 41, 55);
+
+        // Employee Information
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('Employee Information', 14, y); y += 7;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        const rowL = (lbl, val) => { doc.text(lbl, 14, y); doc.setFont('helvetica','bold'); doc.text(String(val||'—'), 60, y); doc.setFont('helvetica','normal'); y += 6; };
+        rowL('Emp ID:',        empIdDisplay);
+        rowL('Emp Name:',      s.employee_name);
+        rowL('Location:',      s.location);
+        rowL('Site:',          s.site);
+        y += 4;
+
+        // Salary Details
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('Salary Details', 14, y); y += 7;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        const rowR = (lbl, amt) => { doc.text(lbl, 14, y); doc.text('Rs. ' + Number(amt||0).toLocaleString('en-IN'), 100, y); y += 6; };
+        rowR('Base Salary:',        s.base_salary);
+        rowR('OT / Extra Allow:',   s.overtime);
+        rowR('Advance Pay:',        s.advance_pay);
+        rowR('Total Deduction:',    s.deduction);
+        rowR('PF Amount:',          s.pf_amount);
+        y += 3;
+
+        // Net Pay highlight bar
+        doc.setFillColor(37, 99, 235);
+        doc.rect(14, y - 2, pageW - 28, 10, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('Net Pay:', 18, y + 5);
+        doc.text('Rs. ' + Number(net||0).toLocaleString('en-IN'), pageW - 18, y + 5, { align: 'right' });
+        y += 16;
+        doc.setTextColor(31, 41, 55);
+
+        // Bank Details
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('Bank Details', 14, y); y += 7;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        rowL('Bank Name:',       s.bank_name);
+        rowL('Account Holder:',  s.account_holder);
+        rowL('Account Number:',  s.account_number);
+        rowL('IFSC Code:',       s.ifsc_code);
+        y += 4;
+
+        // PF & ESIC
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('PF & ESIC Information', 14, y); y += 7;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        rowL('PF Number:',   s.pf_number);
+        rowL('ESIC Number:', s.esi_number);
+
+        // Footer
+        doc.setFillColor(37, 99, 235);
+        doc.rect(0, pageH - 10, pageW, 10, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+        const companyName = companySettings.name || 'SPIM Suite';
+        doc.text(companyName + ' • Salary Payslip', 14, pageH - 4);
+        doc.text('Generated: ' + new Date().toLocaleDateString('en-IN'), pageW - 14, pageH - 4, { align: 'right' });
+
+        doc.save(`Payslip_${empIdDisplay}_${s.month || ''}_${s.year || ''}.pdf`);
+    }
+
+    // ── Salary Config Modal open / close ──
+    function openSalaryConfigModal() {
+        resetSalaryConfigForm();
+        renderSalaryConfigTable();
+        document.getElementById('salary-config-modal').classList.add('active');
+    }
+    function closeSalaryConfigModal() {
+        document.getElementById('salary-config-modal').classList.remove('active');
+    }
+
+    // ── Salary Configuration grid (rendered inside the modal) ──
+    function renderSalaryConfigTable() {
+        const tbody = document.getElementById('sc-tbody');
+        const empty = document.getElementById('sc-empty');
+        if (!tbody) return;
+
+        // Refresh datalist inside modal
+        const dl = document.getElementById('sc-role-list');
+        if (dl) {
+            const roles = [...new Set(salaryConfig.map(c => c.role).filter(Boolean))].sort();
+            dl.innerHTML = roles.map(r => `<option value="${r}"></option>`).join('');
+        }
+
+        if (!salaryConfig.length) {
+            tbody.innerHTML = '';
+            if (empty) empty.style.display = 'block';
+            return;
+        }
+        if (empty) empty.style.display = 'none';
+        tbody.innerHTML = salaryConfig.map((c, idx) => `
+            <tr>
+                <td><strong>${c.role}</strong></td>
+                <td>${c.level || '—'}</td>
+                <td style="font-weight:700;color:#059669">₹${Number(c.baseSalary||0).toLocaleString('en-IN')}</td>
+                <td style="text-align:right">
+                    <button class="btn-action-text" onclick="editSalaryConfigEntry(${idx})">Edit</button>
+                    <button class="btn-action-text" style="color:#dc2626;margin-left:6px" onclick="deleteSalaryConfigEntry(${idx})">Delete</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+    function resetSalaryConfigForm() {
+        document.getElementById('sc-role').value = '';
+        document.getElementById('sc-level').value = 'Junior';
+        document.getElementById('sc-base').value = '';
+        const lbl = document.getElementById('sc-submit-label');
+        if (lbl) lbl.textContent = 'Add Mapping';
+    }
+    function saveSalaryConfigEntry() {
+        const role = document.getElementById('sc-role').value.trim();
+        const level = document.getElementById('sc-level').value;
+        const base = parseFloat(document.getElementById('sc-base').value) || 0;
+        if (!role) { showToast('Role is required.', 'error'); return; }
+        if (!base) { showToast('Base salary must be greater than 0.', 'error'); return; }
+        const idx = salaryConfig.findIndex(c =>
+            (c.role||'').trim().toLowerCase() === role.toLowerCase() &&
+            (c.level||'').trim().toLowerCase() === level.toLowerCase()
+        );
+        if (idx >= 0) {
+            salaryConfig[idx].baseSalary = base;
+            showToast('Mapping updated: ' + role + ' / ' + level);
+        } else {
+            salaryConfig.push({ role, level, baseSalary: base });
+            showToast('Mapping added: ' + role + ' / ' + level);
+        }
+        persistSalaryConfig();
+        refreshRoleDatalist();
+        renderSalaryConfigTable();
+        resetSalaryConfigForm();
+    }
+    function editSalaryConfigEntry(idx) {
+        const c = salaryConfig[idx];
+        if (!c) return;
+        document.getElementById('sc-role').value = c.role || '';
+        document.getElementById('sc-level').value = c.level || 'Junior';
+        document.getElementById('sc-base').value = c.baseSalary || 0;
+        const lbl = document.getElementById('sc-submit-label');
+        if (lbl) lbl.textContent = 'Update Mapping';
+        document.getElementById('sc-role').focus();
+    }
+    function deleteSalaryConfigEntry(idx) {
+        const c = salaryConfig[idx];
+        if (!c) return;
+        if (!confirm(`Delete mapping "${c.role} / ${c.level}"?`)) return;
+        salaryConfig.splice(idx, 1);
+        persistSalaryConfig();
+        refreshRoleDatalist();
+        renderSalaryConfigTable();
+        showToast('Removed: ' + c.role + ' / ' + c.level, 'error');
+    }
+</script>
+{% endblock %}
