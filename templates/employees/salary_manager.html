@@ -896,6 +896,25 @@
         let y = 35;
         doc.setTextColor(31, 41, 55);
 
+        // Company Details section
+        doc.setDrawColor(37, 99, 235);
+        doc.setLineWidth(0.5);
+        doc.rect(14, y, pageW - 28, 18);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+        doc.text('COMPANY DETAILS', 16, y + 4);
+        doc.setLineWidth(0.3);
+        doc.line(14, y + 7, pageW - 14, y + 7);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+        const companyName = companySettings.name || '—';
+        const companyAddress = companySettings.address || '—';
+        const companyContact = companySettings.contact_number || '—';
+        const companyGST = companySettings.gst_number || '—';
+        doc.text('Company Name: ' + companyName, 16, y + 11);
+        doc.text('Address: ' + companyAddress, 16, y + 15);
+        doc.text('Contact Number: ' + companyContact, 16, y + 19);
+        doc.text('GST Number: ' + companyGST, 16, y + 23);
+        y += 23;
+
         // Employee Information
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
         doc.text('Employee Information', 14, y); y += 7;
