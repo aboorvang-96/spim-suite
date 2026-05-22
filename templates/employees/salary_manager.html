@@ -970,8 +970,7 @@
         doc.rect(0, pageH - 10, pageW, 10, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-        const companyName = companySettings.name || 'SPIM Suite';
-        doc.text(companyName + ' • Salary Payslip', 14, pageH - 4);
+        doc.text((companySettings.name || 'SPIM Suite') + ' • Salary Payslip', 14, pageH - 4);
         doc.text('Generated: ' + new Date().toLocaleDateString('en-IN'), pageW - 14, pageH - 4, { align: 'right' });
 
         return doc;
