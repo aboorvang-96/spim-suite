@@ -899,21 +899,21 @@
         // Company Details section
         doc.setDrawColor(37, 99, 235);
         doc.setLineWidth(0.5);
-        doc.rect(14, y, pageW - 28, 18);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-        doc.text('COMPANY DETAILS', 16, y + 4);
+        doc.rect(14, y, pageW - 28, 38);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('COMPANY DETAILS', 16, y + 5);
         doc.setLineWidth(0.3);
-        doc.line(14, y + 7, pageW - 14, y + 7);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+        doc.line(14, y + 9, pageW - 14, y + 9);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
         const companyName = companySettings.name || '—';
         const companyAddress = companySettings.address || '—';
         const companyContact = companySettings.contact_number || '—';
         const companyGST = companySettings.gst_number || '—';
-        doc.text('Company Name: ' + companyName, 16, y + 11);
-        doc.text('Address: ' + companyAddress, 16, y + 15);
-        doc.text('Contact Number: ' + companyContact, 16, y + 19);
-        doc.text('GST Number: ' + companyGST, 16, y + 23);
-        y += 23;
+        doc.text('Company Name    : ' + companyName,    16, y + 15);
+        doc.text('Address         : ' + companyAddress, 16, y + 21);
+        doc.text('Contact Number  : ' + companyContact, 16, y + 27);
+        doc.text('GST Number      : ' + companyGST,     16, y + 33);
+        y += 44;
 
         // Employee Information
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
