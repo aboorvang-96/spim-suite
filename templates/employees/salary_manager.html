@@ -859,59 +859,9 @@
         XLSX.writeFile(workbook, `SPIM_Salary_Report_${month}_${year}.xlsx`);
     }
 
-    async function generateBulkZip() {
-        const zip = new JSZip();
-        const { jsPDF } = window.jspdf;
-        showToast("Preparing ZIP package...", "info");
-
-        const companyName = companySettings.name || 'SPIM Suite';
-        salaryData.forEach(s => {
-            const doc = new jsPDF();
-            // Simple Payslip Layout
-            doc.setFontSize(22);
-            doc.text("PAYSLIP", 105, 25, { align: 'center' });
-            doc.setFontSize(10);
-            doc.text(companyName, 105, 32, { align: 'center' });
-            
-            doc.line(20, 40, 190, 40);
-            doc.setFontSize(12);
-            doc.text(`Employee: ${s.employee_name}`, 20, 50);
-            doc.text(`ID: ${s.employee_id}`, 140, 50);
-            doc.text(`Period: ${s.month} ${s.year}`, 20, 58);
-            doc.text(`Site: ${s.site}`, 140, 58);
-            
-            doc.line(20, 65, 190, 65);
-            doc.text("Earnings", 20, 72); doc.text("Amount", 160, 72);
-            doc.line(20, 75, 190, 75);
-            
-            doc.text("Basic Salary", 20, 85); doc.text(s.base_salary.toFixed(2), 160, 85);
-            doc.text("OT / Allowance", 20, 93); doc.text(s.overtime.toFixed(2), 160, 93);
-            
-            doc.text("Deductions", 20, 105);
-            doc.line(20, 108, 190, 108);
-            doc.text("Advance Payment", 20, 118); doc.text("-" + s.advance_pay.toFixed(2), 160, 118);
-            doc.text("Other Deductions", 20, 126); doc.text("-" + s.deduction.toFixed(2), 160, 126);
-            
-            doc.line(20, 140, 190, 140);
-            doc.setFontSize(14);
-            doc.text("NET PAYABLE", 20, 150);
-            doc.text("INR " + s.net_payable.toFixed(2), 160, 150);
-            
-            const pdfBlob = doc.output('blob');
-            zip.file(`Payslip_${s.employee_id}_${s.month}.pdf`, pdfBlob);
-        });
-
-        const content = await zip.generateAsync({ type: "blob" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(content);
-        link.download = `Bulk_Payslips_${document.getElementById('f-month').value}.zip`;
-        link.click();
-        showToast("ZIP downloaded successfully");
-    }
-
-    function downloadPayslip(id) {
-        const s = salaryData.find(x => x.id === id);
-        if (!s) return;
+    // ── Unified Payslip PDF Renderer (shared between single and bulk download) ──
+    function renderPayslipPDF(salaryRecord) {
+        const s = salaryRecord;
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
         const pageW = doc.internal.pageSize.width;
@@ -919,7 +869,7 @@
         const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
         const net = s.net_payable !== undefined ? s.net_payable : ((s.base_salary||0) + (s.overtime||0) - (s.advance_pay||0) - (s.deduction||0));
 
-        // Company header
+        // Header band
         doc.setFillColor(37, 99, 235);
         doc.rect(0, 0, pageW, 22, 'F');
         doc.setTextColor(255, 255, 255);
@@ -992,6 +942,33 @@
         doc.text(companyName + ' • Salary Payslip', 14, pageH - 4);
         doc.text('Generated: ' + new Date().toLocaleDateString('en-IN'), pageW - 14, pageH - 4, { align: 'right' });
 
+        return doc;
+    }
+
+    async function generateBulkZip() {
+        const zip = new JSZip();
+        showToast("Preparing ZIP package...", "info");
+
+        salaryData.forEach(s => {
+            const doc = renderPayslipPDF(s);
+            const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+            const pdfBlob = doc.output('blob');
+            zip.file(`Payslip_${empIdDisplay}_${s.month}.pdf`, pdfBlob);
+        });
+
+        const content = await zip.generateAsync({ type: "blob" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(content);
+        link.download = `Bulk_Payslips_${document.getElementById('f-month').value}.zip`;
+        link.click();
+        showToast("ZIP downloaded successfully");
+    }
+
+    function downloadPayslip(id) {
+        const s = salaryData.find(x => x.id === id);
+        if (!s) return;
+        const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+        const doc = renderPayslipPDF(s);
         doc.save(`Payslip_${empIdDisplay}_${s.month || ''}_${s.year || ''}.pdf`);
     }
 
