@@ -46,24 +46,52 @@ def _generate_employee_id(admin_id):
     return f"SPIM{(max_num + 1):03d}"
 
 
-def _apply_role_level_salary(employee, admin_id):
+def _apply_role_level_salary(employee, admin_id, force=False):
     """
     Auto-fill an Employee's monetary fields from the matching SalaryStructure
-    (job_role + level) at creation time. Only writes if the matching row
-    exists and the destination fields are not already non-zero (preserves any
-    explicit override the admin typed into the create form).
+    (job_role + level). Lookup keys: (admin_id, job_role, level). When `force`
+    is True (Role/Level changed on edit), overwrites existing base_salary and
+    fixed_allowance so the centralized config remains the source of truth.
+    Otherwise preserves any explicit override the admin typed into the form.
+
+    Custom-override guard: when Employee.salary_is_custom_override is True,
+    base_salary is never touched (Case 3 / Case 4 of the manual-override
+    spec). fixed_allowance is allowed to refresh because it represents the
+    food-allowance line, which is configured per Role+Level, not per
+    employee — admins manage food allowance via the Salary Config.
     """
-    if not employee.job_role_id or not (employee.level or '').strip():
+    if getattr(employee, 'salary_is_custom_override', False):
+        # Honor the per-employee manual override — do not refresh base_salary
+        # from the centralized config, even when force=True.
+        force_base = False
+    else:
+        force_base = force
+    level_val = (employee.level or '').strip()
+    if not level_val:
         return
-    structure = SalaryStructure.objects.filter(
-        admin_id=admin_id, job_role_id=employee.job_role_id, level=employee.level.strip(),
-    ).first()
+    structure = None
+    if employee.job_role_id:
+        structure = SalaryStructure.objects.filter(
+            admin_id=admin_id, job_role_id=employee.job_role_id, level=level_val,
+        ).first()
+    # Fallback: match by JobRole.name == Employee.designation so that the
+    # Salary Config table works even when the employee has no explicit
+    # JobRole FK (the Add modal stores role as free-text designation).
+    if not structure:
+        designation = (employee.designation or '').strip()
+        if designation:
+            structure = SalaryStructure.objects.filter(
+                admin_id=admin_id,
+                job_role__admin_id=admin_id,
+                job_role__name__iexact=designation,
+                level=level_val,
+            ).first()
     if not structure:
         return
-    if not employee.base_salary:
+    if force_base or not employee.base_salary:
         employee.base_salary = structure.base_salary
     # `fixed_allowance` carries the food allowance in the existing schema.
-    if not employee.fixed_allowance:
+    if force or not employee.fixed_allowance:
         employee.fixed_allowance = structure.food_allowance
 
 
@@ -264,7 +292,10 @@ def add_employee(request):
 @login_required
 def edit_employee(request, pk):
     employee = get_object_or_404(Employee, pk=pk, admin_id=get_admin_id(request.user))
-    original_emp_id = employee.employee_id
+    original_emp_id     = employee.employee_id
+    original_role       = (employee.designation or '').strip().lower()
+    original_level      = (employee.level or '').strip().lower()
+    original_job_role   = employee.job_role_id
     if request.method == 'POST':
         form = EmployeeForm(request.POST, instance=employee)
         if form.is_valid():
@@ -277,6 +308,15 @@ def edit_employee(request, pk):
                 employee.employee_id_edit_count = employee.employee_id_edit_count + 1
                 employee.employee_login_id = new_emp_id
             updated = form.save()
+            # Re-apply Salary Config when Role / Level / JobRole changed so
+            # base_salary stays in sync with the centralized SalaryStructure.
+            role_changed  = (updated.designation or '').strip().lower() != original_role
+            level_changed = (updated.level or '').strip().lower() != original_level
+            jr_changed    = updated.job_role_id != original_job_role
+            if role_changed or level_changed or jr_changed:
+                admin_id = get_admin_id(request.user)
+                _apply_role_level_salary(updated, admin_id, force=True)
+                updated.save(update_fields=['base_salary', 'fixed_allowance'])
             _sync_employee_location(updated, request.user)
             messages.success(request, f"Employee {employee.name} updated.")
             return redirect('employees:list')
@@ -312,6 +352,8 @@ def employee_edit_ajax(request, pk):
     name = request.POST.get('name', '').strip()
     if not name:
         return JsonResponse({'success': False, 'error': 'Name is required'})
+    original_role  = (employee.designation or '').strip().lower()
+    original_level = (employee.level or '').strip().lower()
     employee.name                = name
     # Edit-once enforcement for Employee ID (SPIM Lite rule)
     posted_emp_id = request.POST.get('employee_id', employee.employee_id).strip()
@@ -345,6 +387,15 @@ def employee_edit_ajax(request, pk):
             employee.base_salary = float(salary_str)
         except ValueError:
             pass
+    # Auto-assign base salary from centralized Salary Config when role/level
+    # changes (Tasks 3 / 4). When admin explicitly typed a base_salary in the
+    # same submission we honor it (kept above); otherwise the structure value
+    # wins. force=True ensures stale base salaries follow the new mapping.
+    admin_id = get_admin_id(request.user)
+    role_changed  = (employee.designation or '').strip().lower() != original_role
+    level_changed = (employee.level or '').strip().lower() != original_level
+    if (role_changed or level_changed) and not salary_str:
+        _apply_role_level_salary(employee, admin_id, force=True)
     employee.save()
     _sync_employee_location(employee, request.user)
     return JsonResponse({'success': True})
@@ -531,6 +582,15 @@ def salary_dashboard(request):
                 target_date = datetime.date(int(year), m_idx, 1)
             except: pass
 
+        # Case 2 — back-fill base_salary for employees that have no salary on
+        # record yet (and no manual override) from the centralized Salary
+        # Config. Idempotent: only touches rows where base_salary == 0.
+        for e in queryset:
+            if (not e.base_salary) and (not e.salary_is_custom_override) and (e.level or '').strip():
+                _apply_role_level_salary(e, admin_id, force=False)
+                if e.base_salary:
+                    e.save(update_fields=['base_salary', 'fixed_allowance'])
+
         for e in queryset:
             # Find salary record for specific month or last one
             if target_date:
@@ -572,6 +632,7 @@ def salary_dashboard(request):
                 'month': month_name or (salary_record.month.strftime('%B') if salary_record else 'N/A'),
                 'year': year or (salary_record.month.year if salary_record else 'N/A'),
                 'base_salary': float(e.base_salary),
+                'salary_is_custom_override': bool(e.salary_is_custom_override),
                 'gross_salary': gross_base + ot, # simplified gross
                 'advance_pay': advance,
                 'deduction': ded,
@@ -711,6 +772,78 @@ def manage_ajax(request):
         if data.get('action') == 'delete':
             employee = get_object_or_404(Employee, pk=emp_id, admin_id=get_admin_id(request.user))
             employee.delete()
+            return JsonResponse({'success': True})
+
+        # 1z. SALARY CONFIG CRUD ACTIONS (Tasks 3 + 4)
+        # Body: { "action": "sc_list" }
+        #     -> { success, configs: [{id, role, level, base_salary}, ...] }
+        # Body: { "action": "sc_save", "role": "...", "level": "...", "base_salary": 30000 }
+        #     -> upserts SalaryStructure(admin_id, JobRole(name=role), level)
+        # Body: { "action": "sc_delete", "id": <pk> }
+        #     -> deletes the SalaryStructure row (scoped to admin_id)
+        # Source of truth: employees.SalaryStructure. Auto-applied to Employee
+        # at Add and on role/level change via _apply_role_level_salary().
+        if data.get('action') == 'sc_list':
+            admin_id = get_admin_id(request.user)
+            rows = (SalaryStructure.objects
+                    .filter(admin_id=admin_id)
+                    .select_related('job_role')
+                    .order_by('job_role__name', 'level'))
+            return JsonResponse({
+                'success': True,
+                'configs': [{
+                    'id':          s.id,
+                    'role':        s.job_role.name if s.job_role_id else '',
+                    'level':       s.level,
+                    'base_salary': float(s.base_salary),
+                } for s in rows],
+            })
+
+        if data.get('action') == 'sc_save':
+            role  = (data.get('role')  or '').strip()
+            level = (data.get('level') or '').strip()
+            try:
+                base  = Decimal(str(data.get('base_salary') or 0))
+            except Exception:
+                base = Decimal('0')
+            if not role or not level:
+                return JsonResponse({'success': False, 'error': 'Role and Level are required.'}, status=400)
+            if base <= 0:
+                return JsonResponse({'success': False, 'error': 'Base salary must be greater than 0.'}, status=400)
+            admin_id = get_admin_id(request.user)
+            # Reuse-or-create JobRole by name (centralized role master).
+            job_role, _ = JobRole.objects.get_or_create(admin_id=admin_id, name=role)
+            structure, created = SalaryStructure.objects.update_or_create(
+                admin_id=admin_id, job_role=job_role, level=level,
+                defaults={'base_salary': base},
+            )
+            # Push the new base to every employee that already matches this
+            # mapping so SPIM Lite Salary / Payslip generation reflect right
+            # away (Task 4 — "Prevent stale values"). Employees with a manual
+            # salary override are deliberately skipped (Case 3 of the
+            # override spec).
+            Employee.objects.filter(
+                admin_id=admin_id, level=level, job_role=job_role,
+                salary_is_custom_override=False,
+            ).update(base_salary=base)
+            Employee.objects.filter(
+                admin_id=admin_id, level=level, designation__iexact=role,
+                salary_is_custom_override=False,
+            ).update(base_salary=base)
+            return JsonResponse({
+                'success': True, 'created': created,
+                'config': {
+                    'id': structure.id, 'role': role,
+                    'level': level, 'base_salary': float(base),
+                },
+            })
+
+        if data.get('action') == 'sc_delete':
+            sid = data.get('id')
+            if not sid:
+                return JsonResponse({'success': False, 'error': 'id is required.'}, status=400)
+            admin_id = get_admin_id(request.user)
+            SalaryStructure.objects.filter(admin_id=admin_id, pk=sid).delete()
             return JsonResponse({'success': True})
 
         # 1a. MASTER ADD ACTION
@@ -874,7 +1007,59 @@ def manage_ajax(request):
         # 4. SALARY ADJUSTMENT (or Create New)
         if 'salary' in data:
             employee = get_object_or_404(Employee, pk=emp_id, admin_id=get_admin_id(request.user))
-            
+
+            # Persist Role + Level back to the Employee record so the SPIM Lite
+            # profile and salary chain stay in sync (Task 1 + Task 2). The
+            # Salary Edit modal previously kept these in localStorage only,
+            # which is why Level disappeared in SPIM Lite even though the
+            # admin had "set" it via the salary modal.
+            posted_role  = (data.get('role')  or '').strip()
+            posted_level = (data.get('level') or '').strip()
+            emp_dirty_fields = []
+            if posted_role and posted_role != (employee.designation or ''):
+                employee.designation = posted_role
+                emp_dirty_fields.append('designation')
+            if posted_level and posted_level != (employee.level or ''):
+                employee.level = posted_level
+                emp_dirty_fields.append('level')
+            try:
+                posted_base = Decimal(str(data.get('salary') or 0))
+            except Exception:
+                posted_base = Decimal('0')
+            if posted_base > 0 and posted_base != employee.base_salary:
+                employee.base_salary = posted_base
+                emp_dirty_fields.append('base_salary')
+                # Manual-override detection (Case 3). Compare the typed value
+                # against the current Salary Config for this Role + Level. If
+                # it differs, mark the employee as overridden so neither future
+                # Salary Config edits nor role/level changes overwrite it.
+                # If it matches the config exactly, clear the override flag so
+                # the row resumes following the centralized mapping.
+                admin_id = get_admin_id(request.user)
+                cfg_base = None
+                if employee.job_role_id and (employee.level or '').strip():
+                    s = SalaryStructure.objects.filter(
+                        admin_id=admin_id, job_role_id=employee.job_role_id,
+                        level=employee.level.strip(),
+                    ).first()
+                    if s:
+                        cfg_base = Decimal(str(s.base_salary))
+                if cfg_base is None and (employee.designation or '').strip() and (employee.level or '').strip():
+                    s = SalaryStructure.objects.filter(
+                        admin_id=admin_id,
+                        job_role__admin_id=admin_id,
+                        job_role__name__iexact=employee.designation.strip(),
+                        level=employee.level.strip(),
+                    ).first()
+                    if s:
+                        cfg_base = Decimal(str(s.base_salary))
+                new_override = (cfg_base is None) or (posted_base != cfg_base)
+                if new_override != employee.salary_is_custom_override:
+                    employee.salary_is_custom_override = new_override
+                    emp_dirty_fields.append('salary_is_custom_override')
+            if emp_dirty_fields:
+                employee.save(update_fields=emp_dirty_fields)
+
             # Use provided month/year or default to current
             month_name = data.get('month', '')
             year = data.get('year', '')

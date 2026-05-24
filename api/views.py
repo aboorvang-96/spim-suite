@@ -140,6 +140,13 @@ def mobile_login(request):
             'department':    emp.department,
             'location':      emp.location,
             'site':          emp.site,
+            # Surfaced at login so SPIM Lite clients that cache the login
+            # response (and don't refetch /profile/) still see Level / Mobile
+            # / Branch / Base Salary in the profile screen.
+            'level':         emp.level,
+            'mobile':        emp.mobile,
+            'branch':        emp.branch,
+            'base_salary':   str(emp.base_salary),
         },
     })
 
@@ -290,6 +297,7 @@ def mobile_profile(request):
             'mobile':             emp.mobile,
             'branch':             emp.branch,
             'base_salary':        str(emp.base_salary),
+            'salary_is_custom_override': bool(emp.salary_is_custom_override),
             'fixed_allowance':    str(emp.fixed_allowance),
             'joining_date':       str(emp.joining_date) if emp.joining_date else None,
             'status':             emp.status,

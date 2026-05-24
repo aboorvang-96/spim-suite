@@ -198,13 +198,13 @@
                 <div class="form-grid">
                     <div class="form-group">
                         <label class="stat-label">Role</label>
-                        <input type="text" id="edit-role" class="filter-input" list="role-datalist" oninput="autofillBaseFromConfig()" title="Employee role">
+                        <input type="text" name="role" id="edit-role" class="filter-input" list="role-datalist" oninput="autofillBaseFromConfig()" title="Employee role">
                         <datalist id="role-datalist"></datalist>
                     </div>
                     <div class="form-group">
                         <label class="stat-label">Level</label>
                         {% comment %}Centralised master_levels — same pool the Employee Add/Edit dropdowns use. Hard-coded Junior/Mid/Senior/Lead/Manager removed.{% endcomment %}
-                        <select id="edit-level" class="filter-select" onchange="autofillBaseFromConfig()" title="Employee level">
+                        <select name="level" id="edit-level" class="filter-select" onchange="autofillBaseFromConfig()" title="Employee level">
                             <option value="">— Select —</option>
                             {% for l in master_levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
                         </select>
@@ -216,6 +216,7 @@
                     <div class="form-group">
                         <label class="stat-label">Base Salary (₹) <span style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(auto-filled from Role + Level)</span></label>
                         <input type="number" name="salary" id="edit-salary" class="filter-input" oninput="calcNet()" required title="Base Salary">
+                        <div id="edit-override-flag" style="display:none;margin-top:4px;font-size:0.7rem;font-weight:600;color:#b45309;">⚠ Custom salary override active — config changes will not overwrite this value.</div>
                     </div>
                     <div class="form-group">
                         <label class="stat-label">Advance Pay (₹)</label>
@@ -378,34 +379,34 @@
     let logoBase64 = null;
     const modal = document.getElementById('edit-modal');
 
-    // ── Local salary configuration: Role + Level → Base Salary ──
-    const SC_KEY = 'spim_salary_config_v1';
+    // ── Salary configuration: Role + Level → Base Salary ──
+    // Source of truth is the SalaryStructure DB table (per tenant). The
+    // localStorage maps below are only short-lived UI overrides used while
+    // the modal is open — backend persistence happens via manage_ajax.
     const LVL_KEY = 'spim_employee_levels_v1';   // map: { [employeeId]: level }
     const ROLE_KEY = 'spim_employee_roles_v1';   // map: { [employeeId]: role override }
-    let salaryConfig = loadSalaryConfig();
+    // salaryConfig items use shape: { id, role, level, baseSalary }
+    let salaryConfig = [];
     let employeeLevels = loadEmployeeLevels();
     let employeeRoleOverrides = loadEmployeeRoles();
 
-    function loadSalaryConfig() {
+    async function loadSalaryConfig() {
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
         try {
-            const raw = localStorage.getItem(SC_KEY);
-            if (raw) return JSON.parse(raw) || [];
-        } catch (e) {}
-        return defaultSalaryConfig();
-    }
-    function persistSalaryConfig() {
-        try { localStorage.setItem(SC_KEY, JSON.stringify(salaryConfig)); } catch (e) {}
-    }
-    function defaultSalaryConfig() {
-        return [
-            { role: 'Site Engineer',      level: 'Junior',  baseSalary: 30000 },
-            { role: 'Site Engineer',      level: 'Senior',  baseSalary: 45000 },
-            { role: 'HR Manager',         level: 'Manager', baseSalary: 55000 },
-            { role: 'Supervisor',         level: 'Mid',     baseSalary: 38000 },
-            { role: 'Accounts Executive', level: 'Mid',     baseSalary: 42000 },
-            { role: 'Project Manager',    level: 'Lead',    baseSalary: 68000 },
-            { role: 'Safety Officer',     level: 'Junior',  baseSalary: 36000 }
-        ];
+            const res = await fetch(`{% url 'employees:manage_ajax' %}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ action: 'sc_list' }),
+            });
+            const j = await res.json();
+            if (j && j.success && Array.isArray(j.configs)) {
+                salaryConfig = j.configs.map(c => ({
+                    id: c.id, role: c.role, level: c.level, baseSalary: c.base_salary,
+                }));
+            }
+        } catch (e) { /* keep current */ }
+        refreshRoleDatalist();
+        renderSalaryConfigTable();
     }
     function loadEmployeeLevels() {
         try { return JSON.parse(localStorage.getItem(LVL_KEY) || '{}'); } catch (e) { return {}; }
@@ -432,10 +433,15 @@
         return roleOnly ? Number(roleOnly.baseSalary) || 0 : null;
     }
     function effectiveRole(s) {
+        // Backend (Employee.designation) is the source of truth; the local
+        // override exists only to preview a change before the user saves.
         return employeeRoleOverrides[s.id] || s.role || '';
     }
     function effectiveLevel(s) {
-        return employeeLevels[s.id] || '';
+        // Same chain as effectiveRole — fall back to the value the salary
+        // dashboard returned for the Employee record so existing rows
+        // auto-load Level instead of forcing a manual re-selection.
+        return employeeLevels[s.id] || s.level || '';
     }
     function refreshRoleDatalist() {
         const dl = document.getElementById('role-datalist');
@@ -479,6 +485,7 @@
         refreshRoleDatalist();
         fetchCompanySettings();
         preloadLogo();
+        loadSalaryConfig();
         fetchData();
     });
 
@@ -656,6 +663,10 @@
         document.getElementById('l-esic-number').innerText = s.esi_number || 'Not Provided';
 
         document.getElementById('modal-title').innerText = `Edit Salary — ${s.employee_name}`;
+        // Surface manual-override status (Case 3 of the override spec) so the
+        // admin knows why Salary Config edits will not change this row.
+        var ovFlag = document.getElementById('edit-override-flag');
+        if (ovFlag) ovFlag.style.display = s.salary_is_custom_override ? 'block' : 'none';
         calcNet();
         modal.classList.add('active');
     }
@@ -665,7 +676,12 @@
         const role = document.getElementById('edit-role').value;
         const level = document.getElementById('edit-level').value;
         const cfgBase = getBaseSalaryFor(role, level);
-        if (cfgBase !== null) {
+        // Case 4 — respect manual override: if the employee already has a
+        // custom salary, role/level changes don't overwrite the Base field.
+        const id = parseInt(document.getElementById('edit-id').value, 10);
+        const s = !isNaN(id) ? salaryData.find(x => x.id === id) : null;
+        const overridden = !!(s && s.salary_is_custom_override);
+        if (cfgBase !== null && !overridden) {
             document.getElementById('edit-salary').value = cfgBase;
             calcNet();
         }
@@ -1266,52 +1282,72 @@
     }
     function resetSalaryConfigForm() {
         document.getElementById('sc-role').value = '';
-        document.getElementById('sc-level').value = 'Junior';
+        document.getElementById('sc-level').value = '';
         document.getElementById('sc-base').value = '';
         const lbl = document.getElementById('sc-submit-label');
         if (lbl) lbl.textContent = 'Add Mapping';
     }
-    function saveSalaryConfigEntry() {
+    async function saveSalaryConfigEntry() {
         const role = document.getElementById('sc-role').value.trim();
-        const level = document.getElementById('sc-level').value;
+        const level = document.getElementById('sc-level').value.trim();
         const base = parseFloat(document.getElementById('sc-base').value) || 0;
         if (!role) { showToast('Role is required.', 'error'); return; }
+        if (!level) { showToast('Level is required.', 'error'); return; }
         if (!base) { showToast('Base salary must be greater than 0.', 'error'); return; }
-        const idx = salaryConfig.findIndex(c =>
-            (c.role||'').trim().toLowerCase() === role.toLowerCase() &&
-            (c.level||'').trim().toLowerCase() === level.toLowerCase()
-        );
-        if (idx >= 0) {
-            salaryConfig[idx].baseSalary = base;
-            showToast('Mapping updated: ' + role + ' / ' + level);
-        } else {
-            salaryConfig.push({ role, level, baseSalary: base });
-            showToast('Mapping added: ' + role + ' / ' + level);
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        try {
+            const res = await fetch(`{% url 'employees:manage_ajax' %}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ action: 'sc_save', role, level, base_salary: base }),
+            });
+            const j = await res.json();
+            if (!j || !j.success) {
+                showToast((j && j.error) || 'Could not save mapping.', 'error');
+                return;
+            }
+            showToast(j.created ? ('Mapping added: ' + role + ' / ' + level)
+                                : ('Mapping updated: ' + role + ' / ' + level));
+            await loadSalaryConfig();
+            resetSalaryConfigForm();
+            // Refresh the salary table so any Employee whose base_salary was
+            // re-aligned by the backend reflects immediately (Task 4).
+            fetchData();
+        } catch (e) {
+            showToast('Network error', 'error');
         }
-        persistSalaryConfig();
-        refreshRoleDatalist();
-        renderSalaryConfigTable();
-        resetSalaryConfigForm();
     }
     function editSalaryConfigEntry(idx) {
         const c = salaryConfig[idx];
         if (!c) return;
         document.getElementById('sc-role').value = c.role || '';
-        document.getElementById('sc-level').value = c.level || 'Junior';
+        document.getElementById('sc-level').value = c.level || '';
         document.getElementById('sc-base').value = c.baseSalary || 0;
         const lbl = document.getElementById('sc-submit-label');
         if (lbl) lbl.textContent = 'Update Mapping';
         document.getElementById('sc-role').focus();
     }
-    function deleteSalaryConfigEntry(idx) {
+    async function deleteSalaryConfigEntry(idx) {
         const c = salaryConfig[idx];
         if (!c) return;
         if (!confirm(`Delete mapping "${c.role} / ${c.level}"?`)) return;
-        salaryConfig.splice(idx, 1);
-        persistSalaryConfig();
-        refreshRoleDatalist();
-        renderSalaryConfigTable();
-        showToast('Removed: ' + c.role + ' / ' + c.level, 'error');
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        try {
+            const res = await fetch(`{% url 'employees:manage_ajax' %}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ action: 'sc_delete', id: c.id }),
+            });
+            const j = await res.json();
+            if (!j || !j.success) {
+                showToast((j && j.error) || 'Could not delete mapping.', 'error');
+                return;
+            }
+            await loadSalaryConfig();
+            showToast('Removed: ' + c.role + ' / ' + c.level, 'error');
+        } catch (e) {
+            showToast('Network error', 'error');
+        }
     }
 </script>
 {% endblock %}

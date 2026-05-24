@@ -55,6 +55,11 @@ class Employee(models.Model):
     location         = models.CharField(max_length=100, blank=True, default='')
     site             = models.CharField(max_length=150, blank=True, default='')
     base_salary      = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Manual-override flag: False = base_salary follows SalaryStructure(role + level).
+    # Flipped to True the moment an admin types a value into Salary Edit that
+    # differs from the configured base. Once True, Salary Config updates and
+    # role/level changes do NOT overwrite base_salary automatically.
+    salary_is_custom_override = models.BooleanField(default=False)
     fixed_allowance  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     joining_date     = models.DateField(blank=True, null=True)
     status           = models.CharField(max_length=15, choices=STATUS, default='active')
