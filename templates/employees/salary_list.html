@@ -56,9 +56,9 @@
                     {% for s in salaries %}
                     <tr class="hover:bg-slate-50 transition-colors">
                         <td class="px-6 py-4 font-bold text-slate-800">{{ s.month|date:"F Y" }}</td>
-                        <td class="px-6 py-4">₹ {{ s.base_salary|floatformat:2 }}</td>
-                        <td class="px-6 py-4 text-green-600 font-medium">+₹ {{ s.overtime_allowance|floatformat:2 }}</td>
-                        <td class="px-6 py-4 text-red-500 font-medium">-₹ {{ s.advance_pay|add:s.deduction|floatformat:2 }}</td>
+                        <td class="px-6 py-4">₹ {{ s.basic_salary|floatformat:2 }}</td>
+                        <td class="px-6 py-4 text-green-600 font-medium">+₹ {{ s.ot_allowance|floatformat:2 }}</td>
+                        <td class="px-6 py-4 text-red-500 font-medium">-₹ {{ s.advance_pay|add:s.total_deduction|floatformat:2 }}</td>
                         <td class="px-6 py-4"><span class="badge badge-blue">₹ {{ s.net_pay|floatformat:2 }}</span></td>
                         <td class="px-6 py-4">
                             <a href="{% url 'employees:generate_payslip' s.pk %}" class="btn btn-outline btn-sm">
@@ -91,26 +91,26 @@
             <div class="modal-body space-y-4">
                 <div class="form-group">
                     <label class="form-label">Salary Month</label>
-                    <input type="date" name="month" class="form-input" required value="{{ today|date:'Y-m-d' }}">
+                    <input type="date" name="month" class="form-input" required value="{{ today|date:'Y-m-d' }}" title="Salary Month">
                 </div>
                 <div class="grid grid-2">
                     <div class="form-group">
                         <label class="form-label">Base Salary</label>
-                        <input type="number" name="base_salary" id="bs" class="form-input" required value="{{ employee.base_salary }}">
+                        <input type="number" name="basic_salary" id="bs" class="form-input" required value="{{ employee.base_salary }}" title="Base Salary Amount">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Overtime (OT)</label>
-                        <input type="number" name="overtime_allowance" id="ot" class="form-input" value="0">
+                        <input type="number" name="ot_allowance" id="ot" class="form-input" value="0" title="Overtime Allowance">
                     </div>
                 </div>
                 <div class="grid grid-2">
                     <div class="form-group">
                         <label class="form-label">Advance Pay</label>
-                        <input type="number" name="advance_pay" id="ap" class="form-input" value="0">
+                        <input type="number" name="advance_pay" id="ap" class="form-input" value="0" title="Advance Pay Amount">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Deduction</label>
-                        <input type="number" name="deduction" id="dd" class="form-input" value="0">
+                        <input type="number" name="total_deduction" id="dd" class="form-input" value="0" title="Total Deduction Amount">
                     </div>
                 </div>
                 <div class="p-4 bg-slate-900 rounded-xl text-center">

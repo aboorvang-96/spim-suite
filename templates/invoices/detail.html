@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}{{ invoice.invoice_number }} - FinanceHub{% endblock %}
+{% block title %}{{ invoice.invoice_number }} - SPIM Suite{% endblock %}
 {% block nav_invoices %}active{% endblock %}
 {% block page_title %}{{ invoice.invoice_number }}{% endblock %}
 {% block page_sub %}{{ invoice.client.name }}{% endblock %}
 {% block header_actions %}
-  {% if invoice.status != 'paid' %}<form method="post" action="{% url 'invoices:mark_paid' invoice.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-success">Mark as Paid</button></form>{% endif %}
+  {% if invoice.status != 'paid' %}<form method="post" action="{% url 'invoices:mark_paid' invoice.pk %}" class="inline-block">{% csrf_token %}<button type="submit" class="btn btn-success">Mark as Paid</button></form>{% endif %}
   <a href="{% url 'invoices:edit' invoice.pk %}" class="btn btn-outline">Edit</a>
 {% endblock %}
 {% block content %}

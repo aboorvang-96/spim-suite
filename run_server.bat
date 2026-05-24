@@ -1,4 +1,4 @@
 @echo off
-cd e:\Freelancing\financehub
-call "e:\Freelancing\financehub\FinanceHub_Setup\venv\Scripts\activate.bat"
+cd /d "E:\Freelancing\SPIM Suite"
+call "E:\Freelancing\SPIM Suite\.venv\Scripts\activate.bat"
 python manage.py runserver

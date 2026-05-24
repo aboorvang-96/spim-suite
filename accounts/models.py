@@ -25,7 +25,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active   = models.BooleanField(default=True)
     is_staff    = models.BooleanField(default=False)
     phone       = models.CharField(max_length=20, blank=True)
-    admin_id    = models.CharField(max_length=20, unique=True, null=True, blank=True)
+    # admin_id is the organization/tenant key. Super Admin owns a new admin_id;
+    # linked Admins share the same admin_id (so it is NOT unique per user).
+    admin_id    = models.CharField(max_length=20, null=True, blank=True, db_index=True)
     parent_admin = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='linked_users')
     theme       = models.CharField(max_length=15, default='light')
     date_joined = models.DateTimeField(auto_now_add=True)
@@ -41,6 +43,16 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_admin(self):
         return self.role == 'admin'
+
+    @property
+    def is_super_admin(self):
+        """Super Admin = admin user that owns the org (no parent). Same permission scope as a linked Admin."""
+        return self.role == 'admin' and self.parent_admin_id is None and bool(self.admin_id)
+
+    @property
+    def is_linked_admin(self):
+        """Admin linked under a Super Admin's organization dataset."""
+        return self.role == 'admin' and self.parent_admin_id is not None
 
     @property
     def initials(self):

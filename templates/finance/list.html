@@ -1,56 +1,1803 @@
 {% extends 'base.html' %}
-{% block title %}Finance - FinanceHub{% endblock %}
-{% block nav_finance %}active{% endblock %}
-{% block page_title %}Finance Tracker{% endblock %}
-{% block page_sub %}Income and expense management{% endblock %}
+{% block title %}Expenses - SPIM Suite{% endblock %}
+{% block nav_expenses %}active{% endblock %}
+{% block page_title %}Expense Manager{% endblock %}
+{% block page_sub %}Track and manage business expenses{% endblock %}
+
 {% block header_actions %}
-  <a href="{% url 'finance:add' %}" class="btn btn-navy">+ Add Transaction</a>
-  <a href="{% url 'finance:categories' %}" class="btn btn-outline">Categories</a>
+<button type="button" id="openAddExpenseModal" class="btn btn-primary btn-sm">
+  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+    <path d="M12 4v16m8-8H4" />
+  </svg>
+  Add Expense
+</button>
 {% endblock %}
+
 {% block content %}
-<div class="space-y-4">
-  <div class="grid grid-cols-3 gap-3">
-    <div class="card text-center py-3"><p class="text-xs text-slate-400 uppercase tracking-wide font-medium">Balance</p><p class="text-xl font-bold mt-1 {% if balance >= 0 %}text-slate-800{% else %}text-red-600{% endif %}">₹{{ balance|floatformat:2 }}</p></div>
-    <div class="card text-center py-3"><p class="text-xs text-slate-400 uppercase tracking-wide font-medium">Income</p><p class="text-xl font-bold mt-1 text-green-600">₹{{ total_income|floatformat:2 }}</p></div>
-    <div class="card text-center py-3"><p class="text-xs text-slate-400 uppercase tracking-wide font-medium">Expenses</p><p class="text-xl font-bold mt-1 text-red-500">₹{{ total_expense|floatformat:2 }}</p></div>
-  </div>
-  <div class="card">
-    <form method="get" class="flex flex-wrap gap-3 items-end">
-      <div><label class="block text-slate-500 text-xs mb-1 uppercase tracking-wide font-medium">Type</label><select name="type" class="form-input w-32"><option value="">All</option><option value="income" {% if filters.type == 'income' %}selected{% endif %}>Income</option><option value="expense" {% if filters.type == 'expense' %}selected{% endif %}>Expense</option></select></div>
-      <div><label class="block text-slate-500 text-xs mb-1 uppercase tracking-wide font-medium">Category</label><select name="category" class="form-input w-40"><option value="">All categories</option>{% for cat in categories %}<option value="{{ cat.pk }}" {% if filters.category == cat.pk|stringformat:'s' %}selected{% endif %}>{{ cat.name }}</option>{% endfor %}</select></div>
-      <div><label class="block text-slate-500 text-xs mb-1 uppercase tracking-wide font-medium">Month</label><input type="month" name="month" value="{{ filters.month }}" class="form-input w-40"/></div>
-      <button type="submit" class="btn btn-navy">Filter</button>
-      <a href="{% url 'finance:list' %}" class="btn btn-outline">Clear</a>
-    </form>
-  </div>
-  <div class="card p-0 overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead><tr class="bg-slate-50 border-b border-slate-100">
-          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Date</th>
-          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Description</th>
-          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Category</th>
-          <th class="text-left px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Type</th>
-          <th class="text-right px-5 py-3 text-slate-500 text-xs font-semibold uppercase tracking-wide">Amount</th>
-          <th class="px-5 py-3"></th>
-        </tr></thead>
-        <tbody>
-          {% for t in transactions %}
-          <tr class="table-row border-b border-slate-50">
-            <td class="px-5 py-3 text-slate-500 text-xs">{{ t.date|date:"M d, Y" }}</td>
-            <td class="px-5 py-3"><p class="text-slate-700 font-medium text-sm">{{ t.description|default:"—" }}</p>{% if t.reference %}<p class="text-slate-400 text-xs">Ref: {{ t.reference }}</p>{% endif %}</td>
-            <td class="px-5 py-3">{% if t.category %}<span class="badge badge-slate">{{ t.category.name }}</span>{% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}</td>
-            <td class="px-5 py-3">{% if t.type == 'income' %}<span class="badge badge-green">Income</span>{% else %}<span class="badge badge-red">Expense</span>{% endif %}</td>
-            <td class="px-5 py-3 text-right font-semibold {% if t.type == 'income' %}text-green-600{% else %}text-red-500{% endif %}">{% if t.type == 'income' %}+{% else %}-{% endif %}₹{{ t.amount|floatformat:2 }}</td>
-            <td class="px-5 py-3 text-right">
-              <a href="{% url 'finance:edit' t.pk %}" class="text-blue-500 hover:text-blue-700 text-xs font-medium">Edit</a>
-              <form method="post" action="{% url 'finance:delete' t.pk %}" onsubmit="return confirm('Delete?')" style="display:inline;margin-left:.5rem">{% csrf_token %}<button class="text-red-400 hover:text-red-600 text-xs font-medium">Delete</button></form>
-            </td>
-          </tr>
-          {% empty %}<tr><td colspan="6" class="px-5 py-12 text-center text-slate-400 text-sm">No transactions. <a href="{% url 'finance:add' %}" class="text-blue-600">Add your first &rarr;</a></td></tr>{% endfor %}
-        </tbody>
-      </table>
+<style>
+    /* ══════════════════════════════════════════════════════════════════
+       UNIFIED ERP ARCHITECTURE - EXPENSE MODULE REBUILD (V5)
+       ══════════════════════════════════════════════════════════════════ */
+    
+    /* MASTER CONTAINER - ONE CENTERED WRAPPER */
+    .expense-page-container {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 14px !important;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    }
+
+    /* 2. SUMMARY CARDS - GRID LAYOUT */
+    .summary-grid-v5 {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 14px !important;
+        width: 100% !important;
+        position: sticky !important;
+        top: 70px !important;
+        z-index: 90 !important;
+        background: #f8fafc !important;
+        padding-bottom: 4px !important;
+    }
+
+    .summary-card-v5 {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 16px !important;
+        padding: 16px !important;
+        min-height: 80px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+    }
+
+    .summary-card-v5 .card-header {
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+    }
+
+    .summary-card-v5 .card-header svg {
+        width: 20px !important;
+        height: 20px !important;
+        flex-shrink: 0 !important;
+    }
+
+    .summary-card-v5 .card-header span {
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        color: #94a3b8 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+    }
+
+    .summary-card-v5 .card-value {
+        font-size: 26px !important;
+        font-weight: 950 !important;
+        color: #0f172a !important;
+        margin: 0 !important;
+        letter-spacing: -0.04em !important;
+    }
+
+    /* 3. FILTER TOOLBAR - HORIZONTAL ROW */
+    .filter-toolbar-v5 {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        padding: 10px 16px !important;
+        width: 100% !important;
+        z-index: 1 !important;
+        position: relative !important;
+    }
+
+    .filter-form-v5 {
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        flex-wrap: wrap !important;
+    }
+
+    .filter-control-v5 {
+        height: 36px !important;
+        border: 1.5px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+        padding: 0 10px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        color: #334155 !important;
+        min-width: 0 !important;
+        background: #fcfdfe !important;
+        box-sizing: border-box !important;
+    }
+
+    /* 4. EXPENSE LIST - GRID LAYOUT */
+    /* Reduce global content area padding for this page */
+    .content { padding: 1.25rem 1.5rem !important; padding-bottom: 2.5rem !important; }
+
+    .expense-grid-v5 {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)) !important;
+        gap: 12px !important;
+        width: 100% !important;
+    }
+
+    .expense-card-v5 {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 16px !important;
+        padding: 14px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        width: 100% !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+    }
+
+    /* CARD INTERNAL GRID */
+    .card-top-row-v5 {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 12px !important;
+        padding-bottom: 8px !important;
+        border-bottom: 1px dashed #f1f5f9 !important;
+    }
+
+    .data-point-v5 {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 2px !important;
+    }
+
+    .data-point-v5 .label {
+        font-size: 9px !important;
+        font-weight: 900 !important;
+        color: #94a3b8 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.08em !important;
+    }
+
+    .data-point-v5 .value {
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        color: #1e293b !important;
+    }
+
+    .data-point-v5 .value.amount {
+        color: #0f172a !important;
+        font-weight: 950 !important;
+        font-size: 16px !important;
+    }
+
+    .data-point-v5 .value.type-badge {
+        color: #ef4444 !important;
+        background: #fef2f2 !important;
+        padding: 2px 8px !important;
+        border-radius: 4px !important;
+        width: fit-content !important;
+        font-size: 10px !important;
+        text-transform: uppercase !important;
+    }
+
+    .full-width-data-v5 {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 2px !important;
+    }
+
+    .notes-box-v5 {
+        background: #f8fafc !important;
+        padding: 12px !important;
+        border-radius: 10px !important;
+        font-size: 12px !important;
+        color: #64748b !important;
+        line-height: 1.5 !important;
+        font-style: italic !important;
+        border-left: 3px solid #cbd5e1 !important;
+    }
+
+    /* BUTTONS */
+    .btn-v5 {
+        height: 38px !important;
+        padding: 0 20px !important;
+        border-radius: 8px !important;
+        font-size: 13px !important;
+        font-weight: 800 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        transition: all 0.2s !important;
+        border: none !important;
+    }
+
+    .btn-primary-v5 { background: #0f172a !important; color: #fff !important; }
+    .btn-primary-v5:hover { background: #1e293b !important; transform: translateY(-1px) !important; }
+    
+    .btn-secondary-v5 { background: #fff !important; color: #64748b !important; border: 1.5px solid #e2e8f0 !important; }
+    .btn-secondary-v5:hover { background: #f8fafc !important; }
+
+    .card-actions-v5 {
+        display: flex !important;
+        justify-content: flex-end !important;
+        gap: 10px !important;
+        padding-top: 8px !important;
+        border-top: 1px solid #f1f5f9 !important;
+    }
+
+    .btn-action-v5 {
+        height: 32px !important;
+        padding: 0 14px !important;
+        font-size: 11px !important;
+        font-weight: 900 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        border-radius: 6px !important;
+        background: #fff !important;
+        border: 1.5px solid #e2e8f0 !important;
+        color: #64748b !important;
+    }
+
+    .btn-action-v5.edit:hover { border-color: #2563eb !important; color: #2563eb !important; background: #eff6ff !important; }
+    .btn-action-v5.delete:hover { border-color: #ef4444 !important; color: #ef4444 !important; background: #fef2f2 !important; }
+
+    /* RESPONSIVE */
+    @media (max-width: 1280px) {
+        .summary-grid-v5 { grid-template-columns: repeat(2, 1fr) !important; }
+    }
+    @media (max-width: 768px) {
+        .summary-grid-v5 { grid-template-columns: 1fr !important; }
+    }
+    @media (max-width: 640px) {
+        .expense-grid-v5 { grid-template-columns: 1fr !important; }
+        .summary-grid-v5 { grid-template-columns: 1fr !important; }
+    }
+</style>
+
+<div class="expense-page-container">
+    <!-- SUMMARY CARDS SECTION -->
+    <section class="summary-grid-v5">
+        <div class="summary-card-v5">
+            <div class="card-header">
+                <svg class="text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>Total Expenses</span>
+            </div>
+            <p class="card-value">₹{{ total_expense|floatformat:2 }}</p>
+        </div>
+        
+        <div class="summary-card-v5">
+            <div class="card-header">
+                <svg class="text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <span>This Month</span>
+            </div>
+            <p class="card-value">₹{{ this_month_expense|floatformat:2 }}</p>
+        </div>
+
+        <div class="summary-card-v5">
+            <div class="card-header">
+                <svg class="text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                <span>Active Items</span>
+            </div>
+            <p class="card-value">{{ expense_count }}</p>
+        </div>
+
+        <!-- BALANCE SUMMARY CARD -->
+        {% if balance_data %}
+        <div class="summary-card-v5" style="position: relative;">
+            <div class="card-header">
+                <svg class="text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                <span>Balance Summary</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 12px;">
+                {% with first_combo=balance_data|first %}
+                <div>
+                    <div style="font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Total Income</div>
+                    <div style="font-size: 14px; font-weight: 800; color: #10b981;">+₹{{ first_combo.income|floatformat:0 }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Total Expense</div>
+                    <div style="font-size: 14px; font-weight: 800; color: #ef4444;">-₹{{ first_combo.expense|floatformat:0 }}</div>
+                </div>
+                {% endwith %}
+            </div>
+            <div style="border-top: 1px solid #f1f5f9; padding-top: 8px; margin-top: 8px;">
+                <div style="font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Net Balance</div>
+                {% with first_combo=balance_data|first %}
+                <div style="font-size: 16px; font-weight: 800; {% if first_combo.balance >= 0 %}color: #10b981;{% else %}color: #ef4444;{% endif %}">₹{{ first_combo.balance|floatformat:0 }}</div>
+                {% endwith %}
+            </div>
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- FILTER BAR: Search | Account | Month | Income Source | Category | Apply | Clear -->
+    <section class="filter-toolbar-v5">
+        <form method="get" class="filter-form-v5" id="expFilterForm">
+
+            <!-- 1. Search (fixed width — does not flex-grow) -->
+            <div style="position:relative;flex:0 0 180px;">
+                <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none;"
+                     width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" name="search"
+                       value="{{ filters.search|default:'' }}"
+                       class="filter-control-v5"
+                       style="padding-left:30px;width:100%;"
+                       placeholder="Search...">
+            </div>
+
+            <!-- 2. Account (JS-populated select, synced from shared accounts) -->
+            <select name="account" id="expFilterAccount"
+                    class="filter-control-v5" style="width:140px;" title="Filter by account">
+                <option value="">All Accounts</option>
+            </select>
+
+            <!-- 3. Date / Month -->
+            <input type="month" name="month"
+                   value="{{ filters.month|default:'' }}"
+                   class="filter-control-v5"
+                   style="width:148px;"
+                   title="Filter by month">
+
+            <!-- 4. Income Source (JS-populated select, synced from shared sources) -->
+            <select name="income_source" id="expFilterIncomeSource"
+                    class="filter-control-v5" style="width:148px;" title="Filter by income source">
+                <option value="">All Sources</option>
+            </select>
+
+            <!-- 5. Category -->
+            <select name="category" class="filter-control-v5" style="width:140px;" title="Category">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat.pk }}"
+                    {% if filters.category == cat.pk|stringformat:'s' %}selected{% endif %}>
+                    {{ cat.name }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <!-- 6. Apply + 7. Clear -->
+            <div style="display:flex;gap:8px;flex-shrink:0;margin-left:auto;">
+                <button type="submit" class="btn-v5 btn-primary-v5">Apply</button>
+                <a href="{% url 'expenses:list' %}"
+                   class="btn-v5 btn-secondary-v5"
+                   style="text-decoration:none;display:inline-flex;align-items:center;gap:5px;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 1 0 2.13-5.88L21 8"/>
+                    </svg>
+                    Clear
+                </a>
+            </div>
+
+        </form>
+    </section>
+
+    <script>
+    (function() {
+        /* Populate Expense filter dropdowns from server-synced shared data */
+        var curAccount     = '{{ filters.account|default:""|escapejs }}';
+        var curSrc         = '{{ filters.income_source|default:""|escapejs }}';
+        var accounts       = {{ accounts_json|safe }};
+        var incomeSources  = {{ income_sources_json|safe }};
+
+        function fillSelect(selId, items, current) {
+            var sel = document.getElementById(selId);
+            if (!sel) return;
+            var seen = false;
+            items.forEach(function(name) {
+                if (!name) return;
+                var opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                if (name === current) { opt.selected = true; seen = true; }
+                sel.appendChild(opt);
+            });
+            /* If the saved filter value isn't in the list, still show it selected */
+            if (current && !seen) {
+                var opt = document.createElement('option');
+                opt.value = current;
+                opt.textContent = current;
+                opt.selected = true;
+                sel.appendChild(opt);
+            }
+        }
+
+        fillSelect('expFilterAccount',     accounts,      curAccount);
+        fillSelect('expFilterIncomeSource', incomeSources, curSrc);
+    })();
+    </script>
+
+    <!-- 4. EXPENSE LIST SECTION -->
+    <section class="expense-list-v5">
+        <div class="expense-grid-v5" id="expenseGrid">
+            {% for t in transactions %}
+            <div class="expense-card-v5"
+                 data-expense-id="{{ t.pk }}"
+                 data-date="{{ t.date|date:'Y-m-d' }}"
+                 data-amount="{{ t.amount|stringformat:'s' }}"
+                 data-category-id="{{ t.category_id|default_if_none:'' }}"
+                 data-purpose="{{ t.purpose|default_if_none:'' }}"
+                 data-payment-by="{{ t.payment_by|default_if_none:'' }}"
+                 data-vendor="{{ t.vendor|default_if_none:'' }}"
+                 data-location-site="{{ t.location_site|default_if_none:'' }}"
+                 data-payment-mode="{{ t.payment_mode|default_if_none:'' }}"
+                 data-income-source="{{ t.income_source|default_if_none:'' }}"
+                 data-description="{{ t.description|default_if_none:'' }}">
+                <!-- DATE & AMOUNT -->
+                <div class="card-top-row-v5">
+                    <div class="data-point-v5">
+                        <span class="label">Date</span>
+                        <span class="value">{{ t.date|date:"d M, Y" }}</span>
+                    </div>
+                    <div class="data-point-v5" style="text-align:right;">
+                        <span class="label">Amount</span>
+                        <span class="value amount">₹{{ t.amount|floatformat:2 }}</span>
+                    </div>
+                </div>
+
+                <!-- EXPENSE TYPE & CATEGORY -->
+                <div class="card-top-row-v5" style="border:none;">
+                    <div class="data-point-v5">
+                        <span class="label">Expense Type</span>
+                        <span class="value">{{ t.purpose|default:"-" }}</span>
+                    </div>
+                    <div class="data-point-v5" style="text-align:right;">
+                        <span class="label">Category</span>
+                        <span class="value">{{ t.category.name|default:"General" }}</span>
+                    </div>
+                </div>
+
+                <!-- FROM & PAYMENT TO -->
+                <div class="card-top-row-v5" style="border:none; padding-top:0;">
+                    <div class="data-point-v5">
+                        <span class="label">From</span>
+                        <span class="value">{{ t.payment_by|default:"-" }}</span>
+                    </div>
+                    <div class="data-point-v5" style="text-align:right;">
+                        <span class="label">Payment To</span>
+                        <span class="value">{{ t.vendor|default:"-" }}</span>
+                    </div>
+                </div>
+
+                <!-- INCOME SOURCE & ACCOUNT -->
+                <div class="card-top-row-v5" style="border:none; padding-top:0;">
+                    <div class="data-point-v5">
+                        <span class="label">Income Source</span>
+                        <span class="value">{{ t.income_source|default:"-" }}</span>
+                    </div>
+                    <div class="data-point-v5" style="text-align:right;">
+                        <span class="label">Account</span>
+                        <span class="value">{{ t.payment_mode|default:"-" }}</span>
+                    </div>
+                </div>
+
+                <!-- COMBO BALANCE (Total Expense + Remaining Balance for this Source+Account) -->
+                {% if t.combo_data %}
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#fef2f2;border-radius:10px;padding:10px 12px;border:1px solid #fecaca;">
+                    <div class="data-point-v5">
+                        <span class="label">Total Expense</span>
+                        <span class="value" style="color:#ef4444;font-size:14px;font-weight:900;">-₹{{ t.combo_data.expense|floatformat:0 }}</span>
+                    </div>
+                    <div class="data-point-v5" style="text-align:right;">
+                        <span class="label">Remaining Balance</span>
+                        <span class="value" style="font-size:14px;font-weight:900;{% if t.combo_data.balance >= 0 %}color:#10b981{% else %}color:#ef4444{% endif %};">₹{{ t.combo_data.balance|floatformat:0 }}</span>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- LOCATION -->
+                <div class="full-width-data-v5">
+                    <span class="label" style="font-size:9px; font-weight:900; color:#94a3b8; text-transform:uppercase;">Location / Site</span>
+                    <span class="value" style="font-size:13px; font-weight:700; color:#334155;">{{ t.location_site|default:"-" }}</span>
+                </div>
+
+                <!-- NOTES -->
+                {% if t.description %}
+                <div class="notes-box-v5">
+                    "{{ t.description }}"
+                </div>
+                {% endif %}
+
+                <!-- ACTIONS -->
+                <div class="card-actions-v5">
+                    <button type="button" class="btn-action-v5 edit" data-edit-expense="{{ t.pk }}">Edit</button>
+                    <form method="post" action="{% url 'expenses:delete' t.pk %}" class="m-0" onsubmit="return confirm('Confirm deletion of this expense?')">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-action-v5 delete">Delete</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+            <div id="expenseEmptyState" class="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100"
+                 style="{% if transactions %}display:none;{% endif %}">
+                <p class="text-slate-400 font-black uppercase text-xs tracking-[0.2em]">No expenses found for this selection</p>
+            </div>
+        </div>
+    </section>
+</div>
+
+<!-- ═══════ Add Expense Modal ═══════ -->
+<style>
+  /* Scoped modal styles for Expense module */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 60px 20px;
+    z-index: 1000;
+    display: none;
+    animation: expModalFade 0.2s ease-out;
+  }
+
+  @keyframes expModalFade {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  .modal-overlay.open {
+    display: flex;
+  }
+
+  .modal-content {
+    background: #fff;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 560px;
+    box-shadow: 0 25px 70px rgba(0, 0, 0, 0.2);
+    animation: expModalSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: visible;
+    /* ALLOW POPOVERS TO FLOAT OUTSIDE */
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e2e8f0;
+  }
+
+  @keyframes expModalSlide {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .modal-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .modal-header h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #94a3b8;
+    padding: 6px;
+    border-radius: 8px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+  }
+
+  .modal-close:hover {
+    background: #f1f5f9;
+    color: #475569;
+  }
+
+  .modal-body {
+    padding: 2rem;
+    overflow: visible;
+    /* CRITICAL FOR FLOATING POPUPS */
+  }
+
+  .modal-footer {
+    padding: 1.25rem 2rem;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    background: #f8fafc;
+    border-bottom-left-radius: 20px;
+    border-bottom-right-radius: 20px;
+  }
+
+  /* Management Popover Professional Styling - REBUILT */
+  .mgmt-popover {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 340px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(15, 23, 42, 0.05);
+    z-index: 1000;
+    padding: 1.25rem;
+    animation: popoverReveal 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: top center;
+  }
+
+  @keyframes popoverReveal {
+    from { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  }
+
+  .mgmt-title {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mgmt-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 0;
+    padding-right: 4px;
+  }
+
+  .mgmt-list::-webkit-scrollbar { width: 4px; }
+  .mgmt-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+  .mgmt-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: #f8fafc;
+    margin-bottom: 6px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+
+  .mgmt-item:hover {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  }
+
+  .mgmt-item .name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  .mgmt-del-btn {
+    color: #94a3b8;
+    padding: 6px;
+    border-radius: 8px;
+    transition: all 0.2s;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mgmt-del-btn:hover {
+    color: #ef4444;
+    background: #fee2e2;
+  }
+
+  .container-boost {
+    z-index: 1500 !important;
+  }
+
+  /* Compact 2-column modal layout — replaces missing Tailwind utilities */
+  #addExpenseForm { display: flex; flex-direction: column; gap: 14px; }
+  #addExpenseForm .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  #addExpenseForm .form-row > * { min-width: 0; }
+  #addExpenseForm .form-input,
+  #addExpenseForm select.form-input,
+  #addExpenseForm textarea.form-input { width: 100%; }
+  #addExpenseForm label.field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 4px 0;
+  }
+  #addExpenseForm .field-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    gap: 6px;
+  }
+  #addExpenseForm .field-head label.field-label { margin: 0; }
+  #addExpenseForm .amount-wrap { position: relative; }
+  #addExpenseForm .amount-wrap .currency {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-weight: 600;
+    pointer-events: none;
+  }
+  #addExpenseForm .amount-wrap input { padding-left: 28px; }
+  #addExpenseForm .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding-top: 14px;
+    border-top: 1px solid #f1f5f9;
+    margin-top: 4px;
+  }
+  #addExpenseForm .modal-actions .btn { width: 100%; }
+  #addExpenseFormError {
+    font-size: 12px;
+    font-weight: 600;
+    color: #b91c1c;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+  @media (max-width: 640px) {
+    #addExpenseForm .form-row { grid-template-columns: 1fr; }
+    #addExpenseForm .modal-actions { grid-template-columns: 1fr; }
+  }
+
+  /* Confirmation Modal Styling */
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 3000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeInConfirm 0.2s ease-out;
+  }
+
+  .confirm-card {
+    background: #fff;
+    width: 100%;
+    max-width: 400px;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    animation: slideInConfirm 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes fadeInConfirm {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideInConfirm {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  .confirm-header {
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .confirm-icon {
+    width: 54px;
+    height: 54px;
+    background: #fee2e2;
+    color: #ef4444;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+  }
+
+  .confirm-body {
+    padding: 0 1.5rem 2rem;
+    text-align: center;
+  }
+
+  .confirm-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+
+  .confirm-text {
+    font-size: 0.9rem;
+    color: #64748b;
+    line-height: 1.5;
+  }
+
+  .confirm-footer {
+    padding: 1rem 1.5rem 1.5rem;
+    display: grid;
+    grid-template-cols: 1fr 1fr;
+    gap: 0.75rem;
+    background: #f8fafc;
+    border-top: 1px solid #f1f5f9;
+  }
+</style>
+<div id="addExpenseModal" class="modal-overlay">
+  <div class="modal-content" style="max-width: 640px;">
+    <div class="modal-header">
+      <h3>
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+          style="color: var(--primary);">
+          <path d="M12 4v16m8-8H4" />
+        </svg>
+        <span id="addExpenseModalTitle">Add Expense</span>
+      </h3>
+      <button type="button" class="modal-close" id="closeAddExpenseX" aria-label="Close">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding: 1.5rem 1.75rem;">
+      <form id="addExpenseForm" method="POST" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="type" value="expense">
+        <input type="hidden" name="expense_id" id="expenseEditId" value="">
+        <div id="addExpenseFormError" class="hidden"></div>
+
+        <!-- Row 1: Date | Account -->
+        <div class="form-row">
+          <div>
+            <label class="field-label" for="expDateInput">Date</label>
+            <input id="expDateInput" type="date" name="date" class="form-input" required />
+          </div>
+          <div id="accountContainer" class="relative">
+            <div class="field-head">
+              <label class="field-label" for="accountSelect">Account</label>
+              <button type="button" id="manageAccountIcon" class="text-slate-400" title="Manage Accounts" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+            <select id="accountSelect" name="payment_mode" class="form-input" required>
+              <option value="" disabled selected>Select Account</option>
+              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Account</option>
+            </select>
+            <div id="addAccountWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
+              <input type="text" id="newAccountInput" class="form-input" style="flex:1;" placeholder="New Account Name" />
+              <button type="button" id="saveAccountBtn" class="btn btn-navy btn-sm">Add</button>
+              <button type="button" id="cancelAddAccountBtn" class="btn btn-outline btn-sm">✕</button>
+            </div>
+            <div id="manageAccountWrapper" class="hidden mgmt-popover">
+              <div class="mgmt-title">
+                <span>Manage Accounts</span>
+                <button type="button" id="closeManageAccountBtn" class="modal-close">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div id="accountDeleteList" class="mgmt-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Income Source (full-width, shared with Income module) -->
+        <div id="expIncomeSourceContainer" class="relative">
+          <div class="field-head">
+            <label class="field-label" for="expIncomeSourceSelect">Income Source</label>
+            <button type="button" id="manageExpIncomeSourceIcon" title="Manage Income Sources" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+          <select id="expIncomeSourceSelect" name="income_source" class="form-input">
+            <option value="" disabled selected>Select Income Source</option>
+            <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Income Source</option>
+          </select>
+          <div id="expAddIncomeSourceWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
+            <input type="text" id="expNewIncomeSourceInput" class="form-input" style="flex:1;" placeholder="New Income Source" />
+            <button type="button" id="expSaveIncomeSourceBtn" class="btn btn-navy btn-sm">Add</button>
+            <button type="button" id="expCancelAddIncomeSourceBtn" class="btn btn-outline btn-sm">✕</button>
+          </div>
+          <div id="expManageIncomeSourceWrapper" class="hidden mgmt-popover">
+            <div class="mgmt-title">
+              <span>Manage Income Sources</span>
+              <button type="button" id="expCloseManageIncomeSourceBtn" class="modal-close">
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div id="expIncomeSourceDeleteList" class="mgmt-list"></div>
+          </div>
+        </div>
+
+        <!-- Row 2: Payment By | Payment To -->
+        <div class="form-row">
+          <div id="paymentByContainer" class="relative">
+            <div class="field-head">
+              <label class="field-label" for="paymentBySelect">Payment By</label>
+              <button type="button" id="managePaymentByIcon" title="Manage Options" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+            <select id="paymentBySelect" name="payment_by" class="form-input" required>
+              <option value="" disabled selected>Select From</option>
+              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Payment By</option>
+            </select>
+            <div id="addPaymentByWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
+              <input type="text" id="newPaymentByInput" class="form-input" style="flex:1;" placeholder="New Option" />
+              <button type="button" id="savePaymentByBtn" class="btn btn-navy btn-sm">Add</button>
+              <button type="button" id="cancelAddPaymentByBtn" class="btn btn-outline btn-sm">✕</button>
+            </div>
+            <div id="managePaymentByWrapper" class="hidden mgmt-popover">
+              <div class="mgmt-title">
+                <span>Manage From Options</span>
+                <button type="button" id="closeManagePaymentByBtn" class="modal-close">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div id="paymentByDeleteList" class="mgmt-list"></div>
+            </div>
+          </div>
+          <div>
+            <label class="field-label" for="expVendorInput">Payment To</label>
+            <input id="expVendorInput" type="text" name="vendor" class="form-input" placeholder="Who received the money" required />
+          </div>
+        </div>
+
+        <!-- Row 3: Category | Amount -->
+        <div class="form-row">
+          <div id="categoryContainer" class="relative">
+            <div class="field-head">
+              <label class="field-label" for="categorySelect">Category</label>
+              <button type="button" id="manageCategoryIcon" title="Manage Categories" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+            <select id="categorySelect" name="category" class="form-input" required>
+              <option value="" disabled selected>Select Category</option>
+              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Category</option>
+            </select>
+            <div id="addCategoryWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
+              <input type="text" id="newCategoryInput" class="form-input" style="flex:1;" placeholder="New Category" />
+              <button type="button" id="saveCategoryBtn" class="btn btn-navy btn-sm">Add</button>
+              <button type="button" id="cancelAddCategoryBtn" class="btn btn-outline btn-sm">✕</button>
+            </div>
+            <div id="manageCategoryWrapper" class="hidden mgmt-popover">
+              <div class="mgmt-title">
+                <span>Manage Categories</span>
+                <button type="button" id="closeManageCategoryBtn" class="modal-close">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div id="categoryDeleteList" class="mgmt-list"></div>
+            </div>
+          </div>
+          <div>
+            <label class="field-label" for="expAmountInput">Amount</label>
+            <div class="amount-wrap">
+              <span class="currency">₹</span>
+              <input id="expAmountInput" type="number" step="0.01" name="amount" class="form-input" placeholder="0.00" required />
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: Expense Type | Location / Site -->
+        <div class="form-row">
+          <div id="expenseTypeContainer" class="relative">
+            <div class="field-head">
+              <label class="field-label" for="expenseTypeSelect">Expense Type</label>
+              <button type="button" id="manageExpenseTypeIcon" title="Manage Types" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+            <select id="expenseTypeSelect" name="purpose" class="form-input" required>
+              <option value="" disabled selected>Select Type</option>
+              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Expense Type</option>
+            </select>
+            <div id="addExpenseTypeWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
+              <input type="text" id="newExpenseTypeInput" class="form-input" style="flex:1;" placeholder="New Type" />
+              <button type="button" id="saveExpenseTypeBtn" class="btn btn-navy btn-sm">Add</button>
+              <button type="button" id="cancelAddExpenseTypeBtn" class="btn btn-outline btn-sm">✕</button>
+            </div>
+            <div id="manageExpenseTypeWrapper" class="hidden mgmt-popover">
+              <div class="mgmt-title">
+                <span>Manage Expense Types</span>
+                <button type="button" id="closeExpenseTypeBtn" class="modal-close">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div id="expenseTypeDeleteList" class="mgmt-list"></div>
+            </div>
+          </div>
+          <div id="locationContainer" class="relative">
+            <div class="field-head">
+              <label class="field-label" for="locationSelect">Location / Site</label>
+              <button type="button" id="manageLocationIcon" title="Manage Locations" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+            <select id="locationSelect" name="location_site" class="form-input" required>
+              <option value="" disabled selected>Select Location / Site</option>
+              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Location/Site</option>
+            </select>
+            <div id="addLocationWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
+              <input type="text" id="newLocationInput" class="form-input" style="flex:1;" placeholder="New Location/Site" />
+              <button type="button" id="saveLocationBtn" class="btn btn-navy btn-sm">Add</button>
+              <button type="button" id="cancelAddLocationBtn" class="btn btn-outline btn-sm">✕</button>
+            </div>
+            <div id="manageLocationWrapper" class="hidden mgmt-popover">
+              <div class="mgmt-title">
+                <span>Manage Locations</span>
+                <button type="button" id="closeManageLocationBtn" class="modal-close">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div id="locationDeleteList" class="mgmt-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 5: Notes (full-width) -->
+        <div>
+          <label class="field-label" for="expNotesInput">Notes / Remarks</label>
+          <textarea id="expNotesInput" name="description" class="form-input" rows="3" placeholder="Remarks, notes, or explanations..."></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" id="closeAddExpenseCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveAddExpenseBtn">Save Expense</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
+
+<!-- ═══════ Delete Confirmation Modal ═══════ -->
+<div id="deleteConfirmModal" class="confirm-overlay">
+  <div class="confirm-card">
+    <div class="confirm-header">
+      <div class="confirm-icon">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </div>
+      <h4 class="confirm-title">Delete Item</h4>
+    </div>
+    <div class="confirm-body">
+      <p class="confirm-text">Are you sure you want to delete:</p>
+      <p id="confirmItemName" class="font-bold text-slate-800 mt-1 text-base"></p>
+      <p class="text-xs text-slate-400 mt-4 italic">This action cannot be undone.</p>
+    </div>
+    <div class="confirm-footer"
+      style="display: flex; gap: 0.75rem; padding: 1.25rem 1.5rem; background: #f8fafc; border-top: 1px solid #f1f5f9;">
+      <button type="button" id="cancelDeleteBtn" class="btn btn-outline flex-1">Cancel</button>
+      <button type="button" id="confirmDeleteBtn"
+        class="btn bg-red-500 hover:bg-red-600 text-white flex-1 font-bold">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const openBtn = document.getElementById('openAddExpenseModal');
+    const modal = document.getElementById('addExpenseModal');
+    const closeX = document.getElementById('closeAddExpenseX');
+    const closeCanc = document.getElementById('closeAddExpenseCancel');
+
+    const addForm = document.getElementById('addExpenseForm');
+    const formError = document.getElementById('addExpenseFormError');
+    const saveBtn = document.getElementById('saveAddExpenseBtn');
+    const modalTitle = document.getElementById('addExpenseModalTitle');
+    const editIdInput = document.getElementById('expenseEditId');
+    const dateInput = addForm ? addForm.querySelector('input[name="date"]') : null;
+    const amountInput = addForm ? addForm.querySelector('input[name="amount"]') : null;
+    const vendorInput = addForm ? addForm.querySelector('input[name="vendor"]') : null;
+    const notesInput = addForm ? addForm.querySelector('textarea[name="description"]') : null;
+    const accountSelectEl = document.getElementById('accountSelect');
+    const paymentBySelectEl = document.getElementById('paymentBySelect');
+    const expIncomeSourceSelectEl = document.getElementById('expIncomeSourceSelect');
+    const categorySelectEl = document.getElementById('categorySelect');
+    const expenseTypeSelectEl = document.getElementById('expenseTypeSelect');
+    const locationSelectEl = document.getElementById('locationSelect');
+    const expenseGrid = document.getElementById('expenseGrid');
+    const emptyState = document.getElementById('expenseEmptyState');
+    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    const ADD_EXPENSE_URL = "{% url 'expenses:add' %}";
+
+    function todayISO() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function setSelectValue(selectEl, value) {
+      if (!selectEl) return;
+      const v = value == null ? '' : String(value);
+      if (!v) {
+        selectEl.selectedIndex = 0;
+        return;
+      }
+      selectEl.value = v;
+      if (selectEl.value !== v) {
+        // Option not in list (legacy/custom value) — append it so prefill is visible
+        const opt = new Option(v, v);
+        selectEl.add(opt);
+        selectEl.value = v;
+      }
+    }
+
+    function setEditMode(isEdit) {
+      if (modalTitle) modalTitle.textContent = isEdit ? 'Edit Expense' : 'Add Expense';
+      if (saveBtn) saveBtn.textContent = isEdit ? 'Save Changes' : 'Save Expense';
+    }
+
+    function resetFormForAdd() {
+      if (!addForm) return;
+      addForm.reset();
+      if (editIdInput) editIdInput.value = '';
+      if (dateInput) dateInput.value = todayISO();
+      // Reset selects to placeholder
+      [accountSelectEl, paymentBySelectEl, expIncomeSourceSelectEl, categorySelectEl, expenseTypeSelectEl, locationSelectEl]
+        .forEach(s => { if (s) s.selectedIndex = 0; });
+      setEditMode(false);
+    }
+
+    function prefillFormFromCard(card) {
+      if (!addForm || !card) return;
+      if (editIdInput) editIdInput.value = card.dataset.expenseId || '';
+      if (dateInput) dateInput.value = card.dataset.date || '';
+      if (amountInput) amountInput.value = card.dataset.amount || '';
+      if (vendorInput) vendorInput.value = card.dataset.vendor || '';
+      if (notesInput) notesInput.value = card.dataset.description || '';
+      setSelectValue(accountSelectEl, card.dataset.paymentMode);
+      setSelectValue(paymentBySelectEl, card.dataset.paymentBy);
+      setSelectValue(expIncomeSourceSelectEl, card.dataset.incomeSource);
+      setSelectValue(categorySelectEl, card.dataset.categoryId);
+      setSelectValue(expenseTypeSelectEl, card.dataset.purpose);
+      setSelectValue(locationSelectEl, card.dataset.locationSite);
+      setEditMode(true);
+    }
+
+    function openModal(forEdit) {
+      if (formError) {
+        formError.textContent = '';
+        formError.classList.add('hidden');
+      }
+      if (!forEdit) {
+        resetFormForAdd();
+      }
+      modal.classList.add('open');
+    }
+    function closeModal() {
+      modal.classList.remove('open');
+      // Always exit edit mode when closing so next open is a clean Add
+      if (editIdInput) editIdInput.value = '';
+      setEditMode(false);
+    }
+
+    function escapeHtml(s) {
+      if (s === null || s === undefined) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function buildExpenseCard(exp) {
+      const dash = '-';
+      const notesBlock = exp.description
+        ? `<div class="notes-box-v5">"${escapeHtml(exp.description)}"</div>`
+        : '';
+      let comboBlock = '';
+      if (exp.combo) {
+        const bal = parseFloat(exp.combo.balance);
+        const balColor = bal >= 0 ? '#10b981' : '#ef4444';
+        const fmtNum = n => Math.abs(parseFloat(n)).toLocaleString('en-IN', {maximumFractionDigits: 0});
+        comboBlock = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#fef2f2;border-radius:10px;padding:10px 12px;border:1px solid #fecaca;">
+            <div class="data-point-v5">
+              <span class="label">Total Expense</span>
+              <span class="value" style="color:#ef4444;font-size:14px;font-weight:900;">-₹${fmtNum(exp.combo.expense)}</span>
+            </div>
+            <div class="data-point-v5" style="text-align:right;">
+              <span class="label">Remaining Balance</span>
+              <span class="value" style="font-size:14px;font-weight:900;color:${balColor};">₹${fmtNum(bal)}</span>
+            </div>
+          </div>`;
+      }
+      const card = document.createElement('div');
+      card.className = 'expense-card-v5';
+      card.dataset.expenseId = exp.id;
+      card.dataset.date = exp.date || '';
+      card.dataset.amount = exp.amount || '';
+      card.dataset.categoryId = exp.category_id == null ? '' : String(exp.category_id);
+      card.dataset.purpose = exp.expense_type || '';
+      card.dataset.paymentBy = exp.payment_by || '';
+      card.dataset.vendor = exp.payment_to || '';
+      card.dataset.locationSite = exp.location || '';
+      card.dataset.paymentMode = exp.payment_mode || '';
+      card.dataset.incomeSource = exp.income_source || '';
+      card.dataset.description = exp.description || '';
+      card.innerHTML = `
+        <div class="card-top-row-v5">
+          <div class="data-point-v5">
+            <span class="label">Date</span>
+            <span class="value">${escapeHtml(exp.date_display) || dash}</span>
+          </div>
+          <div class="data-point-v5" style="text-align:right;">
+            <span class="label">Amount</span>
+            <span class="value amount">₹${escapeHtml(exp.amount_display)}</span>
+          </div>
+        </div>
+        <div class="card-top-row-v5" style="border:none;">
+          <div class="data-point-v5">
+            <span class="label">Expense Type</span>
+            <span class="value">${escapeHtml(exp.expense_type) || dash}</span>
+          </div>
+          <div class="data-point-v5" style="text-align:right;">
+            <span class="label">Category</span>
+            <span class="value">${escapeHtml(exp.category) || 'General'}</span>
+          </div>
+        </div>
+        <div class="card-top-row-v5" style="border:none; padding-top:0;">
+          <div class="data-point-v5">
+            <span class="label">From</span>
+            <span class="value">${escapeHtml(exp.payment_by) || dash}</span>
+          </div>
+          <div class="data-point-v5" style="text-align:right;">
+            <span class="label">Payment To</span>
+            <span class="value">${escapeHtml(exp.payment_to) || dash}</span>
+          </div>
+        </div>
+        <div class="card-top-row-v5" style="border:none; padding-top:0;">
+          <div class="data-point-v5">
+            <span class="label">Income Source</span>
+            <span class="value">${escapeHtml(exp.income_source) || dash}</span>
+          </div>
+          <div class="data-point-v5" style="text-align:right;">
+            <span class="label">Account</span>
+            <span class="value">${escapeHtml(exp.payment_mode) || dash}</span>
+          </div>
+        </div>
+        ${comboBlock}
+        <div class="full-width-data-v5">
+          <span class="label" style="font-size:9px; font-weight:900; color:#94a3b8; text-transform:uppercase;">Location / Site</span>
+          <span class="value" style="font-size:13px; font-weight:700; color:#334155;">${escapeHtml(exp.location) || dash}</span>
+        </div>
+        ${notesBlock}
+        <div class="card-actions-v5">
+          <button type="button" class="btn-action-v5 edit" data-edit-expense="${escapeHtml(exp.id)}">Edit</button>
+          <form method="post" action="${escapeHtml(exp.delete_url)}" class="m-0" onsubmit="return confirm('Confirm deletion of this expense?')">
+            <input type="hidden" name="csrfmiddlewaretoken" value="${escapeHtml(csrfToken)}">
+            <button type="submit" class="btn-action-v5 delete">Delete</button>
+          </form>
+        </div>
+      `;
+      return card;
+    }
+
+    function showFormError(msg) {
+      if (!formError) return;
+      formError.textContent = msg || 'Could not save expense. Please check the fields and try again.';
+      formError.classList.remove('hidden');
+    }
+
+    if (addForm) {
+      addForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (formError) formError.classList.add('hidden');
+
+        const fd = new FormData(addForm);
+        fd.set('type', 'expense');
+        // expense_id is part of the form already; don't send it to the server.
+        const editId = (editIdInput && editIdInput.value) ? editIdInput.value : '';
+        fd.delete('expense_id');
+
+        const url = editId ? `/expenses/${encodeURIComponent(editId)}/edit/` : ADD_EXPENSE_URL;
+        const originalLabel = saveBtn ? saveBtn.textContent : '';
+        if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.textContent = editId ? 'Saving...' : 'Saving...';
+        }
+
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest',
+              'X-CSRFToken': csrfToken,
+              'Accept': 'application/json',
+            },
+            body: fd,
+            credentials: 'same-origin',
+          });
+
+          let data = null;
+          try { data = await res.json(); } catch (_) { /* non-JSON response */ }
+
+          if (res.ok && data && data.success && data.expense) {
+            const newCard = buildExpenseCard(data.expense);
+            if (editId && expenseGrid) {
+              const existing = expenseGrid.querySelector(
+                `.expense-card-v5[data-expense-id="${CSS.escape(String(data.expense.id))}"]`
+              );
+              if (existing) {
+                existing.replaceWith(newCard);
+              } else {
+                expenseGrid.insertBefore(newCard, expenseGrid.firstChild);
+              }
+            } else if (expenseGrid) {
+              if (emptyState) emptyState.style.display = 'none';
+              expenseGrid.insertBefore(newCard, expenseGrid.firstChild);
+            }
+            closeModal();
+            resetFormForAdd();
+          } else {
+            const msg = (data && (data.message || data.error)) ||
+                        'Could not save expense. Please check the fields and try again.';
+            showFormError(msg);
+          }
+        } catch (err) {
+          showFormError('Network error. Please try again.');
+        } finally {
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalLabel || (editId ? 'Save Changes' : 'Save Expense');
+          }
+        }
+      });
+    }
+
+    // Edit click delegation: open modal with prefilled data
+    if (expenseGrid) {
+      expenseGrid.addEventListener('click', function (e) {
+        const editBtn = e.target.closest('[data-edit-expense]');
+        if (!editBtn) return;
+        e.preventDefault();
+        const card = editBtn.closest('.expense-card-v5');
+        if (!card) return;
+        prefillFormFromCard(card);
+        openModal(true);
+      });
+    }
+
+    openBtn.addEventListener('click', () => openModal(false));
+    closeX.addEventListener('click', closeModal);
+    closeCanc.addEventListener('click', closeModal);
+
+    // Global Confirmation Modal Logic
+    const confirmModal = document.getElementById('deleteConfirmModal');
+    const confirmText = document.getElementById('confirmItemName');
+    const confirmBtn = document.getElementById('confirmDeleteBtn');
+    const cancelBtn = document.getElementById('cancelDeleteBtn');
+    let currentConfirmCallback = null;
+
+    confirmBtn.onclick = () => {
+      if (currentConfirmCallback) currentConfirmCallback();
+      confirmModal.style.display = 'none';
+    };
+    cancelBtn.onclick = () => { confirmModal.style.display = 'none'; };
+    confirmModal.onclick = (e) => { if (e.target === confirmModal) confirmModal.style.display = 'none'; };
+
+    function showConfirm(itemName, callback) {
+      confirmText.textContent = `"${itemName}"`;
+      currentConfirmCallback = callback;
+      confirmModal.style.display = 'flex';
+    }
+
+    // Close main modal on overlay click
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
+    });
+
+    // Close main modal on Escape key
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+    });
+
+    // ----------------------------------------------------
+    // Dynamic Select Add/Delete Manager
+    // ----------------------------------------------------
+    function setupDynamicSelect(config) {
+      const container = document.getElementById(config.containerId);
+      const select = document.getElementById(config.selectId);
+      const addWrapper = document.getElementById(config.addWrapperId);
+      const input = document.getElementById(config.inputId);
+      const saveBtn = document.getElementById(config.saveBtnId);
+      const cancelAddBtn = document.getElementById(config.cancelAddBtnId);
+      const manageIcon = document.getElementById(config.manageIconId);
+      const manageWrapper = document.getElementById(config.manageWrapperId);
+      const deleteListEl = document.getElementById(config.deleteListId);
+      const closeManageBtn = document.getElementById(config.closeManageBtnId);
+      const storageKey = config.storageKey;
+      const deletedDefaultsKey = `spim_deleted_defaults_${storageKey}`;
+
+      let customItems = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      let deletedDefaults = JSON.parse(localStorage.getItem(deletedDefaultsKey) || "[]");
+
+      function renderOptions() {
+        while (select.options.length > 2) select.remove(2);
+
+        // Render Defaults (filtered by deleted)
+        config.defaults.forEach(opt => {
+          if (!deletedDefaults.includes(opt.name)) {
+            select.add(new Option(opt.name, opt.value));
+          }
+        });
+        // Render Custom
+        customItems.forEach(item => {
+          select.add(new Option(item, item));
+        });
+      }
+
+      function renderDeleteList() {
+        deleteListEl.innerHTML = '';
+
+        // Render Defaults
+        config.defaults.forEach(opt => {
+          if (deletedDefaults.includes(opt.name)) return;
+          const row = document.createElement('div');
+          row.className = 'mgmt-item';
+          row.innerHTML = `
+            <div class="name-box"><span class="name">${opt.name}</span></div>
+            <button type="button" class="mgmt-del-btn" data-item="${opt.name}" data-type="default" title="Delete Item">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+          `;
+          deleteListEl.appendChild(row);
+        });
+
+        // Render Custom
+        customItems.forEach(item => {
+          const row = document.createElement('div');
+          row.className = 'mgmt-item';
+          row.innerHTML = `
+            <div class="name-box"><span class="name">${item}</span></div>
+            <button type="button" class="mgmt-del-btn" data-item="${item}" data-type="custom" title="Delete Item">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+          `;
+          deleteListEl.appendChild(row);
+        });
+      }
+
+      renderOptions();
+
+      select.addEventListener('change', () => {
+        if (select.value === 'add_new') {
+          addWrapper.classList.remove('hidden');
+          addWrapper.classList.add('flex');
+          manageWrapper.classList.add('hidden');
+          input.focus();
+          select.value = '';
+        } else {
+          addWrapper.classList.add('hidden');
+          addWrapper.classList.remove('flex');
+        }
+      });
+
+      saveBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const val = input.value.trim();
+        const valLower = val.toLowerCase();
+        const existsInDefaults = config.defaults.some(d => d.value.toLowerCase() === valLower);
+        const existsInCustom = customItems.some(i => i.toLowerCase() === valLower);
+        if (val && !existsInCustom && !existsInDefaults) {
+          customItems.push(val);
+          localStorage.setItem(storageKey, JSON.stringify(customItems));
+          // If it was a deleted default, bring it back
+          if (deletedDefaults.includes(val)) {
+            deletedDefaults = deletedDefaults.filter(d => d !== val);
+            localStorage.setItem(deletedDefaultsKey, JSON.stringify(deletedDefaults));
+          }
+          renderOptions();
+          if (!manageWrapper.classList.contains('hidden')) renderDeleteList();
+          select.value = val;
+          if (config.onSave) config.onSave(val);
+        }
+        input.value = '';
+        addWrapper.classList.add('hidden');
+        addWrapper.classList.remove('flex');
+      });
+
+      cancelAddBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        input.value = '';
+        addWrapper.classList.add('hidden');
+        addWrapper.classList.remove('flex');
+      });
+
+      manageIcon.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isHidden = manageWrapper.classList.contains('hidden');
+        document.querySelectorAll('.mgmt-popover').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.relative').forEach(el => el.classList.remove('container-boost'));
+        if (isHidden) {
+          renderDeleteList();
+          manageWrapper.classList.remove('hidden');
+          container.classList.add('container-boost');
+        } else {
+          manageWrapper.classList.add('hidden');
+          container.classList.remove('container-boost');
+        }
+      });
+
+      closeManageBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        manageWrapper.classList.add('hidden');
+        container.classList.remove('container-boost');
+      });
+
+      deleteListEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (btn && btn.dataset.item) {
+          e.preventDefault();
+          e.stopPropagation();
+          const itemToDelete = btn.dataset.item;
+          const typeToDelete = btn.dataset.type;
+
+          showConfirm(itemToDelete, () => {
+            if (typeToDelete === 'custom') {
+              customItems = customItems.filter(i => i !== itemToDelete);
+              localStorage.setItem(storageKey, JSON.stringify(customItems));
+            } else {
+              // Delete protection removed: defaults can now be "deleted" (hidden)
+              deletedDefaults.push(itemToDelete);
+              localStorage.setItem(deletedDefaultsKey, JSON.stringify(deletedDefaults));
+            }
+            renderOptions();
+            renderDeleteList();
+            if (select.value === itemToDelete) select.value = '';
+          });
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!container.contains(e.target)) {
+          manageWrapper.classList.add('hidden');
+          container.classList.remove('container-boost');
+        }
+      });
+    }
+
+    // 1. Account Setup — centralized shared store
+    (function() {
+      const key = 'spim_shared_accounts';
+      const serverAccounts = {{ accounts_json|safe }};
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const seen = new Set(existing.map(x => x.toLowerCase()));
+      serverAccounts.forEach(n => {
+        if (n && !seen.has(n.toLowerCase())) { existing.push(n); seen.add(n.toLowerCase()); }
+      });
+      localStorage.setItem(key, JSON.stringify(existing));
+    })();
+
+    setupDynamicSelect({
+      containerId: 'accountContainer',
+      selectId: 'accountSelect',
+      addWrapperId: 'addAccountWrapper', inputId: 'newAccountInput', saveBtnId: 'saveAccountBtn', cancelAddBtnId: 'cancelAddAccountBtn',
+      manageIconId: 'manageAccountIcon', manageWrapperId: 'manageAccountWrapper', deleteListId: 'accountDeleteList', closeManageBtnId: 'closeManageAccountBtn',
+      storageKey: 'spim_shared_accounts',
+      defaults: [
+        { name: 'Cash', value: 'Cash' },
+        { name: 'Bank Account 1', value: 'Bank Account 1' },
+        { name: 'Office Petty Cash', value: 'Office Petty Cash' },
+        { name: 'Company Card', value: 'Company Card' }
+      ],
+      onSave: function(val) {
+        fetch('/income/api/accounts/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+          body: JSON.stringify({ name: val })
+        }).then(r => r.json()).then(data => {
+          if (data.accounts) {
+            const cur = JSON.parse(localStorage.getItem('spim_shared_accounts') || '[]');
+            const seen = new Set(cur.map(x => x.toLowerCase()));
+            data.accounts.forEach(n => { if (!seen.has(n.toLowerCase())) cur.push(n); });
+            localStorage.setItem('spim_shared_accounts', JSON.stringify(cur));
+          }
+        }).catch(() => {});
+      }
+    });
+
+    // 2. Payment By Setup
+    setupDynamicSelect({
+      containerId: 'paymentByContainer',
+      selectId: 'paymentBySelect',
+      addWrapperId: 'addPaymentByWrapper', inputId: 'newPaymentByInput', saveBtnId: 'savePaymentByBtn', cancelAddBtnId: 'cancelAddPaymentByBtn',
+      manageIconId: 'managePaymentByIcon', manageWrapperId: 'managePaymentByWrapper', deleteListId: 'paymentByDeleteList', closeManageBtnId: 'closeManagePaymentByBtn',
+      storageKey: 'spim_custom_payment_by',
+      defaults: [
+        { name: 'Owner', value: 'Owner' },
+        { name: 'Admin', value: 'Admin' },
+        { name: 'Manager', value: 'Manager' },
+        { name: 'Office Staff', value: 'Office Staff' }
+      ]
+    });
+
+    // 3. Income Source Setup — centralized shared store (synced with Income module)
+    (function() {
+      const key = 'spim_shared_income_sources';
+      const serverSources = {{ income_sources_json|safe }};
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const seen = new Set(existing.map(x => x.toLowerCase()));
+      serverSources.forEach(n => {
+        if (n && !seen.has(n.toLowerCase())) { existing.push(n); seen.add(n.toLowerCase()); }
+      });
+      localStorage.setItem(key, JSON.stringify(existing));
+    })();
+
+    setupDynamicSelect({
+      containerId: 'expIncomeSourceContainer',
+      selectId: 'expIncomeSourceSelect',
+      addWrapperId: 'expAddIncomeSourceWrapper', inputId: 'expNewIncomeSourceInput',
+      saveBtnId: 'expSaveIncomeSourceBtn', cancelAddBtnId: 'expCancelAddIncomeSourceBtn',
+      manageIconId: 'manageExpIncomeSourceIcon', manageWrapperId: 'expManageIncomeSourceWrapper',
+      deleteListId: 'expIncomeSourceDeleteList', closeManageBtnId: 'expCloseManageIncomeSourceBtn',
+      storageKey: 'spim_shared_income_sources',
+      defaults: [
+        { name: 'Client', value: 'Client' },
+        { name: 'Customer', value: 'Customer' },
+        { name: 'Vendor', value: 'Vendor' },
+        { name: 'Other', value: 'Other' }
+      ],
+      onSave: function(val) {
+        fetch('/income/api/sources/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+          body: JSON.stringify({ name: val })
+        }).then(r => r.json()).then(data => {
+          if (data.sources) {
+            const cur = JSON.parse(localStorage.getItem('spim_shared_income_sources') || '[]');
+            const seen = new Set(cur.map(x => x.toLowerCase()));
+            data.sources.forEach(n => { if (!seen.has(n.toLowerCase())) cur.push(n); });
+            localStorage.setItem('spim_shared_income_sources', JSON.stringify(cur));
+          }
+        }).catch(() => {});
+      }
+    });
+
+    // 4. Category Setup
+    const djangoCategories = [
+      {% for cat in categories %}
+        { name: "{{ cat.name|escapejs }}", value: "{{ cat.pk }}" },
+      {% endfor %}
+    ];
+    setupDynamicSelect({
+      containerId: 'categoryContainer',
+      selectId: 'categorySelect',
+      addWrapperId: 'addCategoryWrapper', inputId: 'newCategoryInput', saveBtnId: 'saveCategoryBtn', cancelAddBtnId: 'cancelAddCategoryBtn',
+      manageIconId: 'manageCategoryIcon', manageWrapperId: 'manageCategoryWrapper', deleteListId: 'categoryDeleteList', closeManageBtnId: 'closeManageCategoryBtn',
+      storageKey: 'spim_custom_categories',
+      defaults: djangoCategories
+    });
+
+    // 4. Expense Type Setup
+    setupDynamicSelect({
+      containerId: 'expenseTypeContainer',
+      selectId: 'expenseTypeSelect',
+      addWrapperId: 'addExpenseTypeWrapper', inputId: 'newExpenseTypeInput', saveBtnId: 'saveExpenseTypeBtn', cancelAddBtnId: 'cancelAddExpenseTypeBtn',
+      manageIconId: 'manageExpenseTypeIcon', manageWrapperId: 'manageExpenseTypeWrapper', deleteListId: 'expenseTypeDeleteList', closeManageBtnId: 'closeExpenseTypeBtn',
+      storageKey: 'spim_custom_expense_types',
+      defaults: [
+        { name: 'Office Expense', value: 'Office Expense' },
+        { name: 'Travel', value: 'Travel' },
+        { name: 'Material', value: 'Material' },
+        { name: 'Utility', value: 'Utility' },
+        { name: 'Miscellaneous', value: 'Miscellaneous' }
+      ]
+    });
+
+    // 5. Location / Site Setup — centralized shared store
+    (function() {
+      const SHARED_KEY = 'spim_shared_locations';
+      const serverLocations = {{ location_sites_json|safe }};
+
+      // Merge server-side centralized list into the shared localStorage key
+      const existing  = JSON.parse(localStorage.getItem(SHARED_KEY) || '[]');
+      const lowerSeen = new Set(existing.map(x => x.toLowerCase()));
+      serverLocations.forEach(n => {
+        if (n && !lowerSeen.has(n.toLowerCase())) { existing.push(n); lowerSeen.add(n.toLowerCase()); }
+      });
+      localStorage.setItem(SHARED_KEY, JSON.stringify(existing));
+    })();
+
+    setupDynamicSelect({
+      containerId: 'locationContainer',
+      selectId: 'locationSelect',
+      addWrapperId: 'addLocationWrapper', inputId: 'newLocationInput', saveBtnId: 'saveLocationBtn', cancelAddBtnId: 'cancelAddLocationBtn',
+      manageIconId: 'manageLocationIcon', manageWrapperId: 'manageLocationWrapper', deleteListId: 'locationDeleteList', closeManageBtnId: 'closeManageLocationBtn',
+      storageKey: 'spim_shared_locations',
+      defaults: []
+    });
+
+    // Also POST new location to centralized API so other modules see it instantly
+    document.getElementById('saveLocationBtn').addEventListener('click', function() {
+      const val = (document.getElementById('newLocationInput').value || '').trim();
+      if (val) {
+        fetch('/branches/api/locations/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+          body: JSON.stringify({ name: val })
+        }).then(r => r.json()).then(data => {
+          if (data.locations) {
+            const key = 'spim_shared_locations';
+            const cur = JSON.parse(localStorage.getItem(key) || '[]');
+            const seen = new Set(cur.map(x => x.toLowerCase()));
+            data.locations.forEach(n => { if (!seen.has(n.toLowerCase())) cur.push(n); });
+            localStorage.setItem(key, JSON.stringify(cur));
+          }
+        }).catch(() => {});
+      }
+    });
+  })();
+</script>
 {% endblock %}

@@ -14,30 +14,42 @@
 {% block content %}
 <div class="max-w-2xl mx-auto">
     <div class="card p-6">
-        <form method="post" class="space-y-4">
+        <form method="post" id="editEmployeeForm" class="space-y-4">
             {% csrf_token %}
-            <div class="form-group">
-                <label class="form-label">Full Name</label>
-                {{ form.name }}
-            </div>
             <div class="grid grid-2">
+                <div class="form-group col-span-2">
+                    <label class="form-label">Full Name</label>
+                    {{ form.name }}
+                </div>
                 <div class="form-group">
                     <label class="form-label">Role</label>
-                    {{ form.role }}
+                    {{ form.designation }}
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Base Salary</label>
-                    {{ form.base_salary }}
+                    <label class="form-label">Level <small class="text-slate-400">(e.g. L1)</small></label>
+                    {{ form.level }}
                 </div>
-            </div>
-            <div class="grid grid-2">
                 <div class="form-group">
                     <label class="form-label">Location</label>
-                    {{ form.location }}
+                    <input type="text" name="location" id="editEmpLocation" list="editLocationList"
+                           class="form-input" placeholder="e.g. Tirunelveli"
+                           value="{{ employee.location }}" autocomplete="off">
+                    <datalist id="editLocationList"></datalist>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Site</label>
-                    {{ form.site }}
+                    <input type="text" name="site" id="editEmpSite" list="editSiteList"
+                           class="form-input" placeholder="e.g. Site 1 / Valliyur"
+                           value="{{ employee.site }}" autocomplete="off">
+                    <datalist id="editSiteList"></datalist>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Employee ID</label>
+                    {{ form.employee_id }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mobile App Password</label>
+                    {{ form.mobile_app_password }}
                 </div>
             </div>
 
@@ -48,4 +60,66 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const serverLocations = {{ location_sites_json|safe }};
+  const SHARED_KEY = 'spim_shared_locations';
+
+  // Merge server data into shared localStorage
+  const existing  = JSON.parse(localStorage.getItem(SHARED_KEY) || '[]');
+  const lowerSeen = new Set(existing.map(x => x.toLowerCase()));
+  serverLocations.forEach(n => {
+    if (n && !lowerSeen.has(n.toLowerCase())) { existing.push(n); lowerSeen.add(n.toLowerCase()); }
+  });
+  localStorage.setItem(SHARED_KEY, JSON.stringify(existing));
+
+  // Extract unique location and site parts
+  const locationSet = new Set();
+  const siteSet     = new Set();
+  existing.forEach(entry => {
+    const idx = entry.indexOf(' / ');
+    if (idx > -1) {
+      locationSet.add(entry.substring(0, idx).trim());
+      siteSet.add(entry.substring(idx + 3).trim());
+    } else {
+      locationSet.add(entry.trim());
+    }
+  });
+
+  function fillDatalist(id, items) {
+    const dl = document.getElementById(id);
+    if (!dl) return;
+    dl.innerHTML = '';
+    items.forEach(val => {
+      const opt = document.createElement('option');
+      opt.value = val;
+      dl.appendChild(opt);
+    });
+  }
+
+  fillDatalist('editLocationList', [...locationSet].sort());
+  fillDatalist('editSiteList',     [...siteSet].sort());
+
+  // POST new combination to API on form submit
+  document.getElementById('editEmployeeForm').addEventListener('submit', function() {
+    const loc  = (document.getElementById('editEmpLocation').value || '').trim();
+    const site = (document.getElementById('editEmpSite').value || '').trim();
+    if (loc || site) {
+      const combined = loc && site ? `${loc} / ${site}` : (loc || site);
+      const csrfEl = document.querySelector('[name=csrfmiddlewaretoken]');
+      fetch('/branches/api/locations/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfEl ? csrfEl.value : ''
+        },
+        body: JSON.stringify({ name: combined })
+      }).catch(() => {});
+    }
+  });
+})();
+</script>
 {% endblock %}

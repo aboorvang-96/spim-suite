@@ -92,9 +92,10 @@ def company_settings_json(request):
             'email': '',
         })
     return JsonResponse({
-        'name': company.name or '',
-        'address': company.address or '',
-        'contact_number': company.contact_number or '',
-        'gst_number': company.gst_number or '',
-        'email': company.email or '',
+        'name':              company.name or '',
+        'address':           company.address or '',
+        'contact_number':    company.contact_number or '',
+        'gst_number':        company.gst_number or '',
+        'email':             company.email or '',
+        'managing_director': company.managing_director or '',
     })

@@ -1,40 +1,158 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse
-from django.db.models import Q
+from django.http import JsonResponse, HttpResponse
+from django.db.models import Q, Avg, Count
+import json
 from .models import Income
 from .forms import IncomeForm
+import csv
+from accounts.views import is_admin_user, get_admin_id
+from branches.models import LocationSite
+from finance.models import Source, Transaction as FinanceTransaction
 
 
-from accounts.views import is_admin_user
+def _location_sites_json(user):
+    admin_id = get_admin_id(user)
+    names = list(LocationSite.objects.filter(admin_id=admin_id).values_list('name', flat=True))
+    return json.dumps(names)
+
+
+def _shared_sources_json(user):
+    admin_id = get_admin_id(user)
+    names = list(Source.objects.filter(admin_id=admin_id, type='income').values_list('name', flat=True))
+    return json.dumps(names)
+
+
+def _shared_accounts_json(user):
+    admin_id = get_admin_id(user)
+    names = list(Source.objects.filter(admin_id=admin_id, type='account').values_list('name', flat=True))
+    return json.dumps(names)
+
+
+def _balance_by_combo(user, is_admin):
+    """Return balance per (Income Source, Account) across income and expense records.
+    Keys are normalised to lower-case so matching is case-insensitive; the display
+    values ('source', 'account') keep the original casing from the income record."""
+    admin_id = get_admin_id(user)
+    if is_admin:
+        income_qs  = Income.objects.filter(admin_id=admin_id)
+        expense_qs = FinanceTransaction.objects.filter(admin_id=admin_id, type='expense')
+    else:
+        income_qs  = Income.objects.filter(user=user)
+        expense_qs = FinanceTransaction.objects.filter(user=user, type='expense')
+
+    combo_map = {}
+    for i in income_qs:
+        source  = (i.payment_by or '').strip()
+        account = (i.payment_mode or '').strip()
+        if source and account:
+            k = f"{source.lower()}|||{account.lower()}"
+            if k not in combo_map:
+                combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
+            combo_map[k]['income'] += float(i.amount)
+
+    for e in expense_qs:
+        source  = (e.income_source or '').strip()
+        account = (e.payment_mode or '').strip()
+        if source and account:
+            k = f"{source.lower()}|||{account.lower()}"
+            if k not in combo_map:
+                combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
+            combo_map[k]['expense'] += float(e.amount)
+
+    result = []
+    for v in combo_map.values():
+        v['balance'] = v['income'] - v['expense']
+        result.append(v)
+    return sorted(result, key=lambda x: (-abs(x['balance']), x['source']))
+
+
+@login_required
+def shared_sources_api(request):
+    """GET/POST income sources for the centralized shared registry."""
+    admin_id = get_admin_id(request.user)
+
+    if request.method == 'GET':
+        names = list(Source.objects.filter(admin_id=admin_id, type='income').values_list('name', flat=True))
+        return JsonResponse({'sources': names})
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            name = (data.get('name') or '').strip()
+            if not name:
+                return JsonResponse({'error': 'Name is required'}, status=400)
+            if not Source.objects.filter(admin_id=admin_id, name__iexact=name, type='income').exists():
+                Source.objects.create(admin_id=admin_id, name=name, type='income', created_by=request.user)
+            names = list(Source.objects.filter(admin_id=admin_id, type='income').values_list('name', flat=True))
+            return JsonResponse({'success': True, 'sources': names})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@login_required
+def shared_accounts_api(request):
+    """GET/POST shared accounts for the centralized shared registry."""
+    admin_id = get_admin_id(request.user)
+
+    if request.method == 'GET':
+        names = list(Source.objects.filter(admin_id=admin_id, type='account').values_list('name', flat=True))
+        return JsonResponse({'accounts': names})
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            name = (data.get('name') or '').strip()
+            if not name:
+                return JsonResponse({'error': 'Name is required'}, status=400)
+            if not Source.objects.filter(admin_id=admin_id, name__iexact=name, type='account').exists():
+                Source.objects.create(admin_id=admin_id, name=name, type='account', created_by=request.user)
+            names = list(Source.objects.filter(admin_id=admin_id, type='account').values_list('name', flat=True))
+            return JsonResponse({'success': True, 'accounts': names})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
 @login_required
 def income_list(request):
+    admin_id = get_admin_id(request.user)
     if is_admin_user(request.user):
-        incomes = Income.objects.select_related('category', 'user').all()
+        incomes = Income.objects.filter(admin_id=admin_id).select_related('category', 'user')
     else:
         incomes = Income.objects.filter(user=request.user).select_related('category')
         
     # Filters
-    category_id = request.GET.get('category')
-    date_from = request.GET.get('date_from')
-    date_to = request.GET.get('date_to')
-    search = request.GET.get('search')
+    category_id   = request.GET.get('category', '')
+    date_from     = request.GET.get('date_from', '')
+    date_to       = request.GET.get('date_to', '')
+    search        = request.GET.get('search', '')
+    amount_min    = request.GET.get('amount_min', '')
+    amount_max    = request.GET.get('amount_max', '')
+    month         = request.GET.get('month', '')
+    account       = request.GET.get('account', '')
+    income_source = request.GET.get('income_source', '')
 
-    if category_id:
-        incomes = incomes.filter(category_id=category_id)
-    if date_from:
-        incomes = incomes.filter(date__gte=date_from)
-    if date_to:
-        incomes = incomes.filter(date__lte=date_to)
-    if search:
-        incomes = incomes.filter(Q(title__icontains=search) | Q(source__icontains=search) | Q(description__icontains=search))
+    if category_id:   incomes = incomes.filter(category_id=category_id)
+    if date_from:     incomes = incomes.filter(date__gte=date_from)
+    if date_to:       incomes = incomes.filter(date__lte=date_to)
+    if search:        incomes = incomes.filter(Q(title__icontains=search) | Q(source__icontains=search) | Q(description__icontains=search))
+    if amount_min:    incomes = incomes.filter(amount__gte=amount_min)
+    if amount_max:    incomes = incomes.filter(amount__lte=amount_max)
+    if month:         incomes = incomes.filter(date__startswith=month)
+    if account:       incomes = incomes.filter(payment_mode__icontains=account)
+    if income_source: incomes = incomes.filter(payment_by__icontains=income_source)
 
     from categories.models import IncomeCategory
-    categories = IncomeCategory.objects.filter(created_by=request.user)
-    total = sum(i.amount for i in incomes)
+    categories = IncomeCategory.objects.filter(created_by__admin_id=get_admin_id(request.user))
+    incomes_list = list(incomes)
+    total = sum(i.amount for i in incomes_list)
+    count = len(incomes_list)
+    average = total / count if count else 0
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         data = [{
@@ -46,67 +164,176 @@ def income_list(request):
             'date': str(i.date),
             'source': i.source,
             'payment_mode': i.get_payment_mode_display(),
-        } for i in incomes]
+        } for i in incomes_list]
         return JsonResponse({'incomes': data, 'total': str(total)})
 
+    is_admin = is_admin_user(request.user)
+    balance_combos = _balance_by_combo(request.user, is_admin)
+    # Keyed by lower-case (source, account) so lookup is case-insensitive.
+    combo_map = {(c['source'].lower(), c['account'].lower()): c for c in balance_combos}
+
+    for i in incomes_list:
+        src = (i.payment_by or '').strip().lower()
+        acc = (i.payment_mode or '').strip().lower()
+        i.combo_data = combo_map.get((src, acc)) if (src and acc) else None
+
     return render(request, 'income/list.html', {
-        'incomes': incomes,
-        'categories': categories,
-        'total': total,
-        'filters': {'category': category_id, 'date_from': date_from, 'date_to': date_to, 'search': search},
-        'is_admin': is_admin_user(request.user),
+        'incomes':       incomes_list,
+        'categories':    categories,
+        'total':         total,
+        'count':         count,
+        'average':       average,
+        'total_balance': sum(c['balance'] for c in balance_combos),
+        'filters': {
+            'category': category_id, 'date_from': date_from, 'date_to': date_to,
+            'search': search, 'amount_min': amount_min, 'amount_max': amount_max,
+            'month': month, 'account': account, 'income_source': income_source,
+        },
+        'is_admin':            is_admin,
+        'location_sites_json': _location_sites_json(request.user),
+        'income_sources_json': _shared_sources_json(request.user),
+        'accounts_json':       _shared_accounts_json(request.user),
+        'balance_data':        balance_combos,
     })
 
 
 @login_required
-def income_add(request):
-    if request.method == 'POST':
-        form = IncomeForm(request.user, request.POST)
-        if form.is_valid():
-            income = form.save(commit=False)
-            income.user = request.user
-            income.save()
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({
-                    'success': True,
-                    'income': {
-                        'id': income.id,
-                        'title': income.title,
-                        'amount': str(income.amount),
-                        'date': str(income.date),
-                        'category': income.category.name if income.category else 'Uncategorized',
-                    }
-                })
-            messages.success(request, f'Income "{income.title}" added successfully.')
-            return redirect('income:list')
-        messages.error(request, 'Please correct the errors below.')
+def income_export_csv(request):
+    """Export income entries to CSV — mirrors reference file's exportIncomeExcel()"""
+    if is_admin_user(request.user):
+        incomes = Income.objects.filter(admin_id=get_admin_id(request.user)).select_related('category', 'user')
     else:
-        form = IncomeForm(request.user)
-    return render(request, 'income/form.html', {'form': form, 'title': 'Add Income', 'action': 'Add'})
+        incomes = Income.objects.filter(user=request.user).select_related('category')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="income-export.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Date', 'Title', 'Source', 'Category', 'Amount', 'Payment Mode', 'Description'])
+    for i in incomes:
+        writer.writerow([
+            i.date, i.title, i.source or '',
+            i.category.name if i.category else 'Uncategorized',
+            i.amount, i.get_payment_mode_display(),
+            i.description or '',
+        ])
+    return response
+
+
+def _is_ajax(request):
+    return (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or 'application/json' in request.headers.get('Accept', '')
+    )
+
+
+def _income_to_dict(i):
+    return {
+        'id': i.pk,
+        'date': i.date.isoformat() if i.date else '',
+        'date_display': i.date.strftime('%d %b, %Y') if i.date else '',
+        'amount': str(i.amount),
+        'amount_display': '{:,.2f}'.format(float(i.amount)),
+        'income_type': i.income_type or '',
+        'location': i.location_site or '',
+        'payment_by': i.payment_by or '',
+        'payment_mode': i.payment_mode or '',
+        'description': i.description or '',
+        'edit_url': f'/income/{i.pk}/edit/',
+        'delete_url': f'/income/{i.pk}/delete/',
+    }
+
+
+def _income_combo_data(income, user, is_admin):
+    """Return the combo balance dict for this income's (source, account) pair.
+    Comparison is case-insensitive to match the normalised _balance_by_combo keys."""
+    src = (income.payment_by or '').strip().lower()
+    acc = (income.payment_mode or '').strip().lower()
+    if not (src and acc):
+        return None
+    for c in _balance_by_combo(user, is_admin):
+        if c['source'].lower() == src and c['account'].lower() == acc:
+            return c
+    return None
+
+
+@login_required
+def income_add(request):
+    # Modal-only flow: any GET hit on /income/add/ bounces to the list.
+    if request.method != 'POST':
+        return redirect('income:list')
+
+    form = IncomeForm(request.user, request.POST)
+    ajax = _is_ajax(request)
+
+    if form.is_valid():
+        income = form.save(commit=False)
+        income.user     = request.user
+        income.admin_id = get_admin_id(request.user)
+        income.save()
+        if income.location_site:
+            admin_id = get_admin_id(request.user)
+            name = income.location_site.strip()
+            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
+                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
+        if ajax:
+            d = _income_to_dict(income)
+            d['combo'] = _income_combo_data(income, request.user, is_admin_user(request.user))
+            return JsonResponse({'success': True, 'income': d})
+        messages.success(request, f'Income "{income.title}" added successfully.')
+        return redirect('income:list')
+
+    if ajax:
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first_error = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse({'success': False, 'errors': errors, 'message': first_error}, status=400)
+
+    messages.error(request, 'Could not save income. Please try again.')
+    return redirect('income:list')
 
 
 @login_required
 def income_edit(request, pk):
     if is_admin_user(request.user):
-        income = get_object_or_404(Income, pk=pk)
+        income = get_object_or_404(Income, pk=pk, admin_id=get_admin_id(request.user))
     else:
         income = get_object_or_404(Income, pk=pk, user=request.user)
-        
-    if request.method == 'POST':
-        form = IncomeForm(request.user, request.POST, instance=income)
-        if form.is_valid():
-            income = form.save()
-            messages.success(request, f'Income "{income.title}" updated.')
-            return redirect('income:list')
-    else:
-        form = IncomeForm(request.user, instance=income)
-    return render(request, 'income/form.html', {'form': form, 'income': income, 'title': 'Edit Income', 'action': 'Update'})
+
+    # Modal-only flow: GET bounces to the list.
+    if request.method != 'POST':
+        return redirect('income:list')
+
+    form = IncomeForm(request.user, request.POST, instance=income)
+    ajax = _is_ajax(request)
+
+    if form.is_valid():
+        income = form.save(commit=False)
+        income.admin_id = get_admin_id(request.user)
+        income.save()
+        if income.location_site:
+            admin_id = get_admin_id(request.user)
+            name = income.location_site.strip()
+            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
+                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
+        if ajax:
+            d = _income_to_dict(income)
+            d['combo'] = _income_combo_data(income, request.user, is_admin_user(request.user))
+            return JsonResponse({'success': True, 'income': d})
+        messages.success(request, f'Income "{income.title}" updated.')
+        return redirect('income:list')
+
+    if ajax:
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first_error = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse({'success': False, 'errors': errors, 'message': first_error}, status=400)
+
+    messages.error(request, 'Could not update income. Please try again.')
+    return redirect('income:list')
 
 
 @login_required
 def income_delete(request, pk):
     if is_admin_user(request.user):
-        income = get_object_or_404(Income, pk=pk)
+        income = get_object_or_404(Income, pk=pk, admin_id=get_admin_id(request.user))
     else:
         income = get_object_or_404(Income, pk=pk, user=request.user)
         

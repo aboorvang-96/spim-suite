@@ -1,76 +1,281 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.utils import timezone
-from .models import Transaction, Category
+from django.http import JsonResponse
+import json
+from .models import Transaction, Category, Source
 from .forms import TransactionForm, CategoryForm
+from branches.models import LocationSite
+from accounts.views import get_admin_id
+
+
+def _location_sites_json(user):
+    admin_id = get_admin_id(user)
+    names = list(LocationSite.objects.filter(admin_id=admin_id).values_list('name', flat=True))
+    return json.dumps(names)
+
+
+def _shared_sources_json(user):
+    admin_id = get_admin_id(user)
+    names = list(Source.objects.filter(admin_id=admin_id, type='income').values_list('name', flat=True))
+    return json.dumps(names)
+
+
+def _shared_accounts_json(user):
+    admin_id = get_admin_id(user)
+    names = list(Source.objects.filter(admin_id=admin_id, type='account').values_list('name', flat=True))
+    return json.dumps(names)
+
+
+def _balance_by_combo_expense(user):
+    """Return balance per (Income Source, Account) for the expense page.
+    Keys are normalised to lower-case so matching is case-insensitive; the display
+    values ('source', 'account') keep the original casing from the income record."""
+    from income.models import Income
+    admin_id = get_admin_id(user)
+    income_qs  = Income.objects.filter(admin_id=admin_id)
+    expense_qs = Transaction.objects.filter(admin_id=admin_id, type='expense')
+
+    combo_map = {}
+    for i in income_qs:
+        source  = (i.payment_by or '').strip()
+        account = (i.payment_mode or '').strip()
+        if source and account:
+            k = f"{source.lower()}|||{account.lower()}"
+            if k not in combo_map:
+                combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
+            combo_map[k]['income'] += float(i.amount)
+
+    for e in expense_qs:
+        source  = (e.income_source or '').strip()
+        account = (e.payment_mode or '').strip()
+        if source and account:
+            k = f"{source.lower()}|||{account.lower()}"
+            if k not in combo_map:
+                combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
+            combo_map[k]['expense'] += float(e.amount)
+
+    result = []
+    for v in combo_map.values():
+        v['balance'] = v['income'] - v['expense']
+        result.append(v)
+    return sorted(result, key=lambda x: (-abs(x['balance']), x['source']))
+
+
+def _is_ajax(request):
+    return (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or 'application/json' in request.headers.get('Accept', '')
+    )
+
+
+def _expense_combo_data(t, user):
+    """Return the combo balance dict for this transaction's (income_source, account) pair.
+    Comparison is case-insensitive to match the normalised _balance_by_combo_expense keys."""
+    src = (t.income_source or '').strip().lower()
+    acc = (t.payment_mode or '').strip().lower()
+    if not (src and acc):
+        return None
+    for c in _balance_by_combo_expense(user):
+        if c['source'].lower() == src and c['account'].lower() == acc:
+            return c
+    return None
+
+
+def _expense_to_dict(t):
+    return {
+        'id': t.pk,
+        'date': t.date.isoformat() if t.date else '',
+        'date_display': t.date.strftime('%d %b, %Y') if t.date else '',
+        'amount': str(t.amount),
+        'amount_display': '{:,.2f}'.format(float(t.amount)),
+        'category': t.category.name if t.category else 'General',
+        'category_id': t.category_id,
+        'expense_type': t.purpose or '',
+        'location': t.location_site or '',
+        'payment_by': t.payment_by or '',
+        'payment_to': t.vendor or '',
+        'payment_mode': t.payment_mode or '',
+        'income_source': t.income_source or '',
+        'description': t.description or '',
+        'edit_url': f'/expenses/{t.pk}/edit/',
+        'delete_url': f'/expenses/{t.pk}/delete/',
+    }
 
 @login_required
 def transaction_list(request):
-    qs      = Transaction.objects.filter(user=request.user).select_related('category')
-    tx_type = request.GET.get('type', '')
-    cat_id  = request.GET.get('category', '')
-    month   = request.GET.get('month', '')
-    if tx_type: qs = qs.filter(type=tx_type)
-    if cat_id:  qs = qs.filter(category_id=cat_id)
-    if month:   qs = qs.filter(date__startswith=month)
-    total_income  = qs.filter(type='income').aggregate(t=Sum('amount'))['t']  or 0
-    total_expense = qs.filter(type='expense').aggregate(t=Sum('amount'))['t'] or 0
+    admin_id = get_admin_id(request.user)
+    qs = Transaction.objects.filter(admin_id=admin_id, type='expense').select_related('category', 'branch')
+
+    # ── Server-side filter params (applied on initial load / URL navigation) ──
+    cat_id        = request.GET.get('category', '')
+    month         = request.GET.get('month', '')
+    search        = request.GET.get('search', '')
+    account       = request.GET.get('account', '')
+    income_source = request.GET.get('income_source', '')
+
+    if cat_id:        qs = qs.filter(category_id=cat_id)
+    if month:         qs = qs.filter(date__startswith=month)
+    if search:        qs = qs.filter(
+        Q(description__icontains=search) | Q(vendor__icontains=search) | Q(reference__icontains=search)
+    )
+    if account:       qs = qs.filter(payment_mode__icontains=account)
+    if income_source: qs = qs.filter(income_source__icontains=income_source)
+
+    total_expense = qs.aggregate(t=Sum('amount'))['t'] or 0
+
+    now = timezone.now()
+    this_month_qs = Transaction.objects.filter(
+        admin_id=admin_id, type='expense',
+        date__year=now.year, date__month=now.month
+    )
+    this_month_expense = this_month_qs.aggregate(t=Sum('amount'))['t'] or 0
+    expense_count = qs.count()
+
+    balance_combos = _balance_by_combo_expense(request.user)
+    # Keyed by lower-case (source, account) so lookup is case-insensitive.
+    combo_map = {(c['source'].lower(), c['account'].lower()): c for c in balance_combos}
+    transactions_list = list(qs[:200])
+    for t in transactions_list:
+        src = (t.income_source or '').strip().lower()
+        acc = (t.payment_mode or '').strip().lower()
+        t.combo_data = combo_map.get((src, acc)) if (src and acc) else None
+
+    # ── Serialize to JSON for client-side JS rendering ──
+    _mode_display = dict(Transaction.PAYMENT_MODE)
+    transactions_json = json.dumps([{
+        'id':          t.pk,
+        'date':        t.date.isoformat() if t.date else '',
+        'type':        t.type,
+        'desc':        t.description or '',
+        'amount':      float(t.amount),
+        'catId':       t.category_id,
+        'catName':     t.category.name if t.category else 'General',
+        'catColor':    t.category.color if t.category else '#94a3b8',
+        'branchId':    t.branch_id,
+        'branchName':  t.branch.name if t.branch else '',
+        'mode':        _mode_display.get(t.payment_mode, t.payment_mode or ''),
+        'account':     t.payment_mode or '',
+        'vendor':      t.vendor or '',
+        'ref':         t.reference or '',
+        'incomeSource': t.income_source or '',
+    } for t in transactions_list])
+
     return render(request, 'finance/list.html', {
-        'transactions': qs[:200],
-        'total_income':  total_income,
-        'total_expense': total_expense,
-        'balance':       total_income - total_expense,
-        'categories':    Category.objects.filter(created_by=request.user),
-        'filters':       {'type': tx_type, 'category': cat_id, 'month': month},
+        'transactions':        transactions_list,
+        'transactions_json':   transactions_json,
+        'total_expense':       total_expense,
+        'this_month_expense':  this_month_expense,
+        'expense_count':       expense_count,
+        'categories':          Category.objects.filter(admin_id=admin_id, type='expense'),
+        'filters': {
+            'category': cat_id, 'month': month, 'search': search,
+            'account': account, 'income_source': income_source,
+        },
+        'location_sites_json':  _location_sites_json(request.user),
+        'income_sources_json':  _shared_sources_json(request.user),
+        'accounts_json':        _shared_accounts_json(request.user),
+        'balance_data':         balance_combos,
     })
 
 @login_required
 def add_transaction(request):
-    form = TransactionForm(request.user, request.POST or None, initial={'date': timezone.now().date()})
-    if request.method == 'POST' and form.is_valid():
+    # Default any GET hit on /expenses/add/ back to the list page (modal-only flow).
+    if request.method != 'POST':
+        return redirect('expenses:list')
+
+    # Force the type to expense regardless of what the client sent.
+    post_data = request.POST.copy()
+    post_data['type'] = 'expense'
+
+    form = TransactionForm(request.user, post_data)
+    ajax = _is_ajax(request)
+
+    if form.is_valid():
         t = form.save(commit=False)
-        t.user = request.user
+        t.user     = request.user
+        t.type     = 'expense'
+        t.admin_id = get_admin_id(request.user)
         t.save()
-        messages.success(request, "Transaction recorded.")
-        return redirect('finance:list')
-    return render(request, 'finance/form.html', {'form': form, 'title': 'Add Transaction'})
+        if t.location_site:
+            admin_id = get_admin_id(request.user)
+            name = t.location_site.strip()
+            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
+                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
+        if ajax:
+            d = _expense_to_dict(t)
+            d['combo'] = _expense_combo_data(t, request.user)
+            return JsonResponse({'success': True, 'expense': d})
+        messages.success(request, "Expense recorded.")
+        return redirect('expenses:list')
+
+    if ajax:
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first_error = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse({'success': False, 'errors': errors, 'message': first_error}, status=400)
+
+    # Non-AJAX fallback: still keep user on the list page; surface the error in flash.
+    messages.error(request, "Could not save expense. Please try again.")
+    return redirect('expenses:list')
 
 @login_required
 def edit_transaction(request, pk):
-    t    = get_object_or_404(Transaction, pk=pk, user=request.user)
-    form = TransactionForm(request.user, request.POST or None, instance=t)
-    if request.method == 'POST' and form.is_valid():
-        form.save()
-        messages.success(request, "Transaction updated.")
-        return redirect('finance:list')
-    return render(request, 'finance/form.html', {'form': form, 'title': 'Edit Transaction', 'obj': t})
+    t = get_object_or_404(Transaction, pk=pk, admin_id=get_admin_id(request.user))
+
+    # Modal-only flow: any GET hit on /expenses/<pk>/edit/ bounces to the list.
+    if request.method != 'POST':
+        return redirect('expenses:list')
+
+    post_data = request.POST.copy()
+    post_data['type'] = 'expense'
+
+    form = TransactionForm(request.user, post_data, instance=t)
+    ajax = _is_ajax(request)
+
+    if form.is_valid():
+        obj = form.save(commit=False)
+        obj.user     = request.user
+        obj.type     = 'expense'
+        obj.admin_id = get_admin_id(request.user)
+        obj.save()
+        if obj.location_site:
+            admin_id = get_admin_id(request.user)
+            name = obj.location_site.strip()
+            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
+                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
+        if ajax:
+            d = _expense_to_dict(obj)
+            d['combo'] = _expense_combo_data(obj, request.user)
+            return JsonResponse({'success': True, 'expense': d})
+        messages.success(request, "Expense updated.")
+        return redirect('expenses:list')
+
+    if ajax:
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first_error = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse({'success': False, 'errors': errors, 'message': first_error}, status=400)
+
+    messages.error(request, "Could not update expense. Please try again.")
+    return redirect('expenses:list')
 
 @login_required
 def delete_transaction(request, pk):
-    t = get_object_or_404(Transaction, pk=pk, user=request.user)
+    t = get_object_or_404(Transaction, pk=pk, admin_id=get_admin_id(request.user))
     if request.method == 'POST':
         t.delete()
         messages.success(request, "Deleted.")
-    return redirect('finance:list')
+    return redirect('expenses:list')
 
 @login_required
 def category_list(request):
-    cats = Category.objects.filter(created_by=request.user)
-    form = CategoryForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        c = form.save(commit=False)
-        c.created_by = request.user
-        c.save()
-        messages.success(request, "Category added.")
-        return redirect('finance:categories')
-    return render(request, 'finance/categories.html', {'categories': cats, 'form': form})
+    return redirect('categories:expense_list')
 
 @login_required
 def delete_category(request, pk):
-    c = get_object_or_404(Category, pk=pk, created_by=request.user)
+    c = get_object_or_404(Category, pk=pk, admin_id=get_admin_id(request.user))
     if request.method == 'POST':
         c.delete()
         messages.success(request, "Category removed.")
-    return redirect('finance:categories')
+    return redirect('expenses:categories')

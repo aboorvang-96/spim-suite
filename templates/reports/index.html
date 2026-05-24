@@ -1,50 +1,510 @@
 {% extends 'base.html' %}
-{% block title %}Reports - FinanceHub{% endblock %}
+{% block title %}Financial Reports - SPIM Suite{% endblock %}
 {% block nav_reports %}active{% endblock %}
 {% block page_title %}Financial Reports{% endblock %}
-{% block page_sub %}Summary for {{ year }}{% endblock %}
-{% block header_actions %}<form method="get" class="flex items-center gap-2"><select name="year" class="form-input w-32" onchange="this.form.submit()">{% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}</select></form>{% endblock %}
-{% block content %}
-<div class="space-y-5">
-  <div class="grid grid-cols-3 gap-4">
-    <div class="card border-l-4" style="border-color:#16a34a"><p class="text-slate-400 text-xs uppercase tracking-wide font-medium">Total Income {{ year }}</p><p class="text-2xl font-bold mt-1 text-green-600">₹{{ total_income|floatformat:2 }}</p></div>
-    <div class="card border-l-4" style="border-color:#dc2626"><p class="text-slate-400 text-xs uppercase tracking-wide font-medium">Total Expenses {{ year }}</p><p class="text-2xl font-bold mt-1 text-red-500">₹{{ total_expense|floatformat:2 }}</p></div>
-    <div class="card border-l-4" style="border-color:#c9a84c"><p class="text-slate-400 text-xs uppercase tracking-wide font-medium">Net Profit {{ year }}</p><p class="text-2xl font-bold mt-1 {% if net >= 0 %}text-slate-800{% else %}text-red-600{% endif %}">₹{{ net|floatformat:2 }}</p></div>
+{% block page_sub %}Business summaries across all time periods{% endblock %}
+
+{% block header_actions %}
+<div class="rpt-header-actions">
+  <!-- Download dropdown -->
+  <div class="rpt-dl-wrap" id="dlWrap">
+    <button class="btn btn-outline btn-sm" id="dlBtn" type="button" onclick="toggleDlMenu(event)">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+      </svg>
+      Download
+      <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" style="margin-left:2px;">
+        <path d="M19 9l-7 7-7-7"/>
+      </svg>
+    </button>
+    <div class="rpt-dl-menu hidden" id="dlMenu">
+      <button class="rpt-dl-item" onclick="downloadExcel()">
+        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 17v-2m3 2v-4m3 4v-6M4 5h16M4 5a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2z"/></svg>
+        Excel (.xlsx)
+      </button>
+      <button class="rpt-dl-item" onclick="downloadPDF()">
+        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M7 21h10a2 2 0 002-2V9.414A2 2 0 0018.414 8L13 2.586A2 2 0 0011.586 2H7a2 2 0 00-2 2v15a2 2 0 002 2z"/></svg>
+        PDF (Download)
+      </button>
+    </div>
   </div>
-  <div class="card"><h3 class="font-semibold text-slate-700 text-sm mb-4">Monthly Income vs Expenses</h3><canvas id="monthlyChart" height="120"></canvas></div>
-  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-    <div class="card"><h3 class="font-semibold text-slate-700 text-sm mb-4">Expense by Category</h3><canvas id="catChart" height="220"></canvas></div>
-    <div class="card"><h3 class="font-semibold text-slate-700 text-sm mb-4">Category Details</h3><div id="cat-list"><p class="text-slate-400 text-sm">Loading...</p></div></div>
-  </div>
+
+  <!-- Generate Report -->
+  <button type="submit" form="reportFilterForm" class="btn btn-primary btn-sm">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+      <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+    </svg>
+    Generate Report
+  </button>
+
 </div>
 {% endblock %}
+
+{% block content %}
+<style>
+/* ── Page container ─────────────────────────────────────────────────────── */
+.rpt-page { display:flex; flex-direction:column; gap:20px; width:100%; }
+
+/* ── Header actions ─────────────────────────────────────────────────────── */
+.rpt-header-actions { display:flex; align-items:center; gap:10px; }
+.rpt-dl-wrap { position:relative; }
+.rpt-dl-menu {
+  position:absolute; top:calc(100% + 6px); right:0;
+  background:#fff; border:1px solid #e2e8f0; border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:500; min-width:160px; padding:4px;
+}
+.rpt-dl-item {
+  display:flex; align-items:center; gap:8px; width:100%;
+  padding:9px 14px; font-size:13px; font-weight:600; color:#334155;
+  background:none; border:none; cursor:pointer; border-radius:6px; text-align:left;
+  transition:background 0.15s;
+}
+.rpt-dl-item:hover { background:#f8fafc; color:#0f172a; }
+
+/* ── Filter bar ─────────────────────────────────────────────────────────── */
+.rpt-filter-bar {
+  background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+  padding:12px 16px; display:flex; flex-direction:column; gap:10px;
+}
+/* Compact filter inputs row */
+.rpt-filter-row {
+  display:grid;
+  grid-template-columns: 170px 110px 110px 170px 34px;
+  align-items:center;
+  gap:8px;
+}
+@media (max-width:720px) {
+  .rpt-filter-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .rpt-filter-row .rpt-reset-btn { grid-column: span 2; justify-self: start; }
+}
+.period-btns { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.period-btn {
+  height:34px; padding:0 14px;
+  border:1.5px solid #e2e8f0; border-radius:8px;
+  font-size:12px; font-weight:700; color:#475569;
+  background:#fff; cursor:pointer; transition:all 0.15s; white-space:nowrap;
+}
+.period-btn:hover { border-color:#0f172a; color:#0f172a; }
+.period-btn.active { background:#0f172a; color:#fff; border-color:#0f172a; }
+
+.rpt-filter-input {
+  height:34px; border:1.5px solid #e2e8f0; border-radius:8px;
+  padding:0 10px; font-size:13px; font-weight:600; color:#334155; background:#fcfdfe;
+  flex:none; box-sizing:border-box;
+}
+.rpt-filter-input.rpt-filter-sm   { width:110px !important; min-width:110px; max-width:110px; }
+.rpt-filter-input.rpt-filter-sel  { width:170px !important; min-width:170px; max-width:170px; }
+.rpt-filter-input.rpt-filter-date { width:145px !important; min-width:145px; max-width:145px; }
+
+.custom-date-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.custom-sep { font-size:13px; color:#94a3b8; }
+
+.rpt-reset-btn {
+  height:34px; width:34px; display:flex; align-items:center; justify-content:center;
+  border:1.5px solid #e2e8f0; border-radius:8px; color:#64748b; font-size:18px;
+  cursor:pointer; text-decoration:none; transition:all 0.15s; flex-shrink:0;
+}
+.rpt-reset-btn:hover { border-color:#ef4444; color:#ef4444; }
+
+/* ── Page title ─────────────────────────────────────────────────────────── */
+.rpt-title h2 { font-size:20px; font-weight:800; color:#0f172a; margin:0; }
+.rpt-title p  { font-size:13px; color:#64748b; margin:4px 0 0 0; }
+
+/* ── Cards grid ─────────────────────────────────────────────────────────── */
+.rpt-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+  gap:16px;
+}
+.rpt-card {
+  background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+  padding:20px; cursor:pointer; transition:all 0.2s;
+  display:flex; flex-direction:column; gap:12px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.03);
+}
+.rpt-card:hover {
+  border-color:#0f172a; box-shadow:0 4px 16px rgba(15,23,42,0.08);
+  transform:translateY(-2px);
+}
+.rpt-card.highlighted {
+  border-color:#2563eb;
+  box-shadow:0 0 0 3px rgba(37,99,235,0.15), 0 4px 16px rgba(37,99,235,0.1);
+}
+.rpt-card-type {
+  font-size:10px; font-weight:900; color:#94a3b8;
+  letter-spacing:0.08em; text-transform:uppercase;
+}
+.rpt-card-period {
+  font-size:13px; font-weight:700; color:#0f172a; margin-top:-4px;
+}
+.rpt-card-stats { display:flex; flex-direction:column; gap:6px; }
+.rpt-stat-row { display:flex; justify-content:space-between; align-items:center; }
+.rpt-stat-label { font-size:12px; color:#64748b; font-weight:500; }
+.rpt-stat-val   { font-size:13px; font-weight:800; color:#334155; }
+.rpt-stat-val.inc  { color:#10b981; }
+.rpt-stat-val.exp  { color:#ef4444; }
+.rpt-stat-val.pos  { color:#10b981; }
+.rpt-stat-val.neg  { color:#ef4444; }
+
+.rpt-progress-wrap {
+  height:4px; background:#f1f5f9; border-radius:2px; overflow:hidden; margin-top:4px;
+}
+.rpt-progress-fill {
+  height:100%; background:#10b981; border-radius:2px; transition:width 0.5s ease;
+}
+
+/* ── Detail modal ───────────────────────────────────────────────────────── */
+.det-overlay {
+  display:none; position:fixed; inset:0;
+  background:rgba(15,23,42,0.45); backdrop-filter:blur(4px);
+  z-index:2000; align-items:flex-start; justify-content:center;
+  overflow-y:auto; padding:60px 20px;
+  animation:detFadeIn 0.2s ease-out;
+}
+@keyframes detFadeIn { from{opacity:0;} to{opacity:1;} }
+.det-overlay.open { display:flex; }
+.det-modal {
+  background:#fff; border-radius:20px; width:100%; max-width:720px;
+  box-shadow:0 25px 70px rgba(0,0,0,0.2); display:flex; flex-direction:column;
+  border:1px solid #e2e8f0;
+  animation:detSlide 0.3s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes detSlide { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:translateY(0);} }
+.det-header {
+  padding:20px 24px; border-bottom:1px solid #f1f5f9;
+  display:flex; align-items:flex-start; justify-content:space-between;
+}
+.det-header h3 { font-size:17px; font-weight:800; color:#0f172a; margin:0; }
+.det-header p  { font-size:13px; color:#64748b; margin:4px 0 0 0; }
+.det-close {
+  background:none; border:none; cursor:pointer;
+  font-size:20px; color:#94a3b8; padding:2px 8px;
+  border-radius:6px; line-height:1; transition:all 0.15s;
+}
+.det-close:hover { background:#f1f5f9; color:#475569; }
+.det-body { padding:20px 24px 24px; display:flex; flex-direction:column; gap:20px; }
+.det-summary {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:10px;
+}
+.dsum-card {
+  background:#f8fafc; border-radius:10px; padding:14px;
+  display:flex; flex-direction:column; gap:4px;
+}
+.dsum-label { font-size:9px; font-weight:900; color:#94a3b8; text-transform:uppercase; letter-spacing:0.06em; }
+.dsum-val   { font-size:17px; font-weight:900; color:#0f172a; }
+.dsum-val.inc { color:#10b981; }
+.dsum-val.exp { color:#ef4444; }
+.det-table-wrap { overflow-x:auto; border-radius:10px; border:1px solid #f1f5f9; }
+.det-table { width:100%; border-collapse:collapse; font-size:13px; }
+.det-table th {
+  text-align:left; font-size:10px; font-weight:900; color:#94a3b8;
+  text-transform:uppercase; letter-spacing:0.06em;
+  padding:10px 14px; background:#f8fafc; border-bottom:1px solid #e2e8f0;
+}
+.det-table td {
+  padding:10px 14px; border-bottom:1px solid #f8fafc;
+  color:#334155; font-weight:600;
+}
+.det-table td.inc { color:#10b981; }
+.det-table td.exp { color:#ef4444; }
+.det-table td.pos { color:#10b981; }
+.det-table td.neg { color:#ef4444; }
+.det-table tr:last-child td { border-bottom:none; }
+
+/* ── Print ──────────────────────────────────────────────────────────────── */
+@media print {
+  .rpt-filter-bar, .det-overlay, .rpt-header-actions { display:none !important; }
+  .rpt-card { box-shadow:none !important; border:1px solid #ccc !important; page-break-inside:avoid; }
+  .rpt-grid { grid-template-columns:repeat(2,1fr) !important; }
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width:1024px) {
+  .rpt-grid    { grid-template-columns:repeat(2,1fr) !important; }
+  .det-summary { grid-template-columns:repeat(2,1fr) !important; }
+}
+@media (max-width:640px) {
+  .rpt-grid    { grid-template-columns:1fr !important; }
+  .det-summary { grid-template-columns:repeat(2,1fr) !important; }
+}
+</style>
+
+<div class="rpt-page">
+
+  <!-- ── Filter bar ─────────────────────────────────────────────────────── -->
+  <form id="reportFilterForm" method="get" action="{% url 'reports:index' %}" class="rpt-filter-bar">
+    <input type="hidden" name="period" id="periodInput" value="{{ filters.period|default:'monthly' }}" />
+
+    <!-- Period toggle buttons -->
+    <div class="period-btns">
+      <button type="button" class="period-btn" data-period="daily"       onclick="setPeriod('daily', this)">Daily</button>
+      <button type="button" class="period-btn" data-period="weekly"      onclick="setPeriod('weekly', this)">Weekly</button>
+      <button type="button" class="period-btn" data-period="monthly"     onclick="setPeriod('monthly', this)">Monthly</button>
+      <button type="button" class="period-btn" data-period="quarterly"   onclick="setPeriod('quarterly', this)">Quarterly</button>
+      <button type="button" class="period-btn" data-period="half_yearly" onclick="setPeriod('half_yearly', this)">Half-Yearly</button>
+      <button type="button" class="period-btn" data-period="annual"      onclick="setPeriod('annual', this)">Yearly</button>
+      <button type="button" class="period-btn" data-period="custom"      onclick="setPeriod('custom', this)">Custom</button>
+    </div>
+
+    <!-- Compact filter inputs — one horizontal row -->
+    <div class="rpt-filter-row">
+
+      <!-- Branch -->
+      <select name="branch" class="rpt-filter-input rpt-filter-sel">
+        <option value="">All Branches</option>
+        {% for b in branches %}
+          <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+
+      <!-- Min Amount -->
+      <input type="number" name="min_amount" value="{{ filters.min_amount }}"
+             placeholder="Min ₹" step="0.01" min="0"
+             class="rpt-filter-input rpt-filter-sm" />
+
+      <!-- Max Amount -->
+      <input type="number" name="max_amount" value="{{ filters.max_amount }}"
+             placeholder="Max ₹" step="0.01" min="0"
+             class="rpt-filter-input rpt-filter-sm" />
+
+      <!-- Category -->
+      <select name="category" class="rpt-filter-input rpt-filter-sel">
+        <option value="">All Categories</option>
+        {% for c in all_categories %}
+          <option value="{{ c.id }}" {% if filters.category == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+
+      <!-- Reset -->
+      <a href="{% url 'reports:index' %}" class="rpt-reset-btn" title="Reset filters">↺</a>
+
+    </div>
+
+    <!-- Custom date range — revealed only when Custom period selected -->
+    <div class="custom-date-row {% if not filters.date_from %}hidden{% endif %}" id="customDateRow">
+      <input type="date" name="date_from" value="{{ filters.date_from }}"
+             class="rpt-filter-input rpt-filter-date" placeholder="From" />
+      <span class="custom-sep">–</span>
+      <input type="date" name="date_to" value="{{ filters.date_to }}"
+             class="rpt-filter-input rpt-filter-date" placeholder="To" />
+    </div>
+  </form>
+
+  <!-- ── Page title ─────────────────────────────────────────────────────── -->
+  <div class="rpt-title">
+    <h2>Financial Reports</h2>
+    <p>Business summaries across all time periods</p>
+  </div>
+
+  <!-- ── Period cards grid ──────────────────────────────────────────────── -->
+  <div class="rpt-grid" id="rptGrid">
+    {% for p in periods %}
+    <div class="rpt-card" data-period="{{ p.key }}" onclick="showDetail({{ forloop.counter0 }})">
+      <div class="rpt-card-type">{{ p.label }}</div>
+      <div class="rpt-card-period">{{ p.sublabel }}</div>
+
+      <div class="rpt-card-stats">
+        <div class="rpt-stat-row">
+          <span class="rpt-stat-label">Income</span>
+          <span class="rpt-stat-val inc">₹{{ p.income|floatformat:2 }}</span>
+        </div>
+        <div class="rpt-stat-row">
+          <span class="rpt-stat-label">Expenses</span>
+          <span class="rpt-stat-val exp">₹{{ p.expense|floatformat:2 }}</span>
+        </div>
+        <div class="rpt-stat-row">
+          <span class="rpt-stat-label">Net Balance</span>
+          <span class="rpt-stat-val {% if p.net >= 0 %}pos{% else %}neg{% endif %}">₹{{ p.net|floatformat:2 }}</span>
+        </div>
+        <div class="rpt-stat-row">
+          <span class="rpt-stat-label">Transactions</span>
+          <span class="rpt-stat-val">{{ p.transactions }}</span>
+        </div>
+      </div>
+
+      <div class="rpt-progress-wrap">
+        <div class="rpt-progress-fill" style="width:{{ p.income_pct }}%"></div>
+      </div>
+    </div>
+    {% empty %}
+    <div style="grid-column:1/-1;padding:40px;text-align:center;color:#94a3b8;font-weight:700;">
+      No report data available for the selected filters.
+    </div>
+    {% endfor %}
+  </div>
+
+</div><!-- .rpt-page -->
+
+<!-- ── Detail modal ─────────────────────────────────────────────────────── -->
+<div id="detOverlay" class="det-overlay" onclick="if(event.target===this)closeDetail()">
+  <div class="det-modal">
+    <div class="det-header">
+      <div>
+        <h3 id="detTitle">Report Detail</h3>
+        <p id="detSubtitle"></p>
+      </div>
+      <button type="button" class="det-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="det-body">
+      <div class="det-summary" id="detSummary"></div>
+      <div class="det-table-wrap">
+        <table class="det-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th>Income</th>
+              <th>Expenses</th>
+              <th>Net Balance</th>
+              <th>Txns</th>
+            </tr>
+          </thead>
+          <tbody id="detBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
 {% block scripts %}
 <script>
-var monthly = {{ monthly_data|safe }};
-var catData  = {{ category_data|safe }};
+(function () {
+  const periodsData = {{ periods_json|safe }};
+  const DOWNLOAD_URL = "{% url 'reports:download' %}";
 
-new Chart(document.getElementById('monthlyChart'), {
-  type: 'bar',
-  data: {
-    labels: monthly.map(function(d){return d.label;}),
-    datasets: [
-      {label:'Income', data:monthly.map(function(d){return d.income;}), backgroundColor:'rgba(22,163,74,.2)', borderColor:'#16a34a', borderWidth:2, borderRadius:4},
-      {label:'Expense',data:monthly.map(function(d){return d.expense;}),backgroundColor:'rgba(220,38,38,.15)',borderColor:'#dc2626',borderWidth:2,borderRadius:4}
-    ]
-  },
-  options:{responsive:true,scales:{x:{grid:{display:false}},y:{grid:{color:'#f1f5f9'},ticks:{callback:function(v){return '₹'+v;}}}}}
-});
+  // ── Format helpers ─────────────────────────────────────────────────────
+  function fmt(n) {
+    return Math.abs(parseFloat(n || 0)).toLocaleString('en-IN', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2
+    });
+  }
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
 
-if (catData.length) {
-  new Chart(document.getElementById('catChart'), {
-    type: 'doughnut',
-    data: {labels:catData.map(function(c){return c.name;}),datasets:[{data:catData.map(function(c){return c.total;}),backgroundColor:catData.map(function(c){return c.color;}),borderWidth:2,borderColor:'#fff'}]},
-    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12}}}}
+  // ── Detail modal ───────────────────────────────────────────────────────
+  window.showDetail = function (idx) {
+    const p = periodsData[idx];
+    if (!p) return;
+
+    document.getElementById('detTitle').textContent    = p.label;
+    document.getElementById('detSubtitle').textContent = p.sublabel;
+
+    const nc  = p.net >= 0 ? 'inc' : 'exp';
+    const ns  = p.net >= 0 ? '+₹' : '-₹';
+    document.getElementById('detSummary').innerHTML = `
+      <div class="dsum-card">
+        <div class="dsum-label">Income</div>
+        <div class="dsum-val inc">+₹${fmt(p.income)}</div>
+      </div>
+      <div class="dsum-card">
+        <div class="dsum-label">Expenses</div>
+        <div class="dsum-val exp">-₹${fmt(p.expense)}</div>
+      </div>
+      <div class="dsum-card">
+        <div class="dsum-label">Net Balance</div>
+        <div class="dsum-val ${nc}">${ns}${fmt(p.net)}</div>
+      </div>
+      <div class="dsum-card">
+        <div class="dsum-label">Transactions</div>
+        <div class="dsum-val">${p.transactions}</div>
+      </div>`;
+
+    const tbody = document.getElementById('detBody');
+    if (p.detail && p.detail.length) {
+      tbody.innerHTML = p.detail.map(r => {
+        const nc2 = r.net >= 0 ? 'pos' : 'neg';
+        const ns2 = r.net >= 0 ? '+₹' : '-₹';
+        return `<tr>
+          <td>${esc(r.label)}</td>
+          <td class="inc">+₹${fmt(r.income)}</td>
+          <td class="exp">-₹${fmt(r.expense)}</td>
+          <td class="${nc2}">${ns2}${fmt(r.net)}</td>
+          <td>${r.transactions}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">No breakdown available.</td></tr>';
+    }
+
+    document.getElementById('detOverlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window.closeDetail = function () {
+    document.getElementById('detOverlay').classList.remove('open');
+    document.body.style.overflow = '';
+  };
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeDetail();
   });
-  var html = catData.map(function(c){return '<div class="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0"><div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full" style="background:'+c.color+'"></div><span class="text-slate-700 text-sm">'+c.name+'</span></div><span class="font-semibold text-slate-800 text-sm">₹'+c.total.toFixed(2)+'</span></div>';}).join('');
-  document.getElementById('cat-list').innerHTML = html;
-} else {
-  document.getElementById('cat-list').innerHTML = '<p class="text-slate-400 text-sm">No expense data for this year.</p>';
-}
+
+  // ── Period buttons — set hidden input + highlight + custom row ────────
+  window.setPeriod = function (period, btn) {
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('periodInput').value = period;
+
+    const customRow = document.getElementById('customDateRow');
+    if (period === 'custom') {
+      customRow.classList.remove('hidden');
+    } else {
+      customRow.classList.add('hidden');
+      const card = document.querySelector(`.rpt-card[data-period="${period}"]`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('highlighted');
+        setTimeout(() => card.classList.remove('highlighted'), 2000);
+      }
+    }
+  };
+
+  // Pre-activate the button matching the current server-side period
+  (function () {
+    const active = '{{ filters.period|default:"monthly" }}';
+    const btn = document.querySelector(`.period-btn[data-period="${active}"]`);
+    if (btn) btn.classList.add('active');
+  })();
+
+  // ── Download ───────────────────────────────────────────────────────────
+  window.toggleDlMenu = function (e) {
+    e.stopPropagation();
+    const menu = document.getElementById('dlMenu');
+    menu.classList.toggle('hidden');
+    if (!menu.classList.contains('hidden')) {
+      setTimeout(() => {
+        document.addEventListener('click', function closeDl(ev) {
+          if (!ev.target.closest('#dlWrap')) {
+            menu.classList.add('hidden');
+            document.removeEventListener('click', closeDl);
+          }
+        });
+      }, 0);
+    }
+  };
+
+  function _buildDownloadParams(fmt) {
+    const params = new URLSearchParams(window.location.search);
+    // Use the hidden input value so filters + period are respected
+    params.set('period', document.getElementById('periodInput').value || 'monthly');
+    params.set('format', fmt);
+    return params;
+  }
+
+  window.downloadExcel = function () {
+    document.getElementById('dlMenu').classList.add('hidden');
+    window.location.href = DOWNLOAD_URL + '?' + _buildDownloadParams('xlsx').toString();
+  };
+
+  window.downloadPDF = function () {
+    document.getElementById('dlMenu').classList.add('hidden');
+    window.location.href = DOWNLOAD_URL + '?' + _buildDownloadParams('pdf').toString();
+  };
+})();
 </script>
 {% endblock %}

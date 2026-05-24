@@ -1,11 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.db.models import Q
 from .models import Expense, Receipt
 from .forms import ExpenseForm, ReceiptUploadForm
 import os
+import csv
 
 
 from accounts.views import is_admin_user
@@ -24,6 +25,8 @@ def expense_list(request):
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
     search = request.GET.get('search')
+    amount_min = request.GET.get('amount_min')
+    amount_max = request.GET.get('amount_max')
 
     if category_id:
         expenses = expenses.filter(category_id=category_id)
@@ -35,10 +38,19 @@ def expense_list(request):
         expenses = expenses.filter(date__lte=date_to)
     if search:
         expenses = expenses.filter(Q(title__icontains=search) | Q(description__icontains=search))
+    if amount_min:
+        expenses = expenses.filter(amount__gte=amount_min)
+    if amount_max:
+        expenses = expenses.filter(amount__lte=amount_max)
 
     from categories.models import ExpenseCategory
     categories = ExpenseCategory.objects.filter(created_by=request.user)
-    total = sum(e.amount for e in expenses)
+    expenses_list = list(expenses)
+    total = sum(e.amount for e in expenses_list)
+    count = len(expenses_list)
+    average = total / count if count else 0
+    paid_total = sum(e.amount for e in expenses_list if e.status == 'paid')
+    pending_total = sum(e.amount for e in expenses_list if e.status == 'pending')
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         data = [{
@@ -50,16 +62,45 @@ def expense_list(request):
             'date': str(e.date),
             'status': e.status,
             'payment_method': e.get_payment_method_display(),
-        } for e in expenses]
+        } for e in expenses_list]
         return JsonResponse({'expenses': data, 'total': str(total)})
 
     return render(request, 'expenses/list.html', {
-        'expenses': expenses,
+        'expenses': expenses_list,
         'categories': categories,
         'total': total,
-        'filters': {'category': category_id, 'status': status, 'date_from': date_from, 'date_to': date_to, 'search': search},
+        'count': count,
+        'average': average,
+        'paid_total': paid_total,
+        'pending_total': pending_total,
+        'filters': {
+            'category': category_id, 'status': status, 'date_from': date_from,
+            'date_to': date_to, 'search': search, 'amount_min': amount_min, 'amount_max': amount_max,
+        },
         'is_admin': is_admin_user(request.user),
     })
+
+
+@login_required
+def expense_export_csv(request):
+    """Export expense entries to CSV — mirrors reference file's exportExcel()"""
+    if is_admin_user(request.user):
+        expenses = Expense.objects.select_related('category', 'user').all()
+    else:
+        expenses = Expense.objects.filter(user=request.user).select_related('category')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="expense-export.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Date', 'Title', 'Category', 'Amount', 'Status', 'Payment Method', 'Description'])
+    for e in expenses:
+        writer.writerow([
+            e.date, e.title,
+            e.category.name if e.category else 'Uncategorized',
+            e.amount, e.get_status_display(), e.get_payment_method_display(),
+            e.description or '',
+        ])
+    return response
 
 
 @login_required

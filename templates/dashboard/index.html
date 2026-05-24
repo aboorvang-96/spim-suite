@@ -1,118 +1,188 @@
 {% extends 'base.html' %}
-{% block title %}Dashboard - FinanceHub{% endblock %}
+{% block title %}Dashboard - SPIM Suite{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 {% block page_title %}Dashboard{% endblock %}
-{% block page_sub %}Good to see you, {{ request.user.full_name|default:request.user.username }}{% endblock %}
+
+{% block header_actions %}{% endblock %}
+
 {% block content %}
-<div class="space-y-5">
-  <!-- Balance Cards -->
-  <div class="grid grid-3">
-    <div class="card" style="background:linear-gradient(135deg,#0f2044 0%,#1e3a5f 100%);color:white;position:relative;overflow:hidden;">
-      <div style="position:absolute;right:0;top:0;width:128px;height:128px;border-radius:50%;opacity:0.1;background:#c9a84c;transform:translate(30%,-30%)"></div>
-      <p style="color:#bfdbfe;font-size:.75rem;font-weight:500;text-transform:uppercase;margin-bottom:.75rem;letter-spacing:.5px;">Total Balance</p>
-      <div style="font-size:1.875rem;font-weight:700;margin-bottom:.25rem;">₹{{ balance|floatformat:2 }}</div>
-      <p style="color:#93c5fd;font-size:.75rem;opacity:0.7;">All-time net</p>
-      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.1);display:flex;gap:1rem;font-size:.75rem;">
-        <div><span style="color:#7ee8b8;">Income</span><span style="color:white;font-weight:600;margin-left:.25rem;">₹{{ total_income|floatformat:2 }}</span></div>
-        <div><span style="color:#f87171;">Expense</span><span style="color:white;font-weight:600;margin-left:.25rem;">₹{{ total_expense|floatformat:2 }}</span></div>
-      </div>
-    </div>
-
-    <div class="card" style="border-left:4px solid #16a34a;">
-      <p class="text-slate-400 text-xs font-semibold" style="text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;">Total Income</p>
-      <div style="font-size:1.5rem;font-weight:700;color:#16a34a;margin-bottom:.25rem;">₹{{ total_income|floatformat:2 }}</div>
-      <a href="{% url 'finance:list' %}?type=income" class="text-xs" style="color:#16a34a;margin-top:.75rem;display:block;">View all income →</a>
-    </div>
-
-    <div class="card" style="border-left:4px solid #dc2626;">
-      <p class="text-slate-400 text-xs font-semibold" style="text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;">Total Expenses</p>
-      <div style="font-size:1.5rem;font-weight:700;color:#dc2626;margin-bottom:.25rem;">₹{{ total_expense|floatformat:2 }}</div>
-      <a href="{% url 'finance:list' %}?type=expense" class="text-xs" style="color:#dc2626;margin-top:.75rem;display:block;">View all expenses →</a>
-    </div>
-  </div>
-
-  <!-- Stats Cards -->
-  <div class="grid grid-3">
-    <div class="card">
-      <p class="text-slate-400 text-xs font-semibold" style="text-transform:uppercase;letter-spacing:.5px;">Active Projects</p>
-      <div style="font-size:1.5rem;font-weight:700;color:#1e293b;margin-top:.5rem;">{{ active_projects }}</div>
-      <a href="{% url 'projects:list' %}" class="text-xs" style="color:#2563eb;margin-top:.5rem;display:block;">Manage →</a>
-    </div>
-
-    <div class="card">
-      <p class="text-slate-400 text-xs font-semibold" style="text-transform:uppercase;letter-spacing:.5px;">Pending Invoices</p>
-      <div style="display:flex;align-items:flex-end;gap:.5rem;margin-top:.5rem;">
-        <span style="font-size:1.5rem;font-weight:700;color:#1e293b;">{{ pending_invoices }}</span>
-        {% if overdue_invoices %}<span class="badge badge-red">{{ overdue_invoices }} overdue</span>{% endif %}
-      </div>
-      <a href="{% url 'invoices:list' %}" class="text-xs" style="color:#2563eb;margin-top:.5rem;display:block;">View →</a>
-    </div>
-
-    <div class="card">
-      <p class="text-slate-400 text-xs font-semibold" style="text-transform:uppercase;letter-spacing:.5px;">Clients</p>
-      <div style="font-size:1.5rem;font-weight:700;color:#1e293b;margin-top:.5rem;">N/A</div>
-      <a href="{% url 'clients:list' %}" class="text-xs" style="color:#2563eb;margin-top:.5rem;display:block;">View all →</a>
-    </div>
-  </div>
-
-  <!-- Charts & Transactions -->
-  <div class="grid" style="grid-template-columns:2fr 1fr;gap:1rem;">
-    <div class="card">
-      <h3 style="font-weight:600;color:#1e293b;font-size:.875rem;margin-bottom:.25rem;">Monthly Overview</h3>
-      <p class="text-slate-400 text-xs" style="margin-bottom:1rem;">Income vs expenses - last 6 months</p>
-      <canvas id="monthlyChart" style="max-height:250px;"></canvas>
-    </div>
-
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
-        <h3 style="font-weight:600;color:#1e293b;font-size:.875rem;">Recent Transactions</h3>
-        <a href="{% url 'finance:list' %}" class="text-xs" style="color:#2563eb;">View all</a>
-      </div>
-      {% if recent_txns %}
-        <div class="space-y-3">
-          {% for t in recent_txns %}
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:.375rem 0;border-bottom:1px solid #f1f5f9;">
-              <div style="display:flex;align-items:center;gap:.625rem;min-width:0;">
-                <div style="width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:{% if t.type == 'income' %}#dcfce7{% else %}#fee2e2{% endif %};">
-                  {% if t.type == 'income' %}
-                    <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#16a34a" stroke-width="2.5"><path stroke-linecap="round" d="M12 19V5m-5 5l5-5 5 5"></path></svg>
-                  {% else %}
-                    <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#dc2626" stroke-width="2.5"><path stroke-linecap="round" d="M12 5v14m-5-5l5 5 5-5"></path></svg>
-                  {% endif %}
-                </div>
-                <div style="min-width:0;">
-                  <p class="text-slate-700 text-xs font-medium" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ t.description|default:t.get_type_display }}</p>
-                  <p class="text-slate-400 text-xs">{{ t.date|date:"M d" }}{% if t.category %} · {{ t.category.name }}{% endif %}</p>
-                </div>
-              </div>
-              <span class="text-xs font-semibold" style="flex-shrink:0;margin-left:.75rem;color:{% if t.type == 'income' %}#16a34a{% else %}#dc2626{% endif %};">{% if t.type == 'income' %}+{% else %}-{% endif %}₹{{ t.amount|floatformat:2 }}</span>
+<div class="space-y-6">
+    <!-- Company Identity Header -->
+    <div class="card flex justify-between items-center py-3 px-5" style="border-left: 4px solid #1e3a5f; background: #f8fafc;">
+        <div class="flex items-center gap-8">
+            <div>
+                <p class="stat-label">Organisation</p>
+                <p class="text-base font-bold text-slate-900">{% if company %}{{ company.name }}{% else %}<span class="text-slate-400 font-medium">Not configured</span>{% endif %}</p>
             </div>
-          {% endfor %}
+            {% if company and company.gst_number %}
+            <div>
+                <p class="stat-label">GST No.</p>
+                <p class="text-sm font-semibold text-slate-700">{{ company.gst_number }}</p>
+            </div>
+            {% endif %}
         </div>
-      {% else %}
-        <p class="text-slate-400 text-sm" style="text-align:center;padding:2rem;">No transactions yet</p>
-      {% endif %}
+        <a href="{% url 'dashboard:company_settings' %}" class="btn btn-sm btn-navy">
+            {% if company %}Edit Company{% else %}Setup Company{% endif %}
+        </a>
     </div>
-  </div>
+
+    <!-- Filters Row -->
+    <div class="flex justify-between items-center">
+        <div class="flex gap-2 bg-white p-1 rounded-lg border border-slate-200">
+            <button class="btn btn-sm btn-outline border-none">Daily</button>
+            <button class="btn btn-sm btn-outline border-none">Weekly</button>
+            <button class="btn btn-sm btn-navy border-none rounded-6">Monthly</button>
+            <button class="btn btn-sm btn-outline border-none">Quarterly</button>
+            <button class="btn btn-sm btn-outline border-none">Half-Yearly</button>
+            <button class="btn btn-sm btn-outline border-none">Yearly</button>
+        </div>
+        <div>
+            <select class="form-input w-auto h-9 text-xs font-semibold" title="Filter by Branch or Site">
+                <option>All Branches / Sites</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="grid grid-4">
+        <div class="card flex justify-between items-start">
+            <div>
+                <p class="stat-label">Total Balance</p>
+                <div class="stat-value">₹{{ balance|default:"0.00"|floatformat:2 }}</div>
+                <p class="stat-sub">Net (Income − Expenses)</p>
+            </div>
+            <div class="stat-icon stat-icon-info">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--info)" stroke-width="2"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+        </div>
+
+        <div class="card flex justify-between items-start border-b-success">
+            <div>
+                <p class="stat-label">Total Income</p>
+                <div class="stat-value">₹{{ total_income|default:"0.00"|floatformat:2 }}</div>
+                <p class="stat-sub">All Records</p>
+            </div>
+            <div class="stat-icon stat-icon-success">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--success)" stroke-width="2"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+            </div>
+        </div>
+
+        <div class="card flex justify-between items-start border-b-danger">
+            <div>
+                <p class="stat-label">Total Expenses</p>
+                <div class="stat-value">₹{{ total_expense|default:"0.00"|floatformat:2 }}</div>
+                <p class="stat-sub">All Records</p>
+            </div>
+            <div class="stat-icon stat-icon-danger">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--danger)" stroke-width="2"><path d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" /></svg>
+            </div>
+        </div>
+
+        <div class="card flex justify-between items-start border-b-warning">
+            <div>
+                <p class="stat-label">Active Projects</p>
+                <div class="stat-value">{{ active_projects|default:"0" }}</div>
+                <p class="stat-sub">In progress</p>
+            </div>
+            <div class="stat-icon stat-icon-warning">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--warning)" stroke-width="2"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Area (Charts) -->
+    <div class="grid grid-dashboard-main">
+        <div class="card flex flex-col">
+            <h3 class="font-semibold text-slate-800 mb-6 text-sm">Income vs Expenses – This Month</h3>
+            <div class="relative w-full flex-grow" style="min-height: 300px; height: 300px; max-height: 400px;">
+                <canvas id="monthlyChart" class="w-full h-full"></canvas>
+            </div>
+            <div class="flex justify-center gap-6 mt-6">
+                <div class="flex items-center gap-2">
+                    <span class="chart-legend-dot bg-success"></span>
+                    <span class="text-xs font-semibold">Income</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="chart-legend-dot bg-error"></span>
+                    <span class="text-xs font-semibold">Expense</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 class="font-semibold text-slate-800 mb-6 text-sm">Expense by Category</h3>
+            <div class="flex flex-col items-center justify-center h-full py-10">
+                <p class="text-slate-400 text-sm">No expenses</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Transactions Table -->
+    <div class="card">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="font-semibold text-slate-800 text-sm">Recent Transactions</h3>
+            <div class="badge badge-neutral">0</div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Category</th>
+                        <th>Type</th>
+                        <th class="text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if recent_txns %}
+                        {% for t in recent_txns %}
+                        <tr>
+                            <td>{{ t.date|date:"Y-m-d" }}</td>
+                            <td class="font-medium">{{ t.description }}</td>
+                            <td>{{ t.category.name|default:"-" }}</td>
+                            <td><span class="badge {% if t.type == 'income' %}badge-success{% else %}badge-error{% endif %}">{{ t.get_type_display }}</span></td>
+                            <td class="text-right font-bold">₹{{ t.amount|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-slate-400 py-12">No transactions found</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-var raw = {{ chart_data|safe }};
-var ctx = document.getElementById('monthlyChart');
-if (ctx) {
-  new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: raw.map(function(d){return d.month;}),
-      datasets: [
-        {label:'Income', data:raw.map(function(d){return d.income;}), backgroundColor:'rgba(22,163,74,.15)', borderColor:'#16a34a', borderWidth:2, borderRadius:4},
-        {label:'Expense',data:raw.map(function(d){return d.expense;}),backgroundColor:'rgba(220,38,38,.1)',  borderColor:'#dc2626', borderWidth:2, borderRadius:4}
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{font:{size:11},boxWidth:12}}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'#f1f5f9'},ticks:{font:{size:11},callback:function(v){return '₹'+v;}}}}}
-  });
-}
+    document.addEventListener('DOMContentLoaded', function() {
+        const raw = {{ chart_data|safe|default:"[]" }};
+        const ctx = document.getElementById('monthlyChart');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: raw.map(d => d.month),
+                    datasets: [
+                        { label: 'Income',  data: raw.map(d => d.income),  backgroundColor: '#10b981', borderRadius: 4, barThickness: 15 },
+                        { label: 'Expense', data: raw.map(d => d.expense), backgroundColor: '#ef4444', borderRadius: 4, barThickness: 15 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { size: 11, weight: '500' }, color: '#94a3b8' } },
+                        y: { grid: { color: '#f1f5f9', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94a3b8', callback: v => '₹' + v } }
+                    }
+                }
+            });
+        }
+    });
 </script>
 {% endblock %}

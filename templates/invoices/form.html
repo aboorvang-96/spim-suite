@@ -1,17 +1,17 @@
 {% extends 'base.html' %}
-{% block title %}{{ title }} - FinanceHub{% endblock %}
+{% block title %}{{ title }} - SPIM Suite{% endblock %}
 {% block nav_invoices %}active{% endblock %}
 {% block page_title %}{{ title }}{% endblock %}
 {% block content %}
-<div class="max-w-3xl">
+<div class="max-w-4xl mx-auto">
   <form method="post" novalidate>{% csrf_token %}
-    <div class="card mb-4">
+    <div class="card p-6 mb-4">
       <h3 class="font-semibold text-slate-700 text-sm mb-4">Invoice Details</h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {% for field in form %}<div class="{% if field.name == 'notes' %}sm:col-span-2{% endif %}"><label class="block text-slate-500 text-xs font-medium uppercase tracking-wide mb-1.5">{{ field.label }}</label>{{ field }}{% if field.errors %}<p class="text-red-500 text-xs mt-1">{{ field.errors.0 }}</p>{% endif %}</div>{% endfor %}
+      <div class="grid grid-2 gap-4">
+        {% for field in form %}<div class="form-group {% if field.name == 'notes' %}col-span-2{% endif %}"><label class="form-label">{{ field.label }}</label>{{ field }}{% if field.errors %}<p class="text-red-500 text-xs mt-1">{{ field.errors.0 }}</p>{% endif %}</div>{% endfor %}
       </div>
     </div>
-    <div class="card mb-4">
+    <div class="card p-6 mb-4">
       <h3 class="font-semibold text-slate-700 text-sm mb-4">Line Items</h3>
       {{ formset.management_form }}
       <table class="w-full text-sm mb-3">

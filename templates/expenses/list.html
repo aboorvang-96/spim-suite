@@ -4,19 +4,80 @@
 {% block page_title %}Expenses{% endblock %}
 {% block page_subtitle %}Manage your outgoing transactions{% endblock %}
 
-{% block content %}
-<div class="space-y-6">
+{% block header_actions %}
+<div class="flex items-center gap-3">
+    <a href="{% url 'expenses:export_csv' %}" class="btn btn-outline btn-sm" title="Export CSV">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Export
+    </a>
+    <a href="{% url 'expenses:add' %}" class="btn btn-primary btn-sm">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 4v16m8-8H4"/></svg>
+        Add Expense
+    </a>
+</div>
+{% endblock %}
 
-    <!-- Filters Section -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-        <form method="GET" class="flex flex-col md:flex-row gap-4 items-end" id="filterForm">
-            <div class="flex-1 w-full relative">
-                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                <input type="text" name="search" value="{{ filters.search|default:'' }}" placeholder="Search expenses..." class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+{% block content %}
+<div class="expense-list space-y-4">
+
+    <!-- Summary Cards — mirrors reference file's debit/balance summary -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="card p-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background: rgba(239,68,68,0.1); color: #ef4444;">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></svg>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Debit</p>
+                    <p class="text-xl font-bold text-slate-800">₹{{ total|floatformat:2 }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="card p-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background: rgba(16,185,129,0.1); color: #10b981;">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Paid</p>
+                    <p class="text-xl font-bold text-slate-800">₹{{ paid_total|floatformat:2 }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="card p-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background: rgba(245,158,11,0.1); color: #f59e0b;">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pending</p>
+                    <p class="text-xl font-bold text-slate-800">₹{{ pending_total|floatformat:2 }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="card p-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background: rgba(99,102,241,0.1); color: #6366f1;">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Entries</p>
+                    <p class="text-xl font-bold text-slate-800">{{ count }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters Section — enhanced with amount range from reference -->
+    <div class="card p-5">
+        <form method="GET" class="flex flex-wrap gap-4 items-end" id="filterForm">
+            <div class="flex-1 min-w-[200px] search-wrap">
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" name="search" value="{{ filters.search|default:'' }}" placeholder="Search expenses..." class="form-input pl-10">
             </div>
             
-            <div class="w-full md:w-36">
-                <select name="category" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none cursor-pointer">
+            <div class="w-full md:w-40">
+                <select name="category" class="form-input" title="Filter by category">
                     <option value="">All Categories</option>
                     {% for c in categories %}
                         <option value="{{ c.id }}" {% if filters.category == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
@@ -25,27 +86,34 @@
             </div>
             
             <div class="w-full md:w-36">
-                <select name="status" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none cursor-pointer">
+                <select name="status" class="form-input" title="Filter by status">
                     <option value="">All Statuses</option>
                     <option value="paid" {% if filters.status == 'paid' %}selected{% endif %}>Paid</option>
                     <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>Pending</option>
                 </select>
             </div>
             
-            <div class="flex gap-2 w-full md:w-auto">
-                <div class="flex-1 md:w-36">
-                    <input type="date" name="date_from" value="{{ filters.date_from|default:'' }}" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+            <div class="flex gap-2">
+                <input type="date" name="date_from" value="{{ filters.date_from|default:'' }}" class="form-input w-36" title="From Date">
+                <input type="date" name="date_to" value="{{ filters.date_to|default:'' }}" class="form-input w-36" title="To Date">
+            </div>
+
+            <div class="flex gap-2 items-center">
+                <div class="flex items-center gap-1">
+                    <span class="text-xs font-medium text-slate-500">Min ₹</span>
+                    <input type="number" name="amount_min" value="{{ filters.amount_min|default:'' }}" class="form-input w-24" placeholder="0" min="0">
                 </div>
-                <div class="flex-1 md:w-36">
-                    <input type="date" name="date_to" value="{{ filters.date_to|default:'' }}" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                <div class="flex items-center gap-1">
+                    <span class="text-xs font-medium text-slate-500">Max ₹</span>
+                    <input type="number" name="amount_max" value="{{ filters.amount_max|default:'' }}" class="form-input w-24" placeholder="∞" min="0">
                 </div>
             </div>
             
             <div class="flex gap-2">
-                <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-sm">
+                <button type="submit" class="btn btn-navy">
                     Filter
                 </button>
-                <a href="{% url 'expenses:list' %}" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-medium transition-colors text-center inline-block">
+                <a href="{% url 'expenses:list' %}" class="btn btn-secondary">
                     Clear
                 </a>
             </div>
@@ -53,85 +121,100 @@
     </div>
 
     <!-- Data Table -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[calc(100vh-280px)] min-h-[400px]">
-        <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <h3 class="font-bold text-gray-800 flex items-center gap-2">
-                <i class="fa-solid fa-list-ul text-indigo-500"></i> All Expenses
+    <div class="card p-0 overflow-hidden">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50" style="padding: 0.65rem 1rem;">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="text-primary"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+                All Expenses
             </h3>
-            <div class="text-sm font-semibold bg-indigo-50 text-indigo-700 py-1.5 px-4 rounded-xl border border-indigo-100">
-                Total: ₹<span id="totalAmount">{{ total|floatformat:2 }}</span>
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-slate-400">{{ count }} record{{ count|pluralize }}</span>
+                <div class="badge badge-info py-2 px-4">
+                    Total: ₹<span id="totalAmount">{{ total|floatformat:2 }}</span>
+                </div>
             </div>
         </div>
         
-        <div class="flex-1 overflow-auto">
-            <table class="w-full text-left border-collapse" id="expenseTable">
-                <thead class="sticky top-0 bg-white shadow-sm z-10">
-                    <tr class="text-gray-500 text-xs uppercase tracking-wider">
-                        <th class="px-6 py-4 font-semibold w-1/3">Title & Category</th>
-                        <th class="px-6 py-4 font-semibold">Date</th>
-                        <th class="px-6 py-4 font-semibold">Method</th>
-                        <th class="px-6 py-4 font-semibold">Status</th>
-                        <th class="px-6 py-4 font-semibold text-right">Amount</th>
-                        <th class="px-6 py-4 font-semibold text-right">Actions</th>
+        <div class="overflow-x-auto">
+            <table class="data-table" id="expenseTable">
+                <thead>
+                    <tr>
+                        <th>Title & Category</th>
+                        <th>Date</th>
+                        <th>Method</th>
+                        <th>Status</th>
+                        <th class="text-right">Amount</th>
+                        <th>Notes</th>
+                        <th class="text-right">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 text-sm" id="expenseTableBody">
+                <tbody id="expenseTableBody">
                     {% for expense in expenses %}
-                    <tr class="hover:bg-gray-50/50 transition-colors group" data-id="{{ expense.id }}">
-                        <td class="px-6 py-4">
+                    <tr data-id="{{ expense.id }}">
+                        <td>
                             <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-rose-50 text-rose-500" style="{% if expense.category %}color: {{ expense.category.color }}; background-color: {{ expense.category.color }}15;{% endif %}">
+                                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 cat-icon-bg" 
+                                     {% if expense.category %} data-cat-color="{{ expense.category.color }}" {% endif %}>
                                     <i class="fa-solid fa-{{ expense.category.icon|default:'cart-shopping' }}"></i>
                                 </div>
                                 <div>
-                                    <p class="font-bold text-gray-800">{{ expense.title }}</p>
-                                    <p class="text-xs text-gray-500">{{ expense.category.name|default:'Uncategorized' }}</p>
+                                    <p class="font-bold text-slate-800">{{ expense.title }}</p>
+                                    <p class="text-xs text-slate-500">{{ expense.category.name|default:'Uncategorized' }}</p>
                                 </div>
                             </div>
                         </td>
-                        <td class="px-6 py-4 text-gray-600 font-medium">
-                            <i class="fa-regular fa-calendar mr-2 text-gray-400"></i>{{ expense.date|date:"M d, Y" }}
+                        <td class="font-medium text-slate-600">
+                            {{ expense.date|date:"M d, Y" }}
                         </td>
-                        <td class="px-6 py-4 text-gray-500 capitalize">
+                        <td class="text-slate-500 capitalize">
                             {{ expense.get_payment_method_display }}
                         </td>
-                        <td class="px-6 py-4">
+                        <td>
                             {% if expense.status == 'paid' %}
-                                <span class="px-2.5 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-xs font-semibold border border-emerald-100 inline-flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> Paid</span>
+                                <span class="badge badge-success">Paid</span>
                             {% elif expense.status == 'pending' %}
-                                <span class="px-2.5 py-1 bg-amber-50 text-amber-600 rounded-lg text-xs font-semibold border border-amber-100 inline-flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div> Pending</span>
+                                <span class="badge badge-yellow">Pending</span>
                             {% else %}
-                                <span class="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-lg text-xs font-semibold border border-gray-200 capitalize">{{ expense.status }}</span>
+                                <span class="badge badge-neutral capitalize">{{ expense.status }}</span>
                             {% endif %}
                         </td>
-                        <td class="px-6 py-4 text-right font-bold text-gray-800 text-base">
+                        <td class="text-right font-bold text-slate-800">
                             ₹{{ expense.amount }}
                         </td>
-                        <td class="px-6 py-4 text-right">
-                            <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <a href="{% url 'expenses:detail' expense.pk %}" class="w-8 h-8 rounded-lg flex items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors" title="View details">
-                                    <i class="fa-regular fa-eye"></i>
+                        <td>
+                            {% if expense.description %}
+                            <span class="text-xs text-slate-400 truncate-notes" title="{{ expense.description }}">{{ expense.description|truncatewords:6 }}</span>
+                            {% else %}
+                            <span class="text-xs text-slate-300">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-right">
+                            <div class="flex items-center justify-end gap-1">
+                                <a href="{% url 'expenses:detail' expense.pk %}" class="btn btn-sm btn-outline px-2" title="View details">
+                                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                 </a>
-                                <a href="{% url 'expenses:edit' expense.pk %}" class="w-8 h-8 rounded-lg flex items-center justify-center text-indigo-500 hover:bg-indigo-50 transition-colors" title="Edit">
-                                    <i class="fa-regular fa-pen-to-square"></i>
+                                <a href="{% url 'expenses:edit' expense.pk %}" class="btn btn-sm btn-outline px-2" title="Edit">
+                                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                                 </a>
-                                <button onclick="deleteResource('{% url 'expenses:delete' expense.pk %}', {{ expense.id }})" class="w-8 h-8 rounded-lg flex items-center justify-center text-rose-500 hover:bg-rose-50 transition-colors" title="Delete">
-                                    <i class="fa-regular fa-trash-can"></i>
-                                </button>
+                                <button type="button" class="btn btn-sm btn-danger px-2 delete-btn" 
+                                        data-url="{% url 'expenses:delete' expense.pk %}" 
+                                        data-id="{{ expense.id }}" 
+                                        title="Delete expense">
+                                     <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                 </button>
                             </div>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                        <td colspan="7" class="py-12 text-center text-slate-400">
                             <div class="flex flex-col items-center justify-center">
-                                <div class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                                    <i class="fa-solid fa-receipt text-3xl text-gray-300"></i>
-                                </div>
-                                <h4 class="text-lg font-bold text-gray-800 mb-1">No expenses found</h4>
+                                <svg width="64" height="64" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1" class="mb-4 text-slate-200"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                                <h4 class="text-lg font-bold text-slate-800 mb-1">No expenses found</h4>
                                 <p class="text-sm mb-4">You haven't added any expenses yet, or none match your filters.</p>
-                                <a href="{% url 'expenses:add' %}" class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 shadow-lg shadow-indigo-600/30 transition-all inline-flex items-center gap-2">
-                                    <i class="fa-solid fa-plus"></i> Add Expense
+                                <a href="{% url 'expenses:add' %}" class="btn btn-primary">
+                                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                                    Add Expense
                                 </a>
                             </div>
                         </td>
@@ -142,10 +225,54 @@
         </div>
     </div>
 </div>
+
+<style>
+    .truncate-notes {
+        display: inline-block;
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: help;
+    }
+
+    /* Compact expense layout — scoped, no global side effects */
+
+    /* FIX 1: content area has 2rem top + 5rem bottom padding — reduce for this page */
+    .content { padding: 1.25rem 1.5rem; padding-bottom: 2.5rem; }
+
+    /* FIX 2: summary/filter cards — reduce from 1.5rem default */
+    .expense-list .card        { padding: 1rem; }
+
+    /* FIX 3: table card — restore intended p-0 (flush edges); .p-0 was undefined in CSS */
+    .expense-list .card.p-0   { padding: 0; }
+
+    /* FIX 4: table cell padding */
+    #expenseTable th           { padding: 0.55rem 1rem; }
+    #expenseTable td           { padding: 0.6rem  1rem; }
+</style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // Delete handling via AJAX is inside main.js (called by deleteResource)
+    document.addEventListener('DOMContentLoaded', function() {
+        // Global color handler
+        document.querySelectorAll('[data-cat-color]').forEach(el => {
+            const color = el.dataset.catColor;
+            el.style.color = color;
+            el.style.backgroundColor = color + '15';
+        });
+
+        // Delete handler
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const url = this.dataset.url;
+                const id = this.dataset.id;
+                if (typeof deleteResource === 'function') {
+                    deleteResource(url, id);
+                }
+            });
+        });
+    });
 </script>
 {% endblock %}

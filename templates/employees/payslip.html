@@ -6,12 +6,185 @@
 {% block head %}
 <link rel="stylesheet" href="{% static 'css/employees.css' %}">
 <style>
+    /* ── Payslip layout ── */
+    .payslip-container {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0 2.5rem 2rem;
+        max-width: 860px;
+        margin: 0 auto;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        overflow: hidden;
+        position: relative;
+    }
+    /* ── Watermark ── */
+    .ps-watermark {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 320px;
+        opacity: 0.07;
+        pointer-events: none;
+        z-index: 0;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+    /* ── Blue header band ── */
+    .ps-header-band {
+        background: #2563eb;
+        margin: 0 -2.5rem 1.75rem;
+        padding: 1.5rem 2.5rem 1rem;
+        color: #fff;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+        position: relative;
+        z-index: 1;
+    }
+    .ps-header-top {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        margin-bottom: 0.85rem;
+    }
+    .ps-header-company-name {
+        font-size: 1.15rem;
+        font-weight: 800;
+        text-align: center;
+        letter-spacing: 0.02em;
+        line-height: 1.3;
+        flex: 1;
+        padding-right: 70px;
+    }
+    .ps-header-logo {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 58px;
+        height: 58px;
+        object-fit: contain;
+        border-radius: 4px;
+    }
+    .ps-header-details { margin-bottom: 0.85rem; }
+    .ps-header-detail-row {
+        display: flex;
+        align-items: baseline;
+        font-size: 0.78rem;
+        line-height: 1.75;
+        color: rgba(255,255,255,0.92);
+    }
+    .ps-hd-label { min-width: 11rem; font-weight: 500; flex-shrink: 0; }
+    .ps-hd-sep  { margin-right: 0.4rem; flex-shrink: 0; }
+    .ps-hd-val  { flex: 1; }
+    .ps-header-bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(255,255,255,0.3);
+        padding-top: 0.6rem;
+        margin-top: 0.25rem;
+    }
+    .ps-header-title { font-size: 0.95rem; font-weight: 800; letter-spacing: 0.08em; }
+    .ps-header-period { font-size: 0.82rem; font-weight: 500; opacity: 0.9; }
+
+    /* ── Content sections ── */
+    .ps-content { position: relative; z-index: 1; }
+    .ps-section-title {
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #1e293b;
+        border-bottom: 2px solid #2563eb;
+        padding-bottom: 0.35rem;
+        margin-bottom: 0.65rem;
+    }
+    .ps-info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .ps-field-row {
+        display: flex;
+        align-items: baseline;
+        font-size: 0.8rem;
+        line-height: 1.9;
+    }
+    .ps-field-label {
+        min-width: 9.5rem;
+        color: #64748b;
+        font-weight: 500;
+        flex-shrink: 0;
+    }
+    .ps-field-sep { margin-right: 0.4rem; color: #94a3b8; flex-shrink: 0; }
+    .ps-field-value { color: #1e293b; font-weight: 600; flex: 1; }
+
+    /* ── PF & ESIC Section ── */
+    .ps-pf-section { margin-bottom: 1.25rem; }
+    .ps-pf-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
+
+    /* ── Salary Information ── */
+    .ps-salary-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 1rem;
+    }
+    .ps-salary-col-title {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 0.5rem;
+    }
+    .ps-salary-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-size: 0.8rem;
+        padding: 0.4rem 0;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .ps-salary-label { color: #475569; font-weight: 500; }
+    .ps-salary-amount { font-weight: 700; text-align: right; }
+    .ps-amount-pos { color: #059669; }
+    .ps-amount-neg { color: #dc2626; }
+    .ps-amount-info { color: #64748b; }
+
+    /* ── Net Pay bar ── */
+    .ps-net-pay {
+        background: #2563eb;
+        border-radius: 8px;
+        padding: 0.9rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #fff;
+        margin: 1rem 0 1.5rem;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+    .ps-net-pay-label { font-size: 1rem; font-weight: 700; }
+    .ps-net-pay-amount { font-size: 1.5rem; font-weight: 900; }
+
+    /* ── Divider ── */
+    .ps-divider { height: 1px; background: #e2e8f0; }
+
     @media print {
         .sidebar, .header, .header-actions, .mobile-nav, .btn, .no-print { display: none !important; }
         .main-content { margin: 0 !important; width: 100% !important; }
         .content { padding: 0 !important; background: white !important; }
         .payslip-container { box-shadow: none !important; border: none !important; margin: 0 !important; max-width: 100% !important; }
         body { background: white !important; }
+        .ps-watermark { display: block !important; }
     }
 </style>
 {% endblock %}
@@ -28,84 +201,194 @@
 
 {% block content %}
 <div class="payslip-container">
-    <div class="payslip-header">
-        <div>
-            <h2 class="text-3xl font-black text-slate-800 mb-1">PAYSLIP</h2>
-            <p class="text-slate-500 font-medium">FinanceHub Corporate Payroll</p>
+
+    <!-- ── Background Watermark ── -->
+    <img src="{% static 'img/Logo.png' %}" alt="" class="ps-watermark">
+
+    <!-- ── Blue Header Band ── -->
+    <div class="ps-header-band">
+        <div class="ps-header-top">
+            <div class="ps-header-company-name">
+                {% if company and company.name %}{{ company.name }}{% else %}SPIM Suite{% endif %}
+            </div>
+            <img src="{% static 'img/Logo.png' %}" alt="Logo" class="ps-header-logo">
         </div>
-        <div class="text-right">
-            <p class="ps-label">Reference No</p>
-            <p class="ps-value">{{ payslip.reference_number }}</p>
-            <p class="ps-label mt-2">Date Generated</p>
-            <p class="ps-value">{{ payslip.generated_at|date:"d M Y" }}</p>
+        <!-- Company details: left-aligned rows -->
+        <div class="ps-header-details">
+            {% if company %}
+            {% if company.address %}
+            <div class="ps-header-detail-row">
+                <span class="ps-hd-label">Address</span><span class="ps-hd-sep">:</span><span class="ps-hd-val">{{ company.address }}</span>
+            </div>{% endif %}
+            {% if company.contact_number %}
+            <div class="ps-header-detail-row">
+                <span class="ps-hd-label">Contact Number</span><span class="ps-hd-sep">:</span><span class="ps-hd-val">{{ company.contact_number }}</span>
+            </div>{% endif %}
+            {% if company.gst_number %}
+            <div class="ps-header-detail-row">
+                <span class="ps-hd-label">GST Number</span><span class="ps-hd-sep">:</span><span class="ps-hd-val">{{ company.gst_number }}</span>
+            </div>{% endif %}
+            {% if company.managing_director %}
+            <div class="ps-header-detail-row">
+                <span class="ps-hd-label">Managing Director</span><span class="ps-hd-sep">:</span><span class="ps-hd-val">{{ company.managing_director }}</span>
+            </div>{% endif %}
+            {% endif %}
+        </div>
+        <!-- SALARY PAYSLIP title + Period row at bottom of band -->
+        <div class="ps-header-bottom">
+            <span class="ps-header-title">SALARY PAYSLIP</span>
+            <span class="ps-header-period">Period: {{ salary.month|date:"F Y" }}</span>
         </div>
     </div>
 
-    <div class="grid grid-3 gap-6 mb-8">
-        <div class="card p-4 bg-slate-50 border-none">
-            <p class="ps-label">Employee</p>
-            <h3 class="text-lg font-bold text-slate-900 mb-2">{{ employee.name }}</h3>
-            <p class="text-xs text-slate-500">{{ employee.role }}</p>
-            <p class="text-xs text-slate-500">{{ employee.location }} | {{ employee.site }}</p>
+    <div class="ps-content">
+
+        <!-- ── Employee Information + Bank Details (side by side) ── -->
+        <div class="ps-info-grid">
+            <div>
+                <div class="ps-section-title">Employee Information</div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">Emp ID</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{{ employee.employee_id|default:"—" }}</span>
+                </div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">Emp Name</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{{ employee.name|default:"—" }}</span>
+                </div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">Role</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{{ employee.designation|default:"—" }}</span>
+                </div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">Level</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{% if employee.job_role %}{{ employee.job_role.name }}{% else %}—{% endif %}</span>
+                </div>
+            </div>
+            <div>
+                <div class="ps-section-title">Bank Details</div>
+                {% if employee.has_bank_details %}
+                <div class="ps-field-row">
+                    <span class="ps-field-label">Bank Name</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{{ employee.bank_details.bank_name|default:"—" }}</span>
+                </div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">Account Holder</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{{ employee.bank_details.account_holder|default:"—" }}</span>
+                </div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">Account Number</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{{ employee.bank_details.account_number|default:"—" }}</span>
+                </div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">IFSC Code</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{{ employee.bank_details.ifsc_code|default:"—" }}</span>
+                </div>
+                {% else %}
+                <div class="ps-field-row">
+                    <span class="ps-field-value" style="color:#94a3b8;">Bank details not provided</span>
+                </div>
+                {% endif %}
+            </div>
         </div>
-        <div class="card p-4 bg-slate-50 border-none">
-            <p class="ps-label">Period</p>
-            <h3 class="text-lg font-bold text-slate-900 mb-2">{{ salary.month|date:"F Y" }}</h3>
-            <p class="text-xs text-slate-500">Full Month Attendance</p>
+
+        <!-- ── PF & ESIC Information ── -->
+        <div class="ps-pf-section">
+            <div class="ps-section-title">PF &amp; ESIC Information</div>
+            <div class="ps-pf-grid">
+                <div class="ps-field-row">
+                    <span class="ps-field-label">PF Number</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{% if employee.has_pf_details and employee.pf_details.pf_number %}{{ employee.pf_details.pf_number }}{% else %}—{% endif %}</span>
+                </div>
+                <div class="ps-field-row">
+                    <span class="ps-field-label">ESIC Number</span>
+                    <span class="ps-field-sep">:</span>
+                    <span class="ps-field-value">{% if employee.has_pf_details and employee.pf_details.esic_number %}{{ employee.pf_details.esic_number }}{% else %}—{% endif %}</span>
+                </div>
+            </div>
         </div>
-        <div class="card p-4 bg-slate-50 border-none">
-            <p class="ps-label">Payment Mode</p>
-            <h3 class="text-lg font-bold text-slate-900 mb-2">NEFT / Bank Transfer</h3>
-            <p class="text-xs text-slate-500">{% if employee.bank_details %}{{ employee.bank_details.bank_name }}{% else %}Bank details not specified{% endif %}</p>
+
+        <!-- ── Salary Information (two-column) ── -->
+        <div class="ps-section-title">Salary Information</div>
+        <div class="ps-salary-grid">
+            <!-- LEFT: Deductions -->
+            <div>
+                <div class="ps-salary-col-title" style="color:#dc2626;">Deductions</div>
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">Advance Pay</span>
+                    <span class="ps-salary-amount ps-amount-neg">₹ {{ salary.advance_pay|floatformat:2 }}</span>
+                </div>
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">Total Deduction</span>
+                    <span class="ps-salary-amount ps-amount-neg">₹ {{ salary.total_deduction|floatformat:2 }}</span>
+                </div>
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">PF Amount</span>
+                    <span class="ps-salary-amount ps-amount-neg">₹ {{ salary.pf_employee_snapshot|floatformat:2 }}</span>
+                </div>
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">Used Food Allowance</span>
+                    <span class="ps-salary-amount ps-amount-info">₹ {{ salary.food_usage|floatformat:2 }}</span>
+                </div>
+                {% if salary.food_adjustment < 0 %}
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">Food Used Exceeded</span>
+                    <span class="ps-salary-amount ps-amount-neg">₹ {{ salary.food_adjustment|floatformat:2|slice:"1:" }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <!-- RIGHT: Earnings -->
+            <div>
+                <div class="ps-salary-col-title" style="color:#059669;">Earnings</div>
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">Base Salary</span>
+                    <span class="ps-salary-amount ps-amount-pos">₹ {{ salary.basic_salary|floatformat:2 }}</span>
+                </div>
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">OT / Extra Allowance</span>
+                    <span class="ps-salary-amount ps-amount-pos">₹ {{ salary.ot_allowance|floatformat:2 }}</span>
+                </div>
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">Allocated Food Allowance</span>
+                    <span class="ps-salary-amount ps-amount-pos">₹ {{ salary.food_allowance|floatformat:2 }}</span>
+                </div>
+                {% if salary.food_adjustment >= 0 %}
+                <div class="ps-salary-item">
+                    <span class="ps-salary-label">Balance Food Allowance</span>
+                    <span class="ps-salary-amount ps-amount-pos">₹ {{ salary.food_adjustment|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- ── Net Pay ── -->
+        <div class="ps-net-pay">
+            <span class="ps-net-pay-label">Total Net Payable</span>
+            <span class="ps-net-pay-amount">₹ {{ salary.net_pay|floatformat:2 }}</span>
+        </div>
+
+        <!-- ── Footer ── -->
+        <div class="ps-divider" style="margin-top:2rem;"></div>
+        <div class="flex justify-between items-end pt-8">
+            <div class="text-slate-400 text-xs text-center border-t border-dashed w-32 pt-2">Employee Signature</div>
+            <div class="text-slate-400 text-xs">This is a system generated payslip.</div>
+            <div class="text-center" style="min-width:12rem;">
+                <div class="text-slate-900 text-xs font-bold text-center border-t border-slate-900 pt-2">
+                    {% if company and company.managing_director %}{{ company.managing_director }}{% elif company and company.name %}For {{ company.name }}{% else %}Authorized Signatory{% endif %}
+                </div>
+                <div class="text-slate-900 text-xs font-bold mt-1">Managing Director</div>
+                {% if company and company.name %}<div class="text-slate-500 text-xs">For {{ company.name }}</div>{% endif %}
+            </div>
         </div>
     </div>
 
-    <div class="space-y-4">
-        <h4 class="text-sm font-bold text-slate-800 uppercase tracking-widest border-b pb-2">Earnings & Deductions</h4>
-        <table class="w-full text-sm">
-            <thead>
-                <tr class="text-left text-slate-400 border-b">
-                    <th class="py-2">Description</th>
-                    <th class="py-2 text-right">Earnings</th>
-                    <th class="py-2 text-right">Deductions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr class="border-b">
-                    <td class="py-4">Base Salary</td>
-                    <td class="py-4 text-right">₹ {{ salary.base_salary|floatformat:2 }}</td>
-                    <td class="py-4 text-right">-</td>
-                </tr>
-                <tr class="border-b">
-                    <td class="py-4">Overtime Allowance</td>
-                    <td class="py-4 text-right">₹ {{ salary.overtime_allowance|floatformat:2 }}</td>
-                    <td class="py-4 text-right">-</td>
-                </tr>
-                <tr class="border-b">
-                    <td class="py-4">Advance Adjustment</td>
-                    <td class="py-4 text-right">-</td>
-                    <td class="py-4 text-right text-red-600">₹ {{ salary.advance_pay|floatformat:2 }}</td>
-                </tr>
-                <tr class="border-b">
-                    <td class="py-4">Professional Tax / Deductions</td>
-                    <td class="py-4 text-right">-</td>
-                    <td class="py-4 text-right text-red-600">₹ {{ salary.deduction|floatformat:2 }}</td>
-                </tr>
-            </tbody>
-            <tfoot>
-                <tr>
-                    <td class="py-6 font-bold text-lg">Total Net Payable</td>
-                    <td colspan="2" class="py-6 text-right font-black text-2xl text-blue-800">₹ {{ salary.net_pay|floatformat:2 }}</td>
-                </tr>
-            </tfoot>
-        </table>
-    </div>
-
-    <div class="ps-divider mt-12"></div>
-    <div class="flex justify-between items-end pt-8">
-        <div class="text-slate-400 text-xs text-center border-t border-dashed w-32 pt-2">Employee Signature</div>
-        <div class="text-slate-400 text-xs">This is a system generated payslip.</div>
-        <div class="text-slate-900 text-xs font-bold text-center border-t border-slate-900 w-48 pt-2">Authorized Signatory</div>
-    </div>
 </div>
 {% endblock %}

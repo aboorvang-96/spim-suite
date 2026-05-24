@@ -40,9 +40,9 @@
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
         Bulk Payslips
     </button>
-    <button onclick="generateExpenseReport()" class="btn btn-outline btn-sm bg-white" title="Generate expense entries in Expense Module from current payroll">
+    <button onclick="generatePayslipBatch()" class="btn btn-outline btn-sm bg-white" title="Generate payslips for all employees in this cycle and post the matching expense entries (idempotent)">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
-        Generate Expense Report
+        Generate Payslip
     </button>
     <button onclick="openSalaryConfigModal()" class="btn btn-outline btn-sm bg-white" title="Manage Role + Level base salary mappings">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -203,13 +203,10 @@
                     </div>
                     <div class="form-group">
                         <label class="stat-label">Level</label>
+                        {% comment %}Centralised master_levels — same pool the Employee Add/Edit dropdowns use. Hard-coded Junior/Mid/Senior/Lead/Manager removed.{% endcomment %}
                         <select id="edit-level" class="filter-select" onchange="autofillBaseFromConfig()" title="Employee level">
                             <option value="">— Select —</option>
-                            <option value="Junior">Junior</option>
-                            <option value="Mid">Mid</option>
-                            <option value="Senior">Senior</option>
-                            <option value="Lead">Lead</option>
-                            <option value="Manager">Manager</option>
+                            {% for l in master_levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
                         </select>
                     </div>
                 </div>
@@ -241,11 +238,19 @@
                         <label class="stat-label">PF Amount (₹)</label>
                         <input type="number" name="pf_amount" id="edit-pf-amount" class="filter-input" title="PF Amount">
                     </div>
+                    <div class="form-group">
+                        <label class="stat-label">Food Allowance / Month (₹)</label>
+                        <input type="number" name="food_allowance" id="edit-food-allowance" class="filter-input" oninput="calcNet()" min="0" step="0.01" value="0" title="Monthly Food Allowance Limit">
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label">Actual Food Usage (₹)</label>
+                        <input type="number" name="food_usage" id="edit-food-usage" class="filter-input" oninput="calcNet()" min="0" step="0.01" value="0" title="Actual Monthly Food Usage — remaining balance added, excess deducted">
+                    </div>
                 </div>
 
                 <div class="net-preview">
                     <div>
-                        <div class="text-xxs-bold text-emerald-900">Net Pay = Attendance Earnings + OT − Advance − Deduction</div>
+                        <div class="text-xxs-bold text-emerald-900">Net Pay = Attendance Earnings + OT − Advance − Deduction + Food Adjustment</div>
                         <div class="text-2xl-bold text-emerald-800" id="net-val">₹0</div>
                     </div>
                 </div>
@@ -312,17 +317,17 @@
             <div class="filter-card" style="margin-bottom:1rem;background:var(--slate-50);padding:0.75rem 1rem;gap:0.5rem;">
                 <div class="filter-group" style="min-width:140px;">
                     <label>Role</label>
-                    <input type="text" id="sc-role" class="filter-input" placeholder="e.g. Site Engineer" list="sc-role-list">
-                    <datalist id="sc-role-list"></datalist>
+                    {% comment %}Single source of truth: master_roles is the same pool the Employee Add/Edit dropdowns use.{% endcomment %}
+                    <select id="sc-role" class="filter-select">
+                        <option value="">-- Select Role --</option>
+                        {% for r in master_roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+                    </select>
                 </div>
                 <div class="filter-group" style="min-width:110px;">
                     <label>Level</label>
                     <select id="sc-level" class="filter-select">
-                        <option value="Junior">Junior</option>
-                        <option value="Mid">Mid</option>
-                        <option value="Senior">Senior</option>
-                        <option value="Lead">Lead</option>
-                        <option value="Manager">Manager</option>
+                        <option value="">-- Select Level --</option>
+                        {% for l in master_levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="filter-group" style="min-width:130px;">
@@ -370,6 +375,7 @@
     let salaryData = [];
     let filterOptions = { locations: [], sites: [], banks: [] };
     let companySettings = {};
+    let logoBase64 = null;
     const modal = document.getElementById('edit-modal');
 
     // ── Local salary configuration: Role + Level → Base Salary ──
@@ -451,6 +457,20 @@
         }
     }
 
+    async function preloadLogo() {
+        try {
+            const response = await fetch("{% static 'img/Logo.png' %}");
+            const blob = await response.blob();
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => { logoBase64 = reader.result; resolve(); };
+                reader.readAsDataURL(blob);
+            });
+        } catch (e) {
+            console.warn('Could not preload logo:', e);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         const d = new Date();
@@ -458,6 +478,7 @@
         document.getElementById('f-year').value = String(d.getFullYear());
         refreshRoleDatalist();
         fetchCompanySettings();
+        preloadLogo();
         fetchData();
     });
 
@@ -548,12 +569,38 @@
                         <button class="btn-action-text" onclick="openEdit(${s.id})">Edit</button>
                     </td>
                     <td style="text-align: right;">
-                        <button class="btn-action-text btn-payslip" onclick="downloadPayslip(${s.id})">Payslip</button>
+                        ${s.is_payslip_generated
+                            ? `<button class="btn-action-text btn-payslip" onclick="downloadPayslip(${s.id})">Download Payslip</button>`
+                            : `<button class="btn-action-text" style="color:#9ca3af; cursor:not-allowed;" disabled title="Use the 'Generate Payslip' button at the top to unlock downloads for this cycle">Download Payslip</button>`
+                        }
                     </td>
                 </tr>
             `;
             tbody.insertAdjacentHTML('beforeend', row);
         });
+    }
+
+    async function generatePayslip(id) {
+        const month = document.getElementById('f-month').value;
+        const year  = document.getElementById('f-year').value;
+        if (!month || !year) { showToast("Select month and year first", "error"); return; }
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        try {
+            const res = await fetch(`{% url 'employees:manage_ajax' %}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ action: 'generate_payslip', id, month, year }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast("Payslip generated. Employee can now download.");
+                fetchData();
+            } else {
+                showToast(result.error || "Could not generate payslip", "error");
+            }
+        } catch (e) {
+            showToast("Network error", "error");
+        }
     }
 
     function openEdit(id) {
@@ -569,7 +616,25 @@
         const curRole = effectiveRole(s);
         const curLevel = effectiveLevel(s);
         document.getElementById('edit-role').value = curRole;
-        document.getElementById('edit-level').value = curLevel;
+
+        // Defensive: if the employee carries a legacy/free-text Level that
+        // isn't in master_levels yet, append it as an option before assigning
+        // so the dropdown reflects the saved value instead of silently
+        // falling back to "— Select —".
+        var levelSel = document.getElementById('edit-level');
+        if (levelSel && curLevel) {
+            var present = false;
+            for (var li = 0; li < levelSel.options.length; li++) {
+                if (levelSel.options[li].value === curLevel) { present = true; break; }
+            }
+            if (!present) {
+                var opt = document.createElement('option');
+                opt.value = curLevel;
+                opt.text  = curLevel;
+                levelSel.appendChild(opt);
+            }
+        }
+        levelSel.value = curLevel;
 
         // Auto-populate Base Salary from Role + Level mapping (fallback: stored base_salary)
         const cfgBase = getBaseSalaryFor(curRole, curLevel);
@@ -580,6 +645,8 @@
         document.getElementById('edit-advance').value = s.advance_pay || 0;
         document.getElementById('edit-ded').value = s.deduction || 0;
         document.getElementById('edit-pf-amount').value = s.pf_amount || 0;
+        document.getElementById('edit-food-allowance').value = s.food_allowance || 0;
+        document.getElementById('edit-food-usage').value = s.food_usage || 0;
 
         document.getElementById('l-bank').innerText = s.bank_name || 'Not Provided';
         document.getElementById('l-holder').innerText = s.account_holder || 'Not Provided';
@@ -672,10 +739,13 @@
     }
 
     function calcNet() {
-        const base   = parseFloat(document.getElementById('edit-salary').value) || 0;
-        const ot     = parseFloat(document.getElementById('edit-ot').value)     || 0;
-        const adv    = parseFloat(document.getElementById('edit-advance').value)|| 0;
-        const ded    = parseFloat(document.getElementById('edit-ded').value)    || 0;
+        const base         = parseFloat(document.getElementById('edit-salary').value)        || 0;
+        const ot           = parseFloat(document.getElementById('edit-ot').value)            || 0;
+        const adv          = parseFloat(document.getElementById('edit-advance').value)       || 0;
+        const ded          = parseFloat(document.getElementById('edit-ded').value)           || 0;
+        const foodAllowance = parseFloat(document.getElementById('edit-food-allowance').value) || 0;
+        const foodUsage    = parseFloat(document.getElementById('edit-food-usage').value)    || 0;
+        const foodAdj      = foodAllowance - foodUsage;
 
         const attEarnings  = calcAttendanceEarnings();
         const attInput     = document.getElementById('edit-att-earnings');
@@ -692,7 +762,7 @@
             effectiveBase   = base;
         }
 
-        const net = effectiveBase + ot - adv - ded;
+        const net = effectiveBase + ot - adv - ded + foodAdj;
         document.getElementById('net-val').innerText = '₹' + Math.round(net).toLocaleString();
     }
 
@@ -755,6 +825,40 @@
                 showToast(result.message);
             } else {
                 showToast(result.error || 'Failed to generate expenses', 'error');
+            }
+        } catch (e) {
+            showToast('Network error', 'error');
+        }
+    }
+
+    // Top-action "Generate Payslip" button (Task 1).
+    // Single click locks all payslips for the cycle AND posts the matching
+    // expense rows. Both server-side operations are idempotent — clicking
+    // twice will not create duplicate expenses, and the second click is
+    // explicitly rejected with an "already generated" message.
+    async function generatePayslipBatch() {
+        const month = document.getElementById('f-month').value;
+        const year  = document.getElementById('f-year').value;
+        if (!month || !year) { showToast("Select month and year first", "error"); return; }
+        if (!confirm(`Generate payslips for ALL employees for ${month} ${year}?\n\nThis will also post the matching expense entries (duplicates are prevented).`)) return;
+
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        try {
+            const res = await fetch(`{% url 'employees:manage_ajax' %}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ action: 'generate_payslips_batch', month, year }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                if (result.already_generated) {
+                    showToast(`Payslips already generated for ${month} ${year}`, 'error');
+                } else {
+                    showToast(result.message || 'Payslips generated');
+                }
+                fetchData();
+            } else {
+                showToast(result.error || 'Failed to generate payslips', 'error');
             }
         } catch (e) {
             showToast('Network error', 'error');
@@ -869,103 +973,219 @@
         const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
         const net = s.net_payable !== undefined ? s.net_payable : ((s.base_salary||0) + (s.overtime||0) - (s.advance_pay||0) - (s.deduction||0));
 
-        // Header band with SPIM branding
+        // ── Company data ──
+        const companyName    = companySettings.name              || 'SPIM Suite';
+        const companyAddress = companySettings.address           || '';
+        const companyContact = companySettings.contact_number    || '';
+        const companyGST     = companySettings.gst_number        || '';
+        const companyMD      = companySettings.managing_director || '';
+        const periodText     = (s.month || '-') + ' ' + (s.year || '');
+
+        // Role and Level
+        const role  = effectiveRole(s) || '—';
+        const level = effectiveLevel(s) || '—';
+
+        // Food calculations
+        const foodAllowance = s.food_allowance || 0;
+        const foodUsage     = s.food_usage || 0;
+        const foodAdj       = foodAllowance - foodUsage;
+
+        // Calculate blue header height dynamically:
+        // base = 30 (title + PAYSLIP line), +6mm per detail row present
+        let detailCount = 0;
+        if (companyAddress) detailCount++;
+        if (companyContact) detailCount++;
+        if (companyGST)     detailCount++;
+        if (companyMD)      detailCount++;
+        const headerH = 30 + (detailCount * 6);
+
+        // ── Watermark (behind all content, low opacity) ──
+        if (logoBase64) {
+            try {
+                doc.setGState(new doc.GState({opacity: 0.07}));
+                const wmW = 100, wmH = 100;
+                doc.addImage(logoBase64, 'PNG', (pageW - wmW) / 2, (pageH - wmH) / 2, wmW, wmH);
+                doc.setGState(new doc.GState({opacity: 1}));
+            } catch (e) { /* watermark not critical */ }
+        }
+
+        // ── Blue header band ──
         doc.setFillColor(37, 99, 235);
-        doc.rect(0, 0, pageW, 30, 'F');
+        doc.rect(0, 0, pageW, headerH, 'F');
         doc.setTextColor(255, 255, 255);
 
-        // SPIM centered at top
+        // Company name: large bold centered (offset left to leave room for logo)
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.text('SPIM', pageW / 2, 6, { align: 'center' });
+        doc.setFontSize(13);
+        doc.text(companyName, (pageW - 30) / 2, 9, { align: 'center' });
 
-        // Company name centered below SPIM
+        // Logo in header (right side)
+        if (logoBase64) {
+            try {
+                doc.addImage(logoBase64, 'PNG', pageW - 38, 2, 24, 24);
+            } catch (e) { /* logo not critical */ }
+        }
+
+        // Company detail rows
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.text('Spectro Inspection and Maintenance', pageW / 2, 11, { align: 'center' });
+        doc.setFontSize(8.5);
+        let dy = 17;
+        if (companyAddress) { doc.text('Address          : ' + companyAddress, 14, dy); dy += 6; }
+        if (companyContact) { doc.text('Contact Number   : ' + companyContact, 14, dy); dy += 6; }
+        if (companyGST)     { doc.text('GST Number       : ' + companyGST,     14, dy); dy += 6; }
+        if (companyMD)      { doc.text('Managing Director: ' + companyMD,      14, dy); dy += 6; }
 
-        // SALARY PAYSLIP at bottom-left, Period at bottom-right
+        // Thin white separator line before SALARY PAYSLIP / Period
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.2);
+        doc.line(14, dy + 1, pageW - 14, dy + 1);
+        dy += 5;
+
+        // SALARY PAYSLIP left  |  Period right
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(11);
-        doc.text('SALARY PAYSLIP', 14, 27);
+        doc.text('SALARY PAYSLIP', 14, dy);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
-        const periodText = (s.month || '-') + ' ' + (s.year || '');
-        doc.text('Period: ' + periodText, pageW - 14, 27, { align: 'right' });
+        doc.text('Period: ' + periodText, pageW - 14, dy, { align: 'right' });
 
-        let y = 35;
+        let y = headerH + 8;
         doc.setTextColor(31, 41, 55);
 
-        // Company Details section
+        // ── Layout constants ──
+        const midX = pageW / 2 + 5;
+        const fieldLabelW = 40;
+        const fieldLabelWR = 42;
+
+        // ── Helper: draw a label:value field ──
+        const rowField = (lbl, val, x, labelW) => {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text(lbl, x, y);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(31, 41, 55);
+            doc.text(String(val || '—'), x + labelW, y);
+            doc.setFont('helvetica', 'normal');
+        };
+
+        // ── Section title with blue underline ──
+        const sectionTitle = (title, startX, endX) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(30, 41, 59);
+            doc.text(title, startX, y);
+            y += 2;
+            doc.setDrawColor(37, 99, 235);
+            doc.setLineWidth(0.5);
+            doc.line(startX, y, endX, y);
+        };
+
+        // ── EMPLOYEE INFORMATION (left) + BANK DETAILS (right) ──
+        sectionTitle('Employee Information', 14, midX - 10);
+        const tmpY = y;
+        y = tmpY;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Bank Details', midX, y - 2);
         doc.setDrawColor(37, 99, 235);
         doc.setLineWidth(0.5);
-        doc.rect(14, y, pageW - 28, 38);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-        doc.text('COMPANY DETAILS', 16, y + 5);
-        doc.setLineWidth(0.3);
-        doc.line(14, y + 9, pageW - 14, y + 9);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-        const companyName = companySettings.name || '—';
-        const companyAddress = companySettings.address || '—';
-        const companyContact = companySettings.contact_number || '—';
-        const companyGST = companySettings.gst_number || '—';
-        doc.text('Company Name    : ' + companyName,    16, y + 15);
-        doc.text('Address         : ' + companyAddress, 16, y + 21);
-        doc.text('Contact Number  : ' + companyContact, 16, y + 27);
-        doc.text('GST Number      : ' + companyGST,     16, y + 33);
-        y += 44;
+        doc.line(midX, y, pageW - 14, y);
+        y += 6;
 
-        // Employee Information
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-        doc.text('Employee Information', 14, y); y += 7;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-        const rowL = (lbl, val) => { doc.text(lbl, 14, y); doc.setFont('helvetica','bold'); doc.text(String(val||'—'), 60, y); doc.setFont('helvetica','normal'); y += 6; };
-        rowL('Emp ID:',        empIdDisplay);
-        rowL('Emp Name:',      s.employee_name);
-        rowL('Location:',      s.location);
-        rowL('Site:',          s.site);
-        y += 4;
+        rowField('Emp ID:', empIdDisplay, 14, fieldLabelW);
+        rowField('Bank Name:', s.bank_name || '—', midX, fieldLabelWR);
+        y += 5.5;
 
-        // Salary Details
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-        doc.text('Salary Details', 14, y); y += 7;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-        const rowR = (lbl, amt) => { doc.text(lbl, 14, y); doc.text('Rs. ' + Number(amt||0).toLocaleString('en-IN'), 100, y); y += 6; };
-        rowR('Base Salary:',        s.base_salary);
-        rowR('OT / Extra Allow:',   s.overtime);
-        rowR('Advance Pay:',        s.advance_pay);
-        rowR('Total Deduction:',    s.deduction);
-        rowR('PF Amount:',          s.pf_amount);
-        y += 3;
+        rowField('Emp Name:', s.employee_name || '—', 14, fieldLabelW);
+        rowField('Account Holder:', s.account_holder || '—', midX, fieldLabelWR);
+        y += 5.5;
 
-        // Net Pay highlight bar
+        rowField('Role:', role, 14, fieldLabelW);
+        rowField('Account Number:', s.account_number || '—', midX, fieldLabelWR);
+        y += 5.5;
+
+        rowField('Level:', level, 14, fieldLabelW);
+        rowField('IFSC Code:', s.ifsc_code || '—', midX, fieldLabelWR);
+        y += 9;
+
+        // ── PF & ESIC INFORMATION ──
+        sectionTitle('PF & ESIC Information', 14, pageW - 14);
+        y += 6;
+
+        rowField('PF Number:', s.pf_number || '—', 14, fieldLabelW);
+        rowField('ESIC Number:', s.esi_number || '—', midX, fieldLabelWR);
+        y += 9;
+
+        // ── SALARY INFORMATION (two-column: deductions left, earnings right) ──
+        sectionTitle('Salary Information', 14, pageW - 14);
+        y += 7;
+
+        // Column headers
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(220, 38, 38);
+        doc.text('DEDUCTIONS', 14, y);
+        doc.setTextColor(5, 150, 105);
+        doc.text('EARNINGS', midX, y);
+        y += 6;
+
+        // Track left/right y positions independently
+        const yPos = { left: y, right: y };
+
+        const salaryRow = (side, label, amount, style) => {
+            const x = side === 'left' ? 14 : midX;
+            const amtX = side === 'left' ? midX - 14 : pageW - 14;
+            const currY = yPos[side];
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text(label, x, currY);
+
+            doc.setFont('helvetica', 'bold');
+            if (style === 'neg')       doc.setTextColor(220, 38, 38);
+            else if (style === 'pos')  doc.setTextColor(5, 150, 105);
+            else                       doc.setTextColor(100, 116, 139);
+            doc.text('Rs. ' + Number(Math.abs(amount) || 0).toLocaleString('en-IN'), amtX, currY, { align: 'right' });
+
+            // Light separator
+            doc.setDrawColor(241, 245, 249);
+            doc.setLineWidth(0.2);
+            doc.line(x, currY + 2, amtX, currY + 2);
+
+            yPos[side] += 7;
+        };
+
+        // Left column (Deductions)
+        salaryRow('left', 'Advance Pay',      s.advance_pay || 0, 'neg');
+        salaryRow('left', 'Total Deduction',  s.deduction || 0,   'neg');
+        salaryRow('left', 'PF Amount',        s.pf_amount || 0,   'neg');
+        salaryRow('left', 'Used Food Allowance', foodUsage, 'info');
+        if (foodAdj < 0) {
+            salaryRow('left', 'Food Used Exceeded', Math.abs(foodAdj), 'neg');
+        }
+
+        // Right column (Earnings)
+        salaryRow('right', 'Base Salary',         s.base_salary || 0, 'pos');
+        salaryRow('right', 'OT / Extra Allowance', s.overtime || 0,   'pos');
+        salaryRow('right', 'Allocated Food Allowance', foodAllowance, 'pos');
+        if (foodAdj >= 0) {
+            salaryRow('right', 'Balance Food Allowance', foodAdj, 'pos');
+        }
+
+        y = Math.max(yPos.left, yPos.right) + 5;
+
+        // ── Net Pay highlight bar ──
         doc.setFillColor(37, 99, 235);
         doc.rect(14, y - 2, pageW - 28, 10, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-        doc.text('Net Pay:', 18, y + 5);
+        doc.text('Total Net Payable:', 18, y + 5);
         doc.text('Rs. ' + Number(net||0).toLocaleString('en-IN'), pageW - 18, y + 5, { align: 'right' });
-        y += 16;
-        doc.setTextColor(31, 41, 55);
 
-        // Bank Details
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-        doc.text('Bank Details', 14, y); y += 7;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-        rowL('Bank Name:',       s.bank_name);
-        rowL('Account Holder:',  s.account_holder);
-        rowL('Account Number:',  s.account_number);
-        rowL('IFSC Code:',       s.ifsc_code);
-        y += 4;
-
-        // PF & ESIC
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-        doc.text('PF & ESIC Information', 14, y); y += 7;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-        rowL('PF Number:',   s.pf_number);
-        rowL('ESIC Number:', s.esi_number);
-
-        // Footer
+        // ── Footer ──
         doc.setFillColor(37, 99, 235);
         doc.rect(0, pageH - 10, pageW, 10, 'F');
         doc.setTextColor(255, 255, 255);

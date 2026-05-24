@@ -14,7 +14,8 @@ def client_list(request):
 
 @login_required
 def client_detail(request, pk):
-    c = get_object_or_404(Client, pk=pk)
+    qs = Client.objects.all() if request.user.is_admin else Client.objects.filter(added_by=request.user)
+    c  = get_object_or_404(qs, pk=pk)
     return render(request, 'clients/detail.html', {'client': c, 'projects': c.projects.all()})
 
 @login_required
@@ -30,7 +31,8 @@ def add_client(request):
 
 @login_required
 def edit_client(request, pk):
-    c    = get_object_or_404(Client, pk=pk)
+    qs = Client.objects.all() if request.user.is_admin else Client.objects.filter(added_by=request.user)
+    c  = get_object_or_404(qs, pk=pk)
     form = ClientForm(request.POST or None, instance=c)
     if request.method == 'POST' and form.is_valid():
         form.save()
@@ -40,7 +42,8 @@ def edit_client(request, pk):
 
 @login_required
 def delete_client(request, pk):
-    c = get_object_or_404(Client, pk=pk)
+    qs = Client.objects.all() if request.user.is_admin else Client.objects.filter(added_by=request.user)
+    c  = get_object_or_404(qs, pk=pk)
     if request.method == 'POST':
         c.delete()
         messages.success(request, "Deleted.")

@@ -7,8 +7,9 @@ class CompanySettings(models.Model):
     logo           = models.ImageField(upload_to='company/', null=True, blank=True)
     gst_number     = models.CharField(max_length=50, blank=True)
     address        = models.TextField(blank=True)
-    contact_number = models.CharField(max_length=20, blank=True)
-    email          = models.EmailField(blank=True)
+    contact_number    = models.CharField(max_length=20, blank=True)
+    email             = models.EmailField(blank=True)
+    managing_director = models.CharField(max_length=150, blank=True)
     modified_by    = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='company_settings_modified')
     updated_at     = models.DateTimeField(auto_now=True)
 

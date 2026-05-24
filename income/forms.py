@@ -5,20 +5,43 @@ from .models import Income
 class IncomeForm(forms.ModelForm):
     class Meta:
         model = Income
-        fields = ['title', 'amount', 'category', 'date', 'source', 'description', 'payment_mode']
+        fields = [
+            'amount', 'date', 'description',
+            'payment_mode', 'income_type', 'location_site', 'payment_by',
+        ]
         widgets = {
-            'title': forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'Income title'}),
-            'amount': forms.NumberInput(attrs={'class': 'form-input', 'placeholder': '0.00', 'step': '0.01', 'min': '0'}),
-            'category': forms.Select(attrs={'class': 'form-input'}),
-            'date': forms.DateInput(attrs={'class': 'form-input', 'type': 'date'}),
-            'source': forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'e.g. Salary, Freelance'}),
-            'description': forms.Textarea(attrs={'class': 'form-input', 'rows': 3, 'placeholder': 'Description (optional)'}),
-            'payment_mode': forms.Select(attrs={'class': 'form-input'}),
+            'amount':      forms.NumberInput(attrs={'class': 'form-input', 'placeholder': '0.00', 'step': '0.01', 'min': '0'}),
+            'date':        forms.DateInput(attrs={'class': 'form-input', 'type': 'date'}),
+            'description': forms.Textarea(attrs={'class': 'form-input', 'rows': 3, 'placeholder': 'Notes / Remarks'}),
+        }
+        labels = {
+            'payment_mode':  'Account',
+            'income_type':   'Income Type',
+            'location_site': 'Location / Site',
+            'payment_by':    'Income Source',
+            'description':   'Notes / Remarks',
         }
 
     def __init__(self, user=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if user:
-            from categories.models import IncomeCategory
-            self.fields['category'].queryset = IncomeCategory.objects.filter(created_by=user)
-        self.fields['category'].empty_label = 'Select Category'
+        # payment_mode comes from modal as free text (e.g. "Bank Account 1");
+        # bypass the model's PAYMENT_MODE_CHOICES validation entirely.
+        self.fields['payment_mode'] = forms.CharField(
+            required=False,
+            max_length=20,
+            widget=forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'Account'}),
+            label='Account',
+        )
+
+    def _post_clean(self):
+        # Run normal model validation, then drop any payment_mode error caused
+        # by the model's PAYMENT_MODE_CHOICES list — modal sends free-text values.
+        super()._post_clean()
+        if 'payment_mode' in self._errors:
+            self._errors.pop('payment_mode', None)
+            value = self.cleaned_data.get('payment_mode')
+            if not value:
+                value = (self.data.get('payment_mode') or '').strip()
+            value = value[:20]
+            self.cleaned_data['payment_mode'] = value
+            self.instance.payment_mode = value

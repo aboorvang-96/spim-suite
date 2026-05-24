@@ -23,12 +23,23 @@ INSTALLED_APPS = [
     'invoices',
     'employees',
     'reports',
-    
+    'branches',
+    'categories',
+    'income',
+    'transactions',
+    'attendance',
+    'material_stock',
+    'api',
+
     'widget_tweaks',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # CorsMiddleware must come before CommonMiddleware so the Access-Control
+    # headers are attached to all responses, including 4xx/5xx.
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -36,6 +47,23 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# ---------------------------------------------------------------------------
+# CORS — only required for the SPIM Lite mobile/web client. Other endpoints
+# remain same-origin and unaffected.
+# ---------------------------------------------------------------------------
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:8081',
+    'http://127.0.0.1:8081',
+    # Expo dev tools sometimes uses 19006 (web) — include for safety.
+    'http://localhost:19006',
+    'http://127.0.0.1:19006',
+]
+# Allow credentials only if you later switch to cookie-session auth; the
+# mobile API uses bearer tokens so this stays False.
+CORS_ALLOW_CREDENTIALS = False
+# Scope CORS to the /api/ namespace so other URLs are not affected.
+CORS_URLS_REGEX = r'^/api/.*$'
 
 ROOT_URLCONF    = 'config.urls'
 WSGI_APPLICATION = 'config.wsgi.application'
@@ -56,15 +84,16 @@ TEMPLATES = [{
     ]},
 }]
 
-DATABASES = {'default': {
-    'ENGINE':   'django.db.backends.mysql',
-    'NAME':     config('DB_NAME'),
-    'USER':     config('DB_USER'),
-    'PASSWORD': config('DB_PASSWORD'),
-    'HOST':     config('DB_HOST', default='localhost'),
-    'PORT':     config('DB_PORT', default='3306'),
-    'OPTIONS':  {'charset': 'utf8mb4'},
-}}
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME', default='postgres'),
+        'USER': config('DB_USER', default='postgres'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST', default='localhost'),
+        'PORT': config('DB_PORT', default='5432'),
+    }
+}
 
 LANGUAGE_CODE = 'en-in'
 TIME_ZONE     = 'Asia/Kolkata'

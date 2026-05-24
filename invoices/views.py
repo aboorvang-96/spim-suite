@@ -16,7 +16,9 @@ def invoice_list(request):
 
 @login_required
 def invoice_detail(request, pk):
-    return render(request, 'invoices/detail.html', {'invoice': get_object_or_404(Invoice, pk=pk)})
+    qs  = Invoice.objects.all() if request.user.is_admin else Invoice.objects.filter(created_by=request.user)
+    inv = get_object_or_404(qs, pk=pk)
+    return render(request, 'invoices/detail.html', {'invoice': inv})
 
 @login_required
 def add_invoice(request):
@@ -34,7 +36,8 @@ def add_invoice(request):
 
 @login_required
 def edit_invoice(request, pk):
-    inv     = get_object_or_404(Invoice, pk=pk)
+    qs  = Invoice.objects.all() if request.user.is_admin else Invoice.objects.filter(created_by=request.user)
+    inv = get_object_or_404(qs, pk=pk)
     form    = InvoiceForm(request.POST or None, instance=inv)
     formset = ItemFormSet(request.POST or None, instance=inv)
     if request.method == 'POST' and form.is_valid() and formset.is_valid():
@@ -46,7 +49,8 @@ def edit_invoice(request, pk):
 
 @login_required
 def delete_invoice(request, pk):
-    inv = get_object_or_404(Invoice, pk=pk)
+    qs  = Invoice.objects.all() if request.user.is_admin else Invoice.objects.filter(created_by=request.user)
+    inv = get_object_or_404(qs, pk=pk)
     if request.method == 'POST':
         inv.delete()
         messages.success(request, "Deleted.")
@@ -54,7 +58,8 @@ def delete_invoice(request, pk):
 
 @login_required
 def mark_paid(request, pk):
-    inv = get_object_or_404(Invoice, pk=pk)
+    qs  = Invoice.objects.all() if request.user.is_admin else Invoice.objects.filter(created_by=request.user)
+    inv = get_object_or_404(qs, pk=pk)
     if request.method == 'POST':
         inv.status = 'paid'
         inv.save()
