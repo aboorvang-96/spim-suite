@@ -1,0 +1,137 @@
+[
+  {
+    "id": "EMP001",
+    "name": "Arun Kumar",
+    "dept": "Mechanical",
+    "role": "Technician",
+    "mainLocation": "Radhapuram",
+    "site": "Site A",
+    "leave": "12"
+  },
+  {
+    "id": "EMP002",
+    "name": "Ravi Shankar",
+    "dept": "Mechanical",
+    "role": "Supervisor",
+    "mainLocation": "Radhapuram",
+    "site": "Site A",
+    "leave": "10"
+  },
+  {
+    "id": "EMP003",
+    "name": "Kumaravel",
+    "dept": "Electrical",
+    "role": "Technician",
+    "mainLocation": "Radhapuram",
+    "site": "Site B",
+    "leave": "8"
+  },
+  {
+    "id": "EMP004",
+    "name": "Saravanan",
+    "dept": "Electrical",
+    "role": "Engineer",
+    "mainLocation": "Radhapuram",
+    "site": "Site B",
+    "leave": "15"
+  },
+  {
+    "id": "EMP005",
+    "name": "Manikandan",
+    "dept": "Mechanical",
+    "role": "Technician",
+    "mainLocation": "Tirunelveli",
+    "site": "Site C",
+    "leave": "9"
+  },
+  {
+    "id": "EMP006",
+    "name": "Prakash",
+    "dept": "Mechanical",
+    "role": "Technician",
+    "mainLocation": "Tirunelveli",
+    "site": "Site C",
+    "leave": "11"
+  },
+  {
+    "id": "EMP007",
+    "name": "Dinesh",
+    "dept": "Civil",
+    "role": "Supervisor",
+    "mainLocation": "Tirunelveli",
+    "site": "Site D",
+    "leave": "14"
+  },
+  {
+    "id": "EMP008",
+    "name": "Suresh",
+    "dept": "Civil",
+    "role": "Technician",
+    "mainLocation": "Tirunelveli",
+    "site": "Site D",
+    "leave": "7"
+  },
+  {
+    "id": "EMP009",
+    "name": "Vignesh",
+    "dept": "Electrical",
+    "role": "Engineer",
+    "mainLocation": "Chennai",
+    "site": "Site E",
+    "leave": "13"
+  },
+  {
+    "id": "EMP010",
+    "name": "Harish",
+    "dept": "Electrical",
+    "role": "Technician",
+    "mainLocation": "Chennai",
+    "site": "Site E",
+    "leave": "6"
+  },
+  {
+    "id": "EMP011",
+    "name": "Karthik",
+    "dept": "Mechanical",
+    "role": "Supervisor",
+    "mainLocation": "Chennai",
+    "site": "Site F",
+    "leave": "10"
+  },
+  {
+    "id": "EMP012",
+    "name": "Mohan",
+    "dept": "Mechanical",
+    "role": "Technician",
+    "mainLocation": "Chennai",
+    "site": "Site F",
+    "leave": "5"
+  },
+  {
+    "id": "EMP013",
+    "name": "Ajith",
+    "dept": "Civil",
+    "role": "Engineer",
+    "mainLocation": "Valliyur",
+    "site": "Site G",
+    "leave": "16"
+  },
+  {
+    "id": "EMP014",
+    "name": "Naveen",
+    "dept": "Civil",
+    "role": "Technician",
+    "mainLocation": "Valliyur",
+    "site": "Site G",
+    "leave": "12"
+  },
+  {
+    "id": "EMP015",
+    "name": "Senthil",
+    "dept": "Electrical",
+    "role": "Supervisor",
+    "mainLocation": "Valliyur",
+    "site": "Site H",
+    "leave": "9"
+  }
+]

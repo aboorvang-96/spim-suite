@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Categories - FinSight{% endblock %}
+{% block nav_categories %}active{% endblock %}
+{% block active_categories %}active{% endblock %}
+{% block page_title %}Categories{% endblock %}
+{% block page_sub %}Organise transactions by business category{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+    <button class="cat-filter-tab active" onclick="filterCategories('all')">All</button>
+    <button class="cat-filter-tab" onclick="filterCategories('income')">Income</button>
+    <button class="cat-filter-tab" onclick="filterCategories('expense')">Expense</button>
+    <div style="width:1px;height:20px;background:#e2e8f0;margin:0 4px"></div>
+    <button type="button" class="btn btn-primary btn-sm flex items-center gap-2 px-5 py-2.5 rounded-xl shadow-lg shadow-blue-600/20" onclick="openAddCategoryModal()">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 4v16m8-8H4"/></svg>
+        Add Category
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="categories-page">
+    <!-- Top Filters Row -->
+    <div class="card p-4 mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                <button class="btn btn-sm btn-outline border-none px-4">Daily</button>
+                <button class="btn btn-sm btn-outline border-none px-4">Weekly</button>
+                <button class="btn btn-sm btn-navy border-none px-6 rounded-lg">Monthly</button>
+                <button class="btn btn-sm btn-outline border-none px-4">Yearly</button>
+                <button class="btn btn-sm btn-outline border-none px-4">Custom</button>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase">Min ₹</span>
+                    <input type="text" class="form-input w-20 h-9 text-xs font-bold" placeholder="0">
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase">Max ₹</span>
+                    <input type="text" class="form-input w-24 h-9 text-xs font-bold" placeholder="999K">
+                </div>
+                <select class="form-input w-40 h-9 text-xs font-bold" title="Filter by category">
+                    <option>All Categories</option>
+                </select>
+                <button class="btn btn-sm btn-outline h-9 w-9 p-0" title="Refresh">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Categories Grid -->
+    <div class="categories-grid" id="categories-grid">
+        {% for cat in all_categories %}
+        <div class="category-card" data-type="{{ cat.cat_type }}">
+            <!-- Icon row + color square -->
+            <div class="cc-top">
+                <div class="cc-icon-box" data-cat-color="{{ cat.color|default:'#6366f1' }}">
+                    <i class="fa-solid fa-{{ cat.icon|default:'tag' }}"></i>
+                </div>
+                <div class="cc-color-sq" style="background:{{ cat.color|default:'#6366f1' }}"></div>
+            </div>
+
+            <!-- Name -->
+            <h4 class="cc-name">{{ cat.name }}</h4>
+
+            <!-- Type label -->
+            {% if cat.cat_type == 'income' %}
+                <span class="cc-type cc-income">Income</span>
+            {% elif cat.cat_type == 'expense' %}
+                <span class="cc-type cc-expense">Expense</span>
+            {% else %}
+                <span class="cc-type cc-both">{{ cat.cat_type|capfirst }}</span>
+            {% endif %}
+
+            <!-- Description -->
+            <p class="cc-desc">{{ cat.description|default:"No description provided." }}</p>
+
+            <!-- Stats badges -->
+            <div class="cc-badges">
+                <span class="cc-badge">{{ cat.transaction_count|default:"0" }} transactions</span>
+                <span class="cc-badge">₹{{ cat.total_amount|default:"0"|floatformat:2 }} total</span>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="cc-actions">
+                <button type="button" class="cc-btn cc-btn-edit" onclick="openEditCategoryModal('{{ cat.id }}', '{{ cat.name|escapejs }}', '{{ cat.cat_type }}', '{{ cat.color }}', '{{ cat.description|escapejs }}', '{{ cat.icon }}')">Edit</button>
+                <button type="button" class="cc-btn cc-btn-del" onclick="confirmDeleteCategory('{{ cat.id }}', '{{ cat.cat_type }}')">Delete</button>
+            </div>
+        </div>
+        {% empty %}
+        <div class="cc-empty">
+            <div class="cc-empty-icon">
+                <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M7 7h10M7 12h10m-10 5h10"/></svg>
+            </div>
+            <h4 class="text-xl font-bold text-slate-800">No categories found</h4>
+            <p class="text-slate-400 mt-1 mb-6">Create your first category to start organizing transactions.</p>
+            <button class="btn btn-navy" onclick="openAddCategoryModal()">+ Add New Category</button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Add/Edit Category Modal -->
+<div class="modal-overlay" id="category-modal">
+    <div class="modal max-w-lg">
+        <form id="category-form" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="category_id" id="m-id">
+            <div class="modal-header">
+                <h3 id="modal-title">Add Category</h3>
+                <button type="button" class="btn btn-sm btn-outline w-9 h-9 p-0" onclick="closeCategoryModal()">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- Row 1: Category Name | Applies To -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+                    <div>
+                        <label class="form-label">Category Name *</label>
+                        <input type="text" name="name" id="m-name" class="form-input" placeholder="e.g. Services" required>
+                    </div>
+                    <div>
+                        <label class="form-label">Applies To *</label>
+                        <select name="cat_type" id="m-type" class="form-input" required>
+                            <option value="income">Income Only</option>
+                            <option value="expense">Expense Only</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- Row 2: Colour Accent | Icon -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+                    <div>
+                        <label class="form-label">Colour Accent</label>
+                        <input type="color" name="color" id="m-color" class="form-input h-11 p-1 w-full" value="#2563eb">
+                    </div>
+                    <div>
+                        <label class="form-label">Icon (FontAwesome name)</label>
+                        <div class="search-wrap">
+                            <i class="fa-solid fa-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input type="text" name="icon" id="m-icon" class="form-input pl-11" placeholder="e.g. tag, wallet, car">
+                        </div>
+                    </div>
+                </div>
+                <!-- Row 3: Description (full width) -->
+                <div>
+                    <label class="form-label">Description</label>
+                    <textarea name="description" id="m-desc" class="form-input" rows="3" placeholder="Client services and consulting"></textarea>
+                </div>
+            </div>
+            <div class="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+                <button type="button" class="btn btn-secondary px-6" onclick="closeCategoryModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary px-8" id="btn-save-text">Save Category</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    /* ── Modal ── */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.4);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        z-index: 2000;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+        background: #fff;
+        border-radius: 24px;
+        width: 100%;
+        max-width: 520px;
+        box-shadow: 0 30px 60px -12px rgba(15, 23, 42, 0.2);
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,.2);
+    }
+
+    /* Category modal — header / body / footer alignment fixes
+       (.modal-header, .p-6, .border-t are not defined globally on this page) */
+    #category-modal .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    #category-modal .modal-header h3 {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0;
+    }
+    #category-modal .p-6 { padding: 1.5rem; }
+    #category-modal .border-t { border-top: 1px solid #f1f5f9; }
+
+    /* ── Filter tabs ── */
+    .cat-filter-tab {
+        padding: 6px 18px;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #64748b;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .cat-filter-tab.active,
+    .cat-filter-tab:hover {
+        background: #1e293b;
+        color: #fff;
+        border-color: #1e293b;
+    }
+
+    /* ── Responsive grid ── */
+    .categories-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 18px;
+        align-items: stretch;
+    }
+    @media (max-width: 1280px) { .categories-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 900px)  { .categories-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px)  { .categories-grid { grid-template-columns: 1fr; } }
+
+    /* ── Card ── */
+    .category-card {
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border-radius: 16px;
+        border: 1px solid #e8edf2;
+        padding: 20px;
+        box-shadow: 0 1px 4px rgba(0,0,0,.06);
+        transition: box-shadow .2s, transform .2s;
+        overflow: hidden;
+    }
+    .category-card:hover {
+        box-shadow: 0 6px 20px rgba(0,0,0,.1);
+        transform: translateY(-2px);
+    }
+
+    /* Top row: icon + color square */
+    .cc-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 14px;
+    }
+    .cc-icon-box {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f1f5f9;
+        color: #64748b;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+    .cc-color-sq {
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    /* Name */
+    .cc-name {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0 0 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Type label */
+    .cc-type {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: capitalize;
+        display: block;
+        margin-bottom: 10px;
+    }
+    .cc-income { color: #059669; }
+    .cc-expense { color: #dc2626; }
+    .cc-both   { color: #7c3aed; }
+
+    /* Description */
+    .cc-desc {
+        font-size: 0.8rem;
+        color: #64748b;
+        line-height: 1.5;
+        margin-bottom: 14px;
+        flex-grow: 1;
+    }
+
+    /* Stats badges */
+    .cc-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 14px;
+    }
+    .cc-badge {
+        background: #f1f5f9;
+        color: #475569;
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 20px;
+        border: 1px solid #e2e8f0;
+        white-space: nowrap;
+    }
+
+    /* Action buttons */
+    .cc-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: auto;
+    }
+    .cc-btn {
+        flex: 1;
+        padding: 8px 0;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid;
+        background: #fff;
+        transition: background .15s;
+        text-align: center;
+    }
+    .cc-btn-edit { border-color: #e2e8f0; color: #475569; }
+    .cc-btn-edit:hover { background: #f8fafc; }
+    .cc-btn-del  { border-color: #fecaca; color: #dc2626; }
+    .cc-btn-del:hover  { background: #fff5f5; }
+
+    /* Empty state */
+    .cc-empty {
+        grid-column: 1 / -1;
+        padding: 6rem 0;
+        text-align: center;
+    }
+    .cc-empty-icon {
+        width: 80px;
+        height: 80px;
+        background: #f8fafc;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+        border: 1px solid #e2e8f0;
+        color: #cbd5e1;
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.cc-icon-box[data-cat-color]').forEach(el => {
+        const color = el.dataset.catColor;
+        el.style.color = color;
+        el.style.backgroundColor = color + '18';
+    });
+});
+
+function filterCategories(type) {
+    const grid = document.getElementById('categories-grid');
+    const cards = grid.getElementsByClassName('category-card');
+    const tabs  = document.getElementsByClassName('cat-filter-tab');
+
+    // Update active tab
+    for (let tab of tabs) {
+        tab.classList.remove('active');
+        if (tab.innerText.trim().toLowerCase() === type || (type === 'all' && tab.innerText.trim().toLowerCase() === 'all')) {
+            tab.classList.add('active');
+        }
+    }
+
+    // Show/hide cards
+    for (let card of cards) {
+        card.style.display = (type === 'all' || card.dataset.type === type) ? 'flex' : 'none';
+    }
+}
+
+function openAddCategoryModal() {
+    document.getElementById('modal-title').innerText = 'Add Category';
+    document.getElementById('btn-save-text').innerText = 'Save Category';
+    document.getElementById('m-id').value = '';
+    document.getElementById('m-name').value = '';
+    document.getElementById('m-type').value = 'income';
+    document.getElementById('m-color').value = '#2563eb';
+    document.getElementById('m-desc').value = '';
+    document.getElementById('m-icon').value = '';
+    
+    const form = document.getElementById('category-form');
+    // We'll set the initial action to income_add, but it will be overridden by the dropdown change if needed
+    updateFormAction();
+    
+    document.getElementById('category-modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function openEditCategoryModal(id, name, type, color, desc, icon) {
+    document.getElementById('modal-title').innerText = 'Edit Category';
+    document.getElementById('btn-save-text').innerText = 'Update Category';
+    document.getElementById('m-id').value = id;
+    document.getElementById('m-name').value = name;
+    document.getElementById('m-type').value = type;
+    document.getElementById('m-color').value = color;
+    document.getElementById('m-desc').value = desc;
+    document.getElementById('m-icon').value = icon;
+    
+    updateFormAction();
+    
+    document.getElementById('category-modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeCategoryModal() {
+    document.getElementById('category-modal').classList.remove('open');
+    document.body.style.overflow = 'auto';
+}
+
+function updateFormAction() {
+    const id = document.getElementById('m-id').value;
+    const type = document.getElementById('m-type').value;
+    const form = document.getElementById('category-form');
+    
+    if (id) {
+        // Edit mode
+        if (type === 'income') {
+            form.action = `/categories/income/${id}/edit/`;
+        } else {
+            form.action = `/categories/expenses/${id}/edit/`;
+        }
+    } else {
+        // Add mode
+        if (type === 'income') {
+            form.action = `/categories/income/add/`;
+        } else {
+            form.action = `/categories/expenses/add/`;
+        }
+    }
+}
+
+document.getElementById('m-type').addEventListener('change', updateFormAction);
+
+document.getElementById('category-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const formData = new FormData(form);
+    const saveBtn = document.getElementById('btn-save-text');
+    const originalText = saveBtn.innerText;
+    
+    saveBtn.innerText = 'Saving...';
+    saveBtn.disabled = true;
+    
+    fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload(); // Refresh to show new/updated category
+        } else {
+            alert('Error saving category. Please check your input.');
+            saveBtn.innerText = originalText;
+            saveBtn.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An unexpected error occurred.');
+        saveBtn.innerText = originalText;
+        saveBtn.disabled = false;
+    });
+});
+
+function confirmDeleteCategory(id, type) {
+    if (confirm('Are you sure you want to delete this category?')) {
+        fetch(type === 'income' ? `/categories/income/${id}/delete/` : `/categories/expenses/${id}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error deleting category.');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An unexpected error occurred.');
+        });
+    }
+}
+
+// Close on overlay click
+window.onclick = function(event) {
+    const modal = document.getElementById('category-modal');
+    if (event.target == modal) {
+        closeCategoryModal();
+    }
+}
+</script>
+{% endblock %}

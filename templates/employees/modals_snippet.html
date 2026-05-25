@@ -1,0 +1,631 @@
+{% comment %}
+Shared modals for the Employee module.
+Included by list.html.
+{% endcomment %}
+
+{# ─── 1. EMPLOYEE DETAILS (view-only) ────────────────────────────────────── #}
+<div class="modal-overlay" id="emp-details-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>👤 Employee Details — <span id="edm-name"></span></h3>
+            <button type="button" class="modal-close" onclick="closeModal('emp-details-modal')" title="Close">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="modal-grid">
+                <div>
+                    <label class="modal-label">Employee ID</label>
+                    <p id="edm-emp-id" class="font-bold text-slate-800 font-mono text-base tracking-wider"></p>
+                </div>
+                <div>
+                    <label class="modal-label">Role / Designation</label>
+                    <p id="edm-role" class="font-semibold text-slate-700"></p>
+                </div>
+            </div>
+            <div class="modal-grid">
+                <div>
+                    <label class="modal-label">Level</label>
+                    <p id="edm-level" class="text-slate-700"></p>
+                </div>
+                <div>
+                    <label class="modal-label">Location</label>
+                    <p id="edm-location" class="text-slate-700"></p>
+                </div>
+            </div>
+            <div class="modal-grid">
+                <div>
+                    <label class="modal-label">Site</label>
+                    <p id="edm-site" class="text-slate-700"></p>
+                </div>
+                <div></div>
+            </div>
+            <div class="modal-grid">
+                <div>
+                    <label class="modal-label">Base Salary (₹)</label>
+                    <p id="edm-salary" class="font-bold text-slate-800"></p>
+                </div>
+                <div>
+                    <label class="modal-label">Mobile App Password</label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span id="edm-password" style="font-family:monospace;font-weight:700;color:#4f46e5;background:#eef2ff;padding:6px 12px;border-radius:8px;font-size:0.9rem;letter-spacing:0.05em;"></span>
+                        <button type="button" onclick="copyEmpPassword()" style="font-size:0.75rem;color:#94a3b8;cursor:pointer;border:none;background:none;" title="Copy password">Copy</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn border-slate-200 text-slate-800 rounded-10 px-6 py-2 font-semibold" onclick="closeModal('emp-details-modal')">Close</button>
+            <button type="button" id="edm-edit-btn" class="btn-save-green" onclick="openEditEmpModal()">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                Edit Employee
+            </button>
+        </div>
+    </div>
+</div>
+
+{# ─── 2. EDIT EMPLOYEE (AJAX, no page redirect) ───────────────────────────── #}
+<div class="modal-overlay" id="editEmpModal">
+    <div class="modal">
+        <form id="edit-emp-form" method="post">
+            {% csrf_token %}
+            <input type="hidden" id="edit-emp-pk" name="_emp_pk">
+            <div class="modal-header">
+                <h3>✏️ Edit Employee — <span id="edit-emp-title"></span></h3>
+                <button type="button" class="modal-close" onclick="closeModal('editEmpModal')" title="Close">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-grid">
+                    <div>
+                        <label class="modal-label">Full Name <span style="color:#ef4444">*</span></label>
+                        <input type="text" name="name" id="edit-emp-name" class="modal-input" required placeholder="e.g. Ravi Kumar">
+                    </div>
+                    <div>
+                        <label class="modal-label">Employee ID</label>
+                        <input type="text" name="employee_id" id="edit-emp-id" class="modal-input" style="font-family:monospace;" placeholder="e.g. SPIM001">
+                    </div>
+                </div>
+                <div class="modal-grid">
+                    <div>
+                        <label class="modal-label">Role / Designation</label>
+                        <select name="designation" id="edit-emp-role" data-master-kind="role" data-master-target="masterRoles"
+                                class="modal-input" onchange="onMasterSelectChange(this)">
+                            <option value="">-- Select Role --</option>
+                            {% for r in master_roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+                            <option value="__add__" style="color:#2563eb;font-weight:600;">+ Add New Role</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="modal-label">Level</label>
+                        <select name="level" id="edit-emp-level" data-master-kind="level" data-master-target="masterLevels"
+                                class="modal-input" onchange="onMasterSelectChange(this)">
+                            <option value="">-- Select Level --</option>
+                            {% for l in master_levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+                            <option value="__add__" style="color:#2563eb;font-weight:600;">+ Add New Level</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-grid">
+                    <div>
+                        <label class="modal-label">Location</label>
+                        <select name="location" id="edit-emp-location" data-master-kind="location" data-master-target="masterLocations"
+                                class="modal-input" onchange="onMasterSelectChange(this)">
+                            <option value="">-- Select Location --</option>
+                            {% for l in master_locations %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+                            <option value="__add__" style="color:#2563eb;font-weight:600;">+ Add New Location</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="modal-label">Site</label>
+                        <select name="site" id="edit-emp-site" data-master-kind="site" data-master-target="masterSites"
+                                class="modal-input" onchange="onMasterSelectChange(this)">
+                            <option value="">-- Select Site --</option>
+                            {% for s in master_sites %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+                            <option value="__add__" style="color:#2563eb;font-weight:600;">+ Add New Site</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-grid">
+                    <div>
+                        <label class="modal-label">Mobile App Password</label>
+                        <input type="text" name="mobile_app_password" id="edit-emp-password" class="modal-input" style="font-family:monospace;" placeholder="e.g. SPIM@4821">
+                    </div>
+                    <div></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn border-slate-200 text-slate-800 rounded-10 px-6 py-2 font-semibold" onclick="closeModal('editEmpModal')">Cancel</button>
+                <button type="submit" class="btn-save-green" id="edit-emp-save-btn">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>
+                    Update Employee
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ─── 3. BANK DETAILS ──────────────────────────────────────────────────────── #}
+<div class="modal-overlay" id="bank-modal">
+    <div class="modal">
+        <form id="bank-form" method="post">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h3>🏦 Bank Details — <span id="bm-name"></span></h3>
+                <button type="button" class="modal-close" onclick="closeModal('bank-modal')" title="Close modal">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="sec-title">🏦 BANK INFORMATION</div>
+                <div class="modal-grid">
+                    <div>
+                        <label class="modal-label">Bank Name</label>
+                        <input type="text" name="bank_name" id="b-bank" class="modal-input" placeholder="e.g. Canara Bank">
+                    </div>
+                    <div>
+                        <label class="modal-label">Account Holder Name</label>
+                        <input type="text" name="account_holder" id="b-holder" class="modal-input" placeholder="Full name as per bank">
+                    </div>
+                </div>
+                <div class="modal-grid">
+                    <div>
+                        <label class="modal-label">Account Number</label>
+                        <input type="text" name="account_number" id="b-account" class="modal-input" placeholder="Enter account number">
+                    </div>
+                    <div>
+                        <label class="modal-label">IFSC Code</label>
+                        <input type="text" name="ifsc_code" id="b-ifsc" class="modal-input" placeholder="e.g. SBIN0001234">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn border-slate-200 text-slate-800 rounded-10 px-6 py-2 font-semibold" onclick="closeModal('bank-modal')">Cancel</button>
+                <button type="submit" class="btn-save-green">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>
+                    Save Bank Details
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ─── 4. PF DETAILS ────────────────────────────────────────────────────────── #}
+<div class="modal-overlay" id="pf-modal">
+    <div class="modal">
+        <form id="pf-form" method="post">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h3>📋 PF Details — <span id="pm-name"></span></h3>
+                <button type="button" class="modal-close" onclick="closeModal('pf-modal')" title="Close modal">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="sec-title">📋 PF INFORMATION</div>
+                <div class="modal-grid">
+                    <div>
+                        <label class="modal-label">PF Number</label>
+                        <input type="text" name="pf_number" id="p-pf" class="modal-input" placeholder="e.g. DL/XII/12345/001234">
+                    </div>
+                    <div>
+                        <label class="modal-label">ESIC Number</label>
+                        <input type="text" name="esic_number" id="p-esic" class="modal-input" placeholder="e.g. 123456789012345">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn border-slate-200 text-slate-800 rounded-10 px-6 py-2 font-semibold" onclick="closeModal('pf-modal')">Cancel</button>
+                <button type="submit" class="btn-save-green">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>
+                    Save PF Details
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ─── 5. CONFIRM DELETE (used by remove-mode trash icon) ─────────────────── #}
+<div class="modal-overlay" id="confirmDeleteModal">
+    <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+            <h3>⚠️ Confirm Removal</h3>
+            <button type="button" class="modal-close" onclick="closeModal('confirmDeleteModal')" title="Close">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" style="text-align:center;padding-top:24px;padding-bottom:8px;">
+            <div style="width:56px;height:56px;background:#fef2f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                <svg width="26" height="26" fill="none" viewBox="0 0 24 24" stroke="#ef4444" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </div>
+            <p style="font-size:1rem;font-weight:600;color:#1e293b;margin-bottom:6px;">
+                Are you sure you want to remove<br><strong id="confirm-del-name" style="color:#ef4444;"></strong>?
+            </p>
+            <p style="font-size:0.8rem;color:#94a3b8;margin-top:6px;">This action cannot be undone.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn border-slate-200 text-slate-800 rounded-10 px-6 py-2 font-semibold" onclick="closeModal('confirmDeleteModal')">Cancel</button>
+            <button type="button" id="confirm-del-btn" class="btn-save-green" style="background:#ef4444;box-shadow:none;" onclick="doDeleteEmployee()">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Yes, Remove Employee
+            </button>
+        </div>
+    </div>
+</div>
+
+{# ─── 6. IMPORT EXCEL ──────────────────────────────────────────────────────── #}
+<div class="modal-overlay" id="importExcelModal">
+    <div class="modal">
+        <form id="import-excel-form" method="post" enctype="multipart/form-data" action="{% url 'employees:import_excel' %}">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h3>📊 Import Employees from Excel</h3>
+                <button type="button" class="modal-close" onclick="closeModal('importExcelModal')" title="Close">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-slate-500 mb-4">Select an Excel (.xlsx / .xls) or CSV file with employee data.</p>
+                <div>
+                    <label class="modal-label">Select File <span style="color:#ef4444">*</span></label>
+                    <input type="file" name="employee_file" id="excel-file-input" accept=".xlsx,.xls,.csv" class="modal-input" style="padding:8px;" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn border-slate-200 text-slate-800 rounded-10 px-6 py-2 font-semibold" onclick="closeModal('importExcelModal')">Cancel</button>
+                <button type="submit" class="btn-save-green">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L4 8m4-4v12"/></svg>
+                    Upload File
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ─── 7. JSON DATA (export + import) ─────────────────────────────────────── #}
+<div class="modal-overlay" id="jsonDataModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>📦 Employee JSON Data</h3>
+            <button type="button" class="modal-close" onclick="closeModal('jsonDataModal')" title="Close">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-label" style="margin-bottom:8px;">Export</p>
+            <a href="{% url 'employees:export_json' %}" class="btn-save-green" style="display:block;text-align:center;text-decoration:none;margin-bottom:20px;">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="display:inline;vertical-align:middle;margin-right:6px;"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Download Employees as JSON
+            </a>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:20px;">
+            <form method="post" enctype="multipart/form-data" action="{% url 'employees:import_json' %}">
+                {% csrf_token %}
+                <p class="modal-label" style="margin-bottom:8px;">Import</p>
+                <input type="file" name="json_file" accept=".json" class="modal-input" style="padding:8px;margin-bottom:12px;" required>
+                <button type="submit" class="btn-save-green" style="width:100%;">
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="display:inline;vertical-align:middle;margin-right:6px;"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L4 8m4-4v12"/></svg>
+                    Import from JSON File
+                </button>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn border-slate-200 text-slate-800 rounded-10 px-6 py-2 font-semibold" onclick="closeModal('jsonDataModal')">Close</button>
+        </div>
+    </div>
+</div>
+
+{# ─── JAVASCRIPT ───────────────────────────────────────────────────────────── #}
+<script>
+/* ── Master dropdown helper (Role / Level / Location / Site) ──
+   Triggered when any data-master-kind <select> changes value. If the
+   user picks "+ Add New …", prompt for the value, POST it to the
+   master_add action, then append it as an <option> to EVERY select
+   with the same data-master-kind so the Add modal and Edit modal stay
+   in sync without a page reload. */
+function onMasterSelectChange(selectEl) {
+    if (!selectEl || selectEl.value !== '__add__') return;
+    var kind = selectEl.dataset.masterKind || '';
+    var label = ({role: 'Role', level: 'Level', location: 'Location', site: 'Site'})[kind] || kind;
+    var raw = window.prompt('Add new ' + label + ':');
+    var value = (raw || '').trim();
+    if (!value) { selectEl.value = ''; return; }
+
+    var csrfEl = document.querySelector('[name=csrfmiddlewaretoken]');
+    fetch('{% url "employees:manage_ajax" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfEl ? csrfEl.value : '',
+        },
+        body: JSON.stringify({ action: 'master_add', kind: kind, value: value }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data || !data.success) {
+            alert((data && data.error) || 'Could not save ' + label);
+            selectEl.value = '';
+            return;
+        }
+        // Append the new option to every select that shares this kind,
+        // skipping ones that already have it. Select it on the originating
+        // dropdown so the user keeps their choice.
+        document.querySelectorAll('select[data-master-kind="' + kind + '"]').forEach(function(sel) {
+            var exists = false;
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === value) { exists = true; break; }
+            }
+            if (!exists) {
+                // Insert before the "+ Add New" sentinel (always last)
+                var opt = document.createElement('option');
+                opt.value = value;
+                opt.text  = value;
+                var sentinel = sel.querySelector('option[value="__add__"]');
+                if (sentinel) sel.insertBefore(opt, sentinel);
+                else sel.appendChild(opt);
+            }
+        });
+        selectEl.value = value;
+    })
+    .catch(function() {
+        alert('Network error. Please try again.');
+        selectEl.value = '';
+    });
+}
+
+/* ── Core open / close ── */
+function openModal(id) {
+    var modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+}
+function closeModal(id) {
+    var modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.remove('open');
+        document.body.style.overflow = 'auto';
+    }
+}
+
+/* ── Employee Details (view-only) ──
+   Note: trailing `level` arg is optional so old callers that omit it
+   continue to work without breakage. */
+var _edmData = {};
+function openEmpDetailsModal(id, name, empId, role, location, site, salary, password, level) {
+    _edmData = { id: id, name: name, empId: empId, role: role, level: level || '', location: location, site: site, salary: salary, password: password };
+    document.getElementById('edm-name').innerText     = name     || '—';
+    document.getElementById('edm-emp-id').innerText   = empId    || '—';
+    document.getElementById('edm-role').innerText     = role     || '—';
+    var edmLevel = document.getElementById('edm-level');
+    if (edmLevel) edmLevel.innerText                  = (level || '') || '—';
+    document.getElementById('edm-location').innerText = location || '—';
+    document.getElementById('edm-site').innerText     = site     || '—';
+    document.getElementById('edm-salary').innerText   = salary ? '₹' + parseFloat(salary).toLocaleString('en-IN') : '—';
+    document.getElementById('edm-password').innerText = password || 'Not set';
+    openModal('emp-details-modal');
+}
+
+function copyEmpPassword() {
+    var pwd = document.getElementById('edm-password').innerText;
+    if (pwd && pwd !== 'Not set') {
+        navigator.clipboard.writeText(pwd).then(function() {
+            var btn = document.querySelector('[onclick="copyEmpPassword()"]');
+            if (btn) { btn.innerText = 'Copied!'; setTimeout(function(){ btn.innerText = 'Copy'; }, 1500); }
+        }).catch(function(){});
+    }
+}
+
+/* ── Edit Employee (AJAX, no page redirect) ── */
+/* Ensure a <select>'s current value is present as an <option> (legacy
+   employees may carry a free-text role/level/location/site that was never
+   added to the master). Inserts before the "+ Add New" sentinel. */
+function _ensureOption(selectEl, value) {
+    if (!selectEl || !value) return;
+    for (var i = 0; i < selectEl.options.length; i++) {
+        if (selectEl.options[i].value === value) return;
+    }
+    var opt = document.createElement('option');
+    opt.value = value;
+    opt.text  = value;
+    var sentinel = selectEl.querySelector('option[value="__add__"]');
+    if (sentinel) selectEl.insertBefore(opt, sentinel);
+    else selectEl.appendChild(opt);
+}
+
+function openEditEmpModal() {
+    var d = _edmData;
+    document.getElementById('edit-emp-pk').value        = d.id       || '';
+    document.getElementById('edit-emp-title').innerText = d.name     || '';
+    document.getElementById('edit-emp-name').value      = d.name     || '';
+    document.getElementById('edit-emp-id').value        = d.empId    || '';
+
+    var roleEl = document.getElementById('edit-emp-role');
+    _ensureOption(roleEl, d.role || '');
+    if (roleEl) roleEl.value = d.role || '';
+
+    var levelEl = document.getElementById('edit-emp-level');
+    _ensureOption(levelEl, d.level || '');
+    if (levelEl) levelEl.value = d.level || '';
+
+    var locEl = document.getElementById('edit-emp-location');
+    _ensureOption(locEl, d.location || '');
+    if (locEl) locEl.value = d.location || '';
+
+    var siteEl = document.getElementById('edit-emp-site');
+    _ensureOption(siteEl, d.site || '');
+    if (siteEl) siteEl.value = d.site || '';
+
+    document.getElementById('edit-emp-password').value  = d.password || '';
+    closeModal('emp-details-modal');
+    openModal('editEmpModal');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var form = document.getElementById('edit-emp-form');
+    if (!form) return;
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var pk = document.getElementById('edit-emp-pk').value;
+        if (!pk) return;
+        var saveBtn = document.getElementById('edit-emp-save-btn');
+        var origHtml = saveBtn.innerHTML;
+        saveBtn.innerText = 'Saving…';
+        saveBtn.disabled = true;
+        fetch('/employees/' + pk + '/edit/ajax/', {
+            method: 'POST',
+            body: new FormData(form),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                closeModal('editEmpModal');
+                location.reload();
+            } else {
+                alert('Save failed: ' + (data.error || 'Check required fields.'));
+                saveBtn.innerHTML = origHtml;
+                saveBtn.disabled = false;
+            }
+        })
+        .catch(function() {
+            alert('Network error. Please try again.');
+            saveBtn.innerHTML = origHtml;
+            saveBtn.disabled = false;
+        });
+    });
+});
+
+/* ── Bank / PF modals ── */
+function openBankModal(id, name, bank, holder, account, ifsc) {
+    document.getElementById('bm-name').innerText  = name;
+    document.getElementById('b-bank').value       = bank    || '';
+    document.getElementById('b-holder').value     = holder  || '';
+    document.getElementById('b-account').value    = account || '';
+    document.getElementById('b-ifsc').value       = ifsc    || '';
+    document.getElementById('bank-form').action   = '/employees/' + id + '/bank/';
+    openModal('bank-modal');
+}
+
+function openPFModal(id, name, pf, esic) {
+    document.getElementById('pm-name').innerText = name;
+    document.getElementById('p-pf').value        = pf   || '';
+    document.getElementById('p-esic').value      = esic || '';
+    document.getElementById('pf-form').action    = '/employees/' + id + '/pf/';
+    openModal('pf-modal');
+}
+
+/* ── Bank / PF modal AJAX submit handlers ── */
+document.addEventListener('DOMContentLoaded', function() {
+    var bankForm = document.getElementById('bank-form');
+    if (bankForm) {
+        bankForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var saveBtn = bankForm.querySelector('[type="submit"]');
+            var origHtml = saveBtn ? saveBtn.innerHTML : '';
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.innerText = 'Saving…'; }
+            fetch(bankForm.action, {
+                method: 'POST',
+                body: new FormData(bankForm),
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    closeModal('bank-modal');
+                    location.reload();
+                } else {
+                    alert('Could not save bank details. Please check the fields.');
+                    if (saveBtn) { saveBtn.innerHTML = origHtml; saveBtn.disabled = false; }
+                }
+            })
+            .catch(function() {
+                alert('Network error. Please try again.');
+                if (saveBtn) { saveBtn.innerHTML = origHtml; saveBtn.disabled = false; }
+            });
+        });
+    }
+
+    var pfForm = document.getElementById('pf-form');
+    if (pfForm) {
+        pfForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var saveBtn = pfForm.querySelector('[type="submit"]');
+            var origHtml = saveBtn ? saveBtn.innerHTML : '';
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.innerText = 'Saving…'; }
+            fetch(pfForm.action, {
+                method: 'POST',
+                body: new FormData(pfForm),
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    closeModal('pf-modal');
+                    location.reload();
+                } else {
+                    alert('Could not save PF details. Please check the fields.');
+                    if (saveBtn) { saveBtn.innerHTML = origHtml; saveBtn.disabled = false; }
+                }
+            })
+            .catch(function() {
+                alert('Network error. Please try again.');
+                if (saveBtn) { saveBtn.innerHTML = origHtml; saveBtn.disabled = false; }
+            });
+        });
+    }
+});
+
+/* ── Remove mode: confirm + delete ── */
+var _confirmDelPk = null;
+
+function confirmRemoveEmployee(pk, name) {
+    _confirmDelPk = pk;
+    document.getElementById('confirm-del-name').innerText = name;
+    var btn = document.getElementById('confirm-del-btn');
+    btn.innerText = 'Yes, Remove Employee';
+    btn.disabled = false;
+    openModal('confirmDeleteModal');
+}
+
+function doDeleteEmployee() {
+    if (!_confirmDelPk) return;
+    var btn = document.getElementById('confirm-del-btn');
+    btn.innerText = 'Removing…';
+    btn.disabled = true;
+    var csrf = document.querySelector('[name=csrfmiddlewaretoken]');
+    fetch('/employees/' + _confirmDelPk + '/delete/', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': csrf ? csrf.value : ''
+        }
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            closeModal('confirmDeleteModal');
+            /* exitRemoveMode is defined in list.html script */
+            if (typeof exitRemoveMode === 'function') exitRemoveMode();
+            location.reload();
+        } else {
+            alert('Could not remove employee. Please try again.');
+            btn.innerText = 'Yes, Remove Employee';
+            btn.disabled = false;
+        }
+    })
+    .catch(function() {
+        alert('Network error. Please try again.');
+        btn.innerText = 'Yes, Remove Employee';
+        btn.disabled = false;
+    });
+}
+
+/* ── Close modal on overlay click ── */
+window.addEventListener('click', function(event) {
+    if (event.target.classList.contains('modal-overlay')) {
+        closeModal(event.target.id);
+    }
+});
+</script>

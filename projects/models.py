@@ -6,6 +6,12 @@ from django.conf import settings
 
 class Project(models.Model):
     STATUS = (('active','Active'),('on_hold','On Hold'),('completed','Completed'),('cancelled','Cancelled'))
+    # Multi-tenant scoping. The DB column has existed (NOT NULL) since
+    # migration 0002 (March 2026); the model declaration was lost in a
+    # prior edit, leaving the model out of sync with the schema. Declaring
+    # the field here restores that sync without altering the DB or
+    # generating a new migration. All queries must filter by admin_id.
+    admin_id    = models.CharField(max_length=20, db_index=True, default='PENDING')
     name        = models.CharField(max_length=200)
     client      = models.ForeignKey('clients.Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='projects')
     owner       = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='owned_projects')
@@ -15,6 +21,12 @@ class Project(models.Model):
     due_date    = models.DateField(null=True, blank=True)
     description = models.TextField(blank=True)
     created_at  = models.DateTimeField(auto_now_add=True)
+    # Audit fields, also added by migration 0002. Declared here purely
+    # to match the existing schema — without them, an INSERT from the
+    # model layer fails because updated_at is NOT NULL in the DB.
+    created_by  = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='projects_created')
+    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='projects_modified')
+    updated_at  = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -32,6 +44,10 @@ class Project(models.Model):
 class Task(models.Model):
     STATUS   = (('todo','To Do'),('in_progress','In Progress'),('done','Done'))
     PRIORITY = (('low','Low'),('medium','Medium'),('high','High'))
+    # Same migration-0002 fields as Project — re-declared so the model
+    # matches the schema. admin_id is set automatically server-side from
+    # the task's parent project to keep tenancy consistent.
+    admin_id    = models.CharField(max_length=20, db_index=True, default='PENDING')
     project     = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='tasks')
     title       = models.CharField(max_length=200)
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
@@ -39,6 +55,8 @@ class Task(models.Model):
     priority    = models.CharField(max_length=10, choices=PRIORITY, default='medium')
     due_date    = models.DateField(null=True, blank=True)
     notes       = models.TextField(blank=True)
+    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='tasks_modified')
+    updated_at  = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.title

@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Company Settings - SPIM Suite{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block page_title %}Company Settings{% endblock %}
+{% block page_sub %}Organisation details reflected in payslips{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'dashboard:index' %}" class="btn btn-outline btn-sm">Back to Dashboard</a>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 600px;">
+    <h3 class="font-semibold text-slate-800 text-sm mb-6">Company Details</h3>
+
+    {% if messages %}
+    <div class="mb-4">
+        {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+        <div class="space-y-4">
+            <div>
+                <label class="form-label">Company Name <span class="text-red-500">*</span></label>
+                {{ form.name }}
+                {% if form.name.errors %}<p class="text-xs text-red-500 mt-1">{{ form.name.errors|join:", " }}</p>{% endif %}
+            </div>
+            <div>
+                <label class="form-label">Address</label>
+                {{ form.address }}
+                {% if form.address.errors %}<p class="text-xs text-red-500 mt-1">{{ form.address.errors|join:", " }}</p>{% endif %}
+            </div>
+            <div class="grid grid-2 gap-4">
+                <div>
+                    <label class="form-label">Contact Number</label>
+                    {{ form.contact_number }}
+                    {% if form.contact_number.errors %}<p class="text-xs text-red-500 mt-1">{{ form.contact_number.errors|join:", " }}</p>{% endif %}
+                </div>
+                <div>
+                    <label class="form-label">GST Number</label>
+                    {{ form.gst_number }}
+                    {% if form.gst_number.errors %}<p class="text-xs text-red-500 mt-1">{{ form.gst_number.errors|join:", " }}</p>{% endif %}
+                </div>
+            </div>
+            <div>
+                <label class="form-label">Managing Director</label>
+                {{ form.managing_director }}
+                {% if form.managing_director.errors %}<p class="text-xs text-red-500 mt-1">{{ form.managing_director.errors|join:", " }}</p>{% endif %}
+            </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+            <button type="submit" class="btn btn-navy">Save Company Details</button>
+            <a href="{% url 'dashboard:index' %}" class="btn btn-outline">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

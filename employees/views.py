@@ -696,21 +696,36 @@ def salary_dashboard(request):
 
 def _compute_attendance_earnings(employee, month_date, basic_salary):
     """
-    Compute the attendance-prorated payable base from AttendanceRecord rows.
+    Attendance-prorated payable base from AttendanceRecord rows.
 
-    Logic:
-      - present   → 1.0 effective working day
-      - half_day  → 0.5 effective working day
-      - absent / leave → 0.0
+    Sundays are NOT payable working days and are excluded from both the
+    required-paid-days denominator and the attendance-count numerator.
 
-    Sundays are treated as paid rest days and excluded from both numerator
-    and denominator so they never cause a salary deduction.
+    RequiredPaidDays (cycle denominator):
+      - 30-day month      → 26
+      - 28- or 29-day mo. → 24
+      - 31-day month      → actual non-Sunday days in the month
+      - other (defensive) → actual non-Sunday days in the month
 
-    The denominator is capped at today to avoid deducting future unrecorded
-    days when payroll is run mid-month.
+    Status pay weights (per spec):
+      - present     → 1.0
+      - holiday     → 1.0
+      - half_day    → 0.5
+      - leave       → 0.0
+      - absent      → 0.0
+      - no_week_off → 0.0  (reduces ValidWeekOff — see below)
+      - week_off    → display-only; pay derived from EarnedWeekOff
 
-    If no attendance records exist for the month the employee is assumed
-    fully present and the full basic_salary is returned (safe fallback).
+    EarnedWeekOff   = floor(PresentDays / 6)
+    ValidWeekOff    = max(0, EarnedWeekOff - NoWeekOffCount)
+
+    RawPaidDays = Present + Holiday + ValidWeekOff + 0.5·HalfDay
+    PaidDays    = min(RawPaidDays, RequiredPaidDays)
+    DailySalary = MonthlySalary / RequiredPaidDays
+    FinalSalary = DailySalary × PaidDays
+
+    Safe fallback: if no attendance records exist for the month, return
+    the full basic_salary so payroll is never silently zeroed.
 
     The import of AttendanceRecord is deferred to avoid a circular import:
     attendance.models imports Employee from employees.models.
@@ -722,6 +737,24 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
 
     year  = month_date.year
     month = month_date.month
+    last_day = calendar.monthrange(year, month)[1]
+
+    # ---- RequiredPaidDays per spec (Step 3) ----
+    if last_day == 30:
+        required_paid_days = 26
+    elif last_day in (28, 29):
+        required_paid_days = 24
+    else:
+        # 31-day month, plus defensive fallback for any other length.
+        month_start = datetime.date(year, month, 1)
+        required_paid_days = sum(
+            1 for offset in range(last_day)
+            if (month_start + datetime.timedelta(days=offset)).weekday() != 6
+        )
+
+    if required_paid_days <= 0:
+        # Defensive: never divide by zero.
+        return basic_salary
 
     records = AttendanceRecord.objects.filter(
         employee=employee,
@@ -730,31 +763,40 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
     )
 
     if not records.exists():
-        # No attendance marked — treat as fully present.
+        # No attendance marked — treat as fully paid (safe fallback).
         return basic_salary
 
-    # Cap effective_end at today so future unrecorded days are not deducted
-    today       = datetime.date.today()
-    month_start = datetime.date(year, month, 1)
-    last_day    = calendar.monthrange(year, month)[1]
-    month_end   = datetime.date(year, month, last_day)
-    effective_end = min(month_end, today)
+    # Django __week_day: 1 = Sunday. Exclude any Sunday-dated records
+    # entirely from attendance counts (Sundays are unpayable per spec).
+    non_sunday = records.exclude(date__week_day=1)
 
-    # Working days = non-Sunday days from month start to effective_end
-    working_days = sum(
-        1 for offset in range((effective_end - month_start).days + 1)
-        if (month_start + datetime.timedelta(days=offset)).weekday() != 6  # 6 = Sunday
+    present_days      = non_sunday.filter(status='present').count()
+    holiday_days      = non_sunday.filter(status='holiday').count()
+    half_days         = non_sunday.filter(status='half_day').count()
+    no_week_off_days  = non_sunday.filter(status='no_week_off').count()
+    # leave, absent, week_off → not directly added to numerator
+    # (week_off is implicit, derived from EarnedWeekOff below)
+
+    # ---- Earned-week-off validation (Rules 3 & 4) ----
+    earned_week_offs = present_days // 6
+    valid_week_off   = max(0, earned_week_offs - no_week_off_days)
+
+    # ---- RawPaidDays (Step 7) ----
+    raw_paid_days = (
+        Decimal(str(present_days))
+        + Decimal(str(holiday_days))
+        + Decimal(str(valid_week_off))
+        + (Decimal(str(half_days)) * Decimal('0.5'))
     )
 
-    if working_days == 0:
-        return basic_salary
+    # ---- Cap at RequiredPaidDays (Step 7) ----
+    required_dec = Decimal(str(required_paid_days))
+    paid_days = raw_paid_days if raw_paid_days <= required_dec else required_dec
 
-    # Django __week_day: 1 = Sunday. Exclude Sundays from attendance counts.
-    present_days = records.filter(status='present').exclude(date__week_day=1).count()
-    half_days    = records.filter(status='half_day').exclude(date__week_day=1).count()
-    effective    = Decimal(str(present_days)) + Decimal(str(half_days)) * Decimal('0.5')
-
-    return round((effective / Decimal(str(working_days))) * basic_salary, 2)
+    # ---- Final salary (Step 8) ----
+    daily_salary  = basic_salary / required_dec
+    final_salary  = (daily_salary * paid_days).quantize(Decimal('0.01'))
+    return final_salary
 
 
 @login_required

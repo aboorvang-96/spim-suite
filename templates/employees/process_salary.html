@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Process Salary{% endblock %}
+{% block active_employees %}active{% endblock %}
+{% block header_title %}Monthly Salary Entry{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="card p-6">
+        <div class="flex items-center gap-4 mb-8 border-b border-slate-200 pb-6">
+            <div class="w-12 h-12 text-lg rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 font-bold">{{ employee.name|slice:":2"|upper }}</div>
+            <div>
+                <h3 class="text-lg font-bold text-slate-800">Pay: {{ employee.name }}</h3>
+                <p class="text-slate-500 text-sm">{{ employee.designation }} • Base: ₹{{ employee.base_salary }}</p>
+            </div>
+        </div>
+        
+        <form method="POST">
+            {% csrf_token %}
+            <div class="grid grid-2">
+                <div class="form-group col-span-2">
+                    <label class="form-label">Payment Month</label>
+                    {{ form.month }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Basic Salary (₹)</label>
+                    {{ form.basic_salary }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Extra Allowance (₹)</label>
+                    {{ form.extra_allowance }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">OT Allowance (₹)</label>
+                    {{ form.ot_allowance }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Advance Recovery (₹)</label>
+                    {{ form.advance_pay }}
+                </div>
+                <div class="form-group col-span-2">
+                    <label class="form-label">Total Deduction (₹)</label>
+                    {{ form.total_deduction }}
+                </div>
+            </div>
+            
+            <div class="bg-slate-50 rounded-xl p-6 mt-8 flex items-center justify-between border border-slate-100">
+                <div>
+                    <p class="text-slate-500 font-bold text-xs uppercase tracking-wider mb-1">Estimated Net Pay</p>
+                    <p class="text-2xl font-black text-blue-600">₹<span id="net-display">0.00</span></p>
+                </div>
+                <p class="text-xs text-slate-500 max-w-xs">Net Pay = (Basic + Extra + OT) - Advance - Deductions. Based on current entries.</p>
+            </div>
+
+            <div class="mt-8 flex justify-end gap-4 border-t border-slate-200 pt-6">
+                <a href="{% url 'employees:detail' employee.pk %}" class="btn btn-secondary">Discard</a>
+                <button type="submit" class="btn btn-primary px-8 py-3">Confirm & Process Salary</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const inputs = document.querySelectorAll('input[type="number"]');
+    const display = document.getElementById('net-display');
+    
+    function calc() {
+        let basic = parseFloat(document.getElementById('id_basic_salary').value) || 0;
+        let extra = parseFloat(document.getElementById('id_extra_allowance').value) || 0;
+        let ot = parseFloat(document.getElementById('id_ot_allowance').value) || 0;
+        let advance = parseFloat(document.getElementById('id_advance_pay').value) || 0;
+        let deduction = parseFloat(document.getElementById('id_total_deduction').value) || 0;
+        
+        let net = (basic + extra + ot) - (advance + deduction);
+        display.innerText = net.toLocaleString('en-IN', {minimumFractionDigits: 2});
+    }
+    
+    inputs.forEach(i => i.addEventListener('input', calc));
+    calc(); // Init
+</script>
+{% endblock %}

@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ role.name }} - Role Details{% endblock %}
+{% block active_employees %}active{% endblock %}
+
+{% block head %}
+<style>
+    .role-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+    }
+    .role-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+    .role-meta {
+        display: flex;
+        gap: 30px;
+        flex-wrap: wrap;
+    }
+    .meta-item {
+        display: flex;
+        flex-direction: column;
+    }
+    .meta-label {
+        font-size: 12px;
+        opacity: 0.8;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+    }
+    .meta-value {
+        font-size: 18px;
+        font-weight: 600;
+    }
+    .role-type-badge {
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .role-type-badge.monthly { background: rgba(255,255,255,0.2); }
+    .role-type-badge.daily { background: rgba(255,255,255,0.2); }
+    
+    .section-card {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 25px;
+        margin-bottom: 25px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .section-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #667eea;
+        padding-bottom: 10px;
+    }
+    
+    .employee-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 15px;
+    }
+    .employee-card {
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        padding: 15px;
+        background: #fff;
+        transition: box-shadow 0.3s;
+    }
+    .employee-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .employee-name {
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+    }
+    .employee-meta {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 4px;
+    }
+    .employee-actions {
+        margin-top: 12px;
+        display: flex;
+        gap: 8px;
+    }
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        display: inline-block;
+        cursor: pointer;
+        border: none;
+        transition: all 0.3s;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #6b7280; color: white; }
+    .btn-secondary:hover { background: #4b5563; }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+    }
+    .stat-card {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid #e9ecef;
+    }
+    .stat-value {
+        font-size: 32px;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 8px;
+    }
+    .stat-label {
+        font-size: 14px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .no-employees {
+        text-align: center;
+        padding: 40px;
+        color: #999;
+    }
+</style>
+{% endblock %}
+
+{% block header_title %}{{ role.name }} - Role Details{% endblock %}
+
+{% block content %}
+<!-- Role Header -->
+<div class="role-header">
+    <div class="role-title">{{ role.name }}</div>
+    <div class="role-meta">
+        <div class="meta-item">
+            <div class="meta-label">Base Salary</div>
+            <div class="meta-value">₹{{ role.base_salary|floatformat:2 }}</div>
+        </div>
+        <div class="meta-item">
+            <div class="meta-label">Salary Type</div>
+            <div class="meta-value">
+                <span class="role-type-badge {{ role.salary_type }}">{{ role.get_salary_type_display }}</span>
+            </div>
+        </div>
+        <div class="meta-item">
+            <div class="meta-label">Employees Assigned</div>
+            <div class="meta-value">{{ employee_count }}</div>
+        </div>
+        <div class="meta-item">
+            <div class="meta-label">Created</div>
+            <div class="meta-value">{{ role.created_at|date:"M d, Y" }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div style="margin-bottom: 30px; display: flex; gap: 12px; flex-wrap: wrap;">
+    <a href="{% url 'employees:role_edit' role.pk %}" class="btn btn-primary" style="padding: 10px 20px;">
+        ✏️ Edit Role
+    </a>
+    <a href="{% url 'employees:role_list' %}" class="btn btn-secondary" style="padding: 10px 20px;">
+        ← Back to Roles
+    </a>
+    {% if employee_count == 0 %}
+        <a href="{% url 'employees:role_delete' role.pk %}" class="btn btn-danger" style="padding: 10px 20px;"
+           onclick="return confirm('Are you sure you want to delete this role?')">
+            🗑️ Delete Role
+        </a>
+    {% endif %}
+</div>
+
+<!-- Statistics -->
+<div class="section-card">
+    <div class="section-title">Role Statistics</div>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ employee_count }}</div>
+            <div class="stat-label">Assigned Employees</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">₹{{ role.base_salary|floatformat:2 }}</div>
+            <div class="stat-label">Base Salary</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ role.get_salary_type_display }}</div>
+            <div class="stat-label">Payment Type</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ role.updated_at|date:"M d" }}</div>
+            <div class="stat-label">Last Updated</div>
+        </div>
+    </div>
+</div>
+
+<!-- Assigned Employees -->
+<div class="section-card">
+    <div class="section-title">Assigned Employees ({{ employee_count }})</div>
+    
+    {% if employees %}
+        <div class="employee-grid">
+            {% for employee in employees %}
+                <div class="employee-card">
+                    <div class="employee-name">{{ employee.name }}</div>
+                    <div class="employee-meta">ID: {{ employee.employee_id|default:"N/A" }}</div>
+                    <div class="employee-meta">Department: {{ employee.department|default:"N/A" }}</div>
+                    <div class="employee-meta">Location: {{ employee.location|default:"N/A" }}</div>
+                    <div class="employee-meta">Status: 
+                        <span style="color: {% if employee.status == 'active' %}#10b981{% elif employee.status == 'inactive' %}#ef4444{% else %}#f59e0b{% endif %}">
+                            {{ employee.get_status_display }}
+                        </span>
+                    </div>
+                    <div class="employee-actions">
+                        <a href="{% url 'employees:detail' employee.pk %}" class="btn-sm btn-primary">👁️ View Details</a>
+                        <a href="{% url 'employees:process_salary' employee.pk %}" class="btn-sm btn-secondary">💰 Process Salary</a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="no-employees">
+            <h4>No employees assigned to this role</h4>
+            <p>Assign this role to employees to automatically apply this salary structure.</p>
+            <a href="{% url 'employees:add_step1_details' %}" class="btn btn-primary" style="margin-top: 15px;">
+                ➕ Add New Employee
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Salary Calculation Info -->
+<div class="section-card">
+    <div class="section-title">Salary Calculation Details</div>
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 15px;">
+        <h5 style="margin-bottom: 10px; color: #333;">How Salary is Calculated</h5>
+        <div style="font-size: 14px; line-height: 1.6; color: #555;">
+            {% if role.salary_type == 'monthly' %}
+                <strong>Monthly Salary:</strong> Base salary of ₹{{ role.base_salary|floatformat:2 }} is paid for the full month. 
+                Attendance deductions are applied for absent days (full day = 1 day deduction, half day = 0.5 day deduction).
+            {% else %}
+                <strong>Daily Wage:</strong> Base salary of ₹{{ role.base_salary|floatformat:2 }} is paid per day worked.
+                Only days marked as "Present" or "Half Day" are paid. Half days pay 50% of the daily rate.
+            {% endif %}
+        </div>
+    </div>
+    
+    <div style="font-size: 13px; color: #666;">
+        <strong>Note:</strong> Salary calculations automatically factor in attendance records from the attendance module.
+        Future role salary changes will affect new salary processing periods.
+    </div>
+</div>
+{% endblock %}

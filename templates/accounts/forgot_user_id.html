@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find User ID - FinSight</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .register-box {
+            width: 100%;
+            max-width: 480px;
+            background: white;
+            padding: 2.5rem;
+            border-radius: 20px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        .logo { font-size: 1.5rem; font-weight: 800; color: #6366f1; margin-bottom: 2rem; text-align: center; }
+        .register-box h1 { font-size: 1.5rem; color: #1e293b; margin-bottom: 0.5rem; text-align: center; }
+        .register-box > p { color: #64748b; margin-bottom: 2rem; text-align: center; font-size: 0.9rem; }
+        
+        .form-group { margin-bottom: 1.5rem; }
+        .form-label { display: block; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 0.5rem; text-transform: uppercase; }
+        .form-input { 
+            width: 100%; padding: 0.8rem 1rem; border: 1px solid #e2e8f0; border-radius: 12px; 
+            font-size: 0.95rem; background: #f8fafc; transition: all 0.2s;
+        }
+        .form-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); background: white; }
+        
+        .btn-primary {
+            width: 100%; padding: 0.8rem; background: #6366f1; color: white; border: none; 
+            border-radius: 12px; font-weight: 600; cursor: pointer; transition: 0.2s;
+            margin-top: 1rem; font-size: 1rem;
+        }
+        .btn-primary:hover { background: #4f46e5; }
+        
+        .alert { padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem; font-size: 0.9rem; }
+        .alert-info { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+        .alert-error { background: #fee2e2; color: #ef4444; border: 1px solid #fecaca; }
+    </style>
+</head>
+<body>
+    <div class="register-box">
+        <div class="logo">FinSight.</div>
+        <h1>Identify Account</h1>
+        <p>Enter your recovery email to find your username(s).</p>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags == 'error' %}alert-error{% else %}alert-info{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <form method="POST">
+            {% csrf_token %}
+            <div class="form-group">
+                <label class="form-label">Recovery Email Address</label>
+                <input type="email" name="email" required placeholder="name@company.com" class="form-input">
+            </div>
+
+            <button type="submit" class="btn-primary">Find User ID(s)</button>
+        </form>
+
+        <p style="text-align: center; margin-top: 2rem; font-size: 0.85rem; color: #64748b;">
+            Remembered your access? <a href="{% url 'accounts:login' %}" style="color: #6366f1; font-weight: 600; text-decoration: none;">Sign In</a>
+        </p>
+    </div>
+</body>
+</html>

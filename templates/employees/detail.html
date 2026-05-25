@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+{% block title %}Employee Profile{% endblock %}
+{% block active_employees %}active{% endblock %}
+{% block header_title %}Manage Employee{% endblock %}
+
+{% block head %}
+<style>
+    .profile-layout {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 2rem;
+    }
+    .profile-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+    }
+    .w-16 { width: 4rem; }
+    .h-16 { height: 4rem; }
+    .rounded-2xl { border-radius: 1rem; }
+    .profile-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    .info-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    .info-item label {
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+        display: block;
+    }
+    .info-item p { margin-bottom: 0; }
+    .text-semibold { font-weight: 600; }
+    .text-bold { font-weight: 700; }
+    .text-extrabold { font-weight: 800; }
+    .salary-value {
+        font-weight: 700;
+        font-size: 1.15rem;
+        color: var(--accent);
+    }
+    .salary-success {
+        font-weight: 600;
+        color: #10b981;
+    }
+    .btn-full {
+        width: 100%;
+        justify-content: center;
+    }
+    .bank-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        font-size: 0.85rem;
+    }
+    .bank-item label {
+        color: var(--text-secondary);
+        font-weight: 600;
+        margin-bottom: 0.2rem;
+        display: block;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 2rem 0;
+        color: var(--text-secondary);
+    }
+    .empty-state p { margin-bottom: 1rem; }
+    .mt-profile { margin-top: 2rem; }
+    .mt-bank { margin-top: 1.5rem; }
+    
+    .salary-history-card { height: fit-content; }
+    .salary-history-header { padding: 1.75rem; }
+    .month-col { font-weight: 700; }
+    .allowance-col { color: #16a34a; }
+    .deduction-col { color: #ef4444; }
+    .net-pay-col { font-weight: 800; color: var(--accent); }
+    .table-empty { text-align: center; padding: 4rem; color: var(--text-secondary); }
+    .btn-payslip { padding: 0.4rem 0.8rem; font-size: 0.75rem; }
+    
+    /* Delete button overrides */
+    .btn-delete-custom {
+        color: #ef4444;
+        border-color: #fecaca;
+    }
+    .btn-delete-custom:hover {
+        background: #fef2f2;
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'employees:process_salary' employee.pk %}" class="btn btn-primary">
+    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6c1.1 0 2 0.9 2 2s-0.9 2-2 2-2-0.9-2-2 0.9-2 2-2zM4.001 20.118a8.001 8.001 0 0113.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+    Process Salary
+</a>
+<button onclick="confirmDelete()" class="btn btn-secondary btn-delete-custom" title="Permanently delete employee">
+    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="profile-layout">
+    <!-- LEFT: Basic Info & Profile -->
+    <div class="profile-sidebar">
+        <div class="card">
+            <h3 class="card-title">Profile Overview</h3>
+            <div class="profile-header">
+                <div class="avatar w-16 h-16 text-2xl rounded-2xl flex items-center justify-center bg-slate-100 text-slate-600 font-bold">{{ employee.name|slice:":2"|upper }}</div>
+                <div>
+                    <h2 class="text-xl font-extrabold text-slate-900">{{ employee.name }}</h2>
+                    <p class="text-slate-500 text-sm">{{ employee.designation }}</p>
+                </div>
+            </div>
+            
+            <div class="info-stack">
+                <div class="info-item"><label>Employee ID</label><p>{{ employee.employee_id }}</p></div>
+                <div class="info-item"><label>Job Role</label><p class="text-semibold">{{ employee.job_role.name|default:'Not Assigned' }}</p></div>
+                <div class="info-item"><label>Department</label><p>{{ employee.department }}</p></div>
+                <div class="info-item"><label>Joining Date</label><p>{{ employee.joining_date|default:'N/A' }}</p></div>
+                <div class="info-item"><label>Base Salary</label><p class="salary-value">₹{{ employee.base_salary }}</p></div>
+                {% if employee.job_role %}
+                <div class="info-item"><label>Role Salary</label><p class="salary-success">₹{{ employee.job_role.base_salary }} ({{ employee.job_role.get_salary_type_display }})</p></div>
+                {% endif %}
+            </div>
+            
+            <div class="mt-profile">
+                <a href="{% url 'employees:add_step1_details' %}?edit={{employee.pk}}" class="btn btn-secondary btn-full">Edit General Info</a>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3 class="card-title">Bank Details</h3>
+            {% if employee.has_bank_details %}
+            <div class="bank-grid">
+                <div class="bank-item"><label>Bank Name</label><p>{{ employee.bank_details.bank_name }}</p></div>
+                <div class="bank-item"><label>Account Number</label><p>{{ employee.bank_details.account_number }}</p></div>
+                <div class="bank-item"><label>Status</label><span class="badge badge-success">{{ employee.bank_details.status }}</span></div>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No bank details added yet.</p>
+                <button type="button" 
+                        onclick="openBankModal('{{ employee.pk }}', '{{ employee.name|escapejs }}', '', '', '', '')" 
+                        class="btn btn-primary px-4 py-2 cursor-pointer">
+                    Add Bank Details
+                </button>
+            </div>
+            {% endif %}
+            
+            {% if employee.has_bank_details %}
+            <div class="mt-bank">
+                <button type="button" 
+                        onclick="openBankModal('{{ employee.pk }}', '{{ employee.name|escapejs }}', '{{ employee.bank_details.bank_name|escapejs }}', '{{ employee.bank_details.account_holder|escapejs }}', '{{ employee.bank_details.account_number|escapejs }}', '{{ employee.bank_details.ifsc_code|escapejs }}')" 
+                        class="btn btn-secondary btn-full cursor-pointer">
+                    Update Bank Info
+                </button>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h3 class="card-title">PF & ESIC Details</h3>
+            {% if employee.has_pf_details %}
+            <div class="bank-grid">
+                <div class="bank-item"><label>PF Number</label><p>{{ employee.pf_details.pf_number }}</p></div>
+                <div class="bank-item"><label>UAN Number</label><p>{{ employee.pf_details.uan_number }}</p></div>
+                <div class="bank-item"><label>Status</label><span class="badge badge-success">{{ employee.pf_details.status }}</span></div>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No PF details added yet.</p>
+                <button type="button" 
+                        onclick="openPFModal('{{ employee.pk }}', '{{ employee.name|escapejs }}', '', '')" 
+                        class="btn btn-primary px-4 py-2 cursor-pointer">
+                    Add PF Details
+                </button>
+            </div>
+            {% endif %}
+            
+            {% if employee.has_pf_details %}
+            <div class="mt-bank">
+                <button type="button" 
+                        onclick="openPFModal('{{ employee.pk }}', '{{ employee.name|escapejs }}', '{{ employee.pf_details.pf_number|escapejs }}', '{{ employee.pf_details.esic_number|escapejs }}')" 
+                        class="btn btn-secondary btn-full cursor-pointer">
+                    Update PF Info
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- RIGHT: Salary History -->
+    <div class="card table-card salary-history-card">
+        <div class="salary-history-header">
+            <h3 class="card-title">Salary & Payment History</h3>
+        </div>
+        <table class="app-table">
+            <thead>
+                <tr>
+                    <th>Month/Year</th>
+                    <th>Basic Salary</th>
+                    <th>Allowances</th>
+                    <th>Deductions</th>
+                    <th>Net Pay</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sal in history %}
+                <tr>
+                    <td class="month-col">{{ sal.month|date:"F Y" }}</td>
+                    <td>₹{{ sal.basic_salary }}</td>
+                    <td class="allowance-col">+ ₹{{ sal.extra_allowance|add:sal.ot_allowance }}</td>
+                    <td class="deduction-col">- ₹{{ sal.total_deduction }}</td>
+                    <td class="net-pay-col">₹{{ sal.net_pay }}</td>
+                    <td>
+                        <a href="#" class="btn btn-secondary btn-payslip">Payslip</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="table-empty">No salary history found for this employee.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Simple Hidden Form for Delete -->
+<form id="delete-form" method="POST" action="{% url 'employees:delete' employee.pk %}" class="hidden">
+    {% csrf_token %}
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+{% include 'employees/modals_snippet.html' %}
+<script>
+    function confirmDelete() {
+        if(confirm("Are you sure you want to PERMANENTLY remove this employee? This action cannot be undone.")) {
+            document.getElementById('delete-form').submit();
+        }
+    }
+</script>
+{% endblock %}

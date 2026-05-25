@@ -1,0 +1,1453 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Work Log – SPIM Suite{% endblock %}
+{% block nav_projects %}active{% endblock %}
+{% block page_title %}Work Log{% endblock %}
+{% block page_sub %}Daily Machine Work Log &amp; Summary{% endblock %}
+
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="{% static 'css/salary_manager.css' %}">
+<style>
+/* ── Tab bar ── */
+.wl-tab-bar{display:flex;gap:0;border-bottom:2px solid #e2e8f0;margin-bottom:1.5rem;}
+.wl-tab{padding:.6rem 1.25rem;font-size:.8125rem;font-weight:600;color:#64748b;background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;}
+.wl-tab:hover{color:#2563eb;}
+.wl-tab.active{color:#2563eb;border-bottom-color:#2563eb;}
+
+/* ── Inline attendance-style table ── */
+.wl-inline-table{width:100%;border-collapse:collapse;font-size:.78rem;min-width:900px;}
+.wl-inline-table thead{background:#f8fafc;position:sticky;top:0;z-index:5;}
+.wl-inline-table th{padding:.45rem .55rem;text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:#64748b;border-bottom:1px solid #e2e8f0;white-space:nowrap;}
+.wl-inline-table td{padding:.3rem .4rem;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+.wl-inline-table tbody tr:hover td{background:#f4f7ff;}
+.wl-inline-table tbody tr.row-saved td{background:#f0fdf4;}
+
+/* ── Inline inputs ── */
+.wl-input,.wl-select{font-size:.75rem;padding:.28rem .4rem;border:1px solid #e2e8f0;border-radius:5px;background:#fff;color:#1e293b;width:100%;}
+.wl-input:focus,.wl-select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.1);}
+.wl-input[type="date"]{min-width:108px;}
+.wl-input[type="number"]{width:62px;text-align:center;}
+
+/* ── Work-details cell with add button ── */
+.wd-wrap{display:flex;gap:3px;align-items:center;}
+.wd-wrap .wl-select{flex:1;min-width:100px;}
+.btn-add-status{padding:.28rem .45rem;font-size:.68rem;font-weight:700;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:5px;cursor:pointer;white-space:nowrap;line-height:1;}
+.btn-add-status:hover{background:#dbeafe;}
+
+/* ── Employee select ── */
+.emp-select{min-width:110px;}
+
+/* ── Location chip ── */
+.loc-chip{font-weight:700;color:#2563eb;font-size:.8rem;white-space:nowrap;}
+
+/* ── Row save button ── */
+.btn-row-save{padding:.3rem .65rem;font-size:.72rem;font-weight:600;background:#2563eb;color:#fff;border:none;border-radius:5px;cursor:pointer;}
+.btn-row-save:hover{background:#1d4ed8;}
+.btn-row-del{padding:.3rem .55rem;font-size:.72rem;font-weight:600;background:#fff;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;margin-left:3px;}
+.btn-row-del:hover{background:#fee2e2;}
+
+/* ── Toolbar ── */
+.wl-toolbar{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.45rem .7rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:.5rem;}
+.wl-toolbar label{font-size:.75rem;font-weight:600;color:#475569;display:inline-flex;align-items:center;gap:.3rem;margin:0;cursor:pointer;}
+
+/* ── Summary stat bar ── */
+.sum-stat-bar{display:flex;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap;}
+.sum-stat{background:#fff;border:1px solid var(--slate-200);border-radius:var(--radius);padding:.875rem 1.25rem;display:flex;align-items:center;gap:.875rem;min-width:180px;box-shadow:var(--shadow-sm);}
+.sum-stat-val{font-size:1.25rem;font-weight:800;color:var(--slate-900);}
+.sum-stat-lbl{font-size:.68rem;font-weight:700;color:var(--slate-500);text-transform:uppercase;letter-spacing:.025em;}
+
+/* ── Empty row ── */
+.empty-row td{padding:3rem 1rem;text-align:center;color:var(--slate-400);font-size:.85rem;}
+
+/* ── Date header bar ── */
+.wl-date-bar{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;}
+.wl-date-bar label{font-size:.75rem;font-weight:700;color:#475569;white-space:nowrap;}
+.wl-date-bar .wl-input{max-width:150px;}
+
+/* ── Edit-mode row ── */
+.wl-inline-table tbody tr.row-editing td{background:#fffbeb !important;}
+.btn-row-edit{padding:.3rem .55rem;font-size:.72rem;font-weight:600;background:#fff;color:#2563eb;border:1px solid #bfdbfe;border-radius:5px;cursor:pointer;}
+.btn-row-edit:hover{background:#eff6ff;}
+.btn-row-cancel{padding:.3rem .45rem;font-size:.72rem;font-weight:600;background:#fff;color:#64748b;border:1px solid #e2e8f0;border-radius:5px;cursor:pointer;margin-left:2px;}
+.btn-row-cancel:hover{background:#f1f5f9;}
+
+/* ── Custom Employee Multi-Select Dropdown ── */
+.emp-dd-wrap{position:relative;width:100%;}
+.emp-dd-trigger{display:flex;align-items:center;justify-content:space-between;padding:.28rem .4rem;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;min-height:28px;gap:4px;font-size:.75rem;color:#1e293b;box-sizing:border-box;}
+.emp-dd-trigger:hover{border-color:#93c5fd;}
+.emp-dd-trigger.open{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.1);}
+.emp-dd-display{flex:1;overflow:hidden;display:flex;flex-wrap:wrap;gap:2px;align-items:center;min-width:0;}
+.emp-dd-placeholder{color:#94a3b8;font-size:.72rem;white-space:nowrap;}
+.emp-chip{display:inline-flex;align-items:center;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:3px;padding:.1rem .3rem;font-size:.63rem;font-weight:600;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;}
+.emp-dd-count{font-size:.72rem;font-weight:600;color:#2563eb;white-space:nowrap;}
+.emp-dd-arrow{flex-shrink:0;color:#94a3b8;transition:transform .15s;}
+.emp-dd-arrow.rotated{transform:rotate(180deg);}
+.emp-dd-panel{position:fixed;z-index:1000;background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.13);min-width:230px;width:max-content;max-width:340px;}
+.emp-dd-search{display:block;width:100%;padding:.35rem .5rem;border:none;border-bottom:1px solid #f1f5f9;font-size:.73rem;outline:none;border-radius:6px 6px 0 0;background:#f8fafc;box-sizing:border-box;}
+.emp-dd-search:focus{background:#fff;}
+.emp-dd-list{max-height:180px;overflow-y:auto;}
+.emp-dd-item{display:flex;align-items:center;gap:.45rem;padding:.32rem .5rem;cursor:pointer;font-size:.73rem;color:#1e293b;transition:background .1s;user-select:none;}
+.emp-dd-item:hover{background:#f0f9ff;}
+.emp-dd-item.selected{background:#eff6ff;}
+.emp-dd-item input[type=checkbox]{width:13px;height:13px;margin:0;cursor:pointer;accent-color:#2563eb;flex-shrink:0;}
+.emp-dd-empty{padding:.6rem .55rem;font-size:.72rem;color:#94a3b8;text-align:center;}
+.emp-dd-limit-msg{padding:.22rem .55rem;font-size:.68rem;color:#dc2626;background:#fef2f2;border-top:1px solid #fecaca;border-radius:0 0 6px 6px;}
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex gap-2">
+    <!-- Download dropdown -->
+    <div id="dl-wrapper" style="position:relative;display:inline-block;">
+        <button onclick="toggleDl()" class="btn btn-outline btn-sm bg-white">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Download
+            <svg width="9" height="9" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="margin-left:2px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div id="dl-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:160px;z-index:200;overflow:hidden;">
+            <button onclick="generatePDF();closeDl()" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:.8rem;color:#1e293b;text-align:left;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                Download PDF
+            </button>
+            <button onclick="generateExcel();closeDl()" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:.8rem;color:#1e293b;text-align:left;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Download XLSX
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="salary-dashboard">
+
+    <!-- ── Tab Bar ── -->
+    <div class="wl-tab-bar">
+        <button class="wl-tab active" id="tab-btn-log"     onclick="switchTab('log')">📋 Daily Work Log</button>
+        <button class="wl-tab"        id="tab-btn-summary" onclick="switchTab('summary')">📊 Work Summary</button>
+    </div>
+
+    <!-- ══ TAB 1: Daily Work Log (attendance-style) ══ -->
+    <div id="tab-log">
+
+        <!-- Date selector bar -->
+        <div class="wl-date-bar">
+            <label>Date</label>
+            <input type="date" id="wl-date" class="wl-input" title="Select date to view/enter work log">
+            <button class="btn btn-outline btn-sm" onclick="loadLogForDate()" style="height:34px;">Load</button>
+            <button class="btn btn-outline btn-sm" onclick="openAddLocationModal()" style="height:34px;" title="Add machine number">+ Add Location</button>
+            <button class="btn btn-outline btn-sm" onclick="openAddStatusModal()" style="height:34px;" title="Add work status type">+ Add Status</button>
+        </div>
+
+        <!-- Bulk toolbar -->
+        <div class="wl-toolbar">
+            <label>
+                <input type="checkbox" id="chk-all" onchange="toggleSelectAll(this.checked)"> Select All
+            </label>
+            <button class="btn btn-primary btn-sm" style="height:32px;" onclick="saveSelected()">
+                <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Save Selected
+            </button>
+            <span id="wl-status-msg" style="font-size:.73rem;color:#64748b;"></span>
+        </div>
+
+        <!-- Work Log Table -->
+        <div class="table-container">
+            <table class="wl-inline-table" id="log-table">
+                <thead>
+                    <tr>
+                        <th style="width:32px;"></th>
+                        <th style="min-width:90px;">Location</th>
+                        <th style="min-width:110px;">Site</th>
+                        <th style="min-width:118px;">Date</th>
+                        <th style="min-width:160px;">Work Details</th>
+                        <th style="min-width:62px;">TMP</th>
+                        <th style="min-width:130px;">Employees</th>
+                        <th style="min-width:110px;">Remarks</th>
+                        <th style="min-width:90px;text-align:right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="log-tbody">
+                    <tr><td colspan="9" class="empty-row">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div><!-- /tab-log -->
+
+    <!-- ══ TAB 2: Work Summary ══ -->
+    <div id="tab-summary" style="display:none;">
+
+        <!-- Filters -->
+        <div class="filter-card">
+            <div class="filter-group" style="min-width:130px;">
+                <label>Date From</label>
+                <input type="date" id="s-date-from" class="filter-input" title="Start date">
+            </div>
+            <div class="filter-group" style="min-width:130px;">
+                <label>Date To</label>
+                <input type="date" id="s-date-to" class="filter-input" title="End date">
+            </div>
+            <div class="filter-group" style="min-width:150px;">
+                <label>Location</label>
+                <select id="s-location" class="filter-select" title="Filter by location">
+                    <option value="">All Locations</option>
+                </select>
+            </div>
+            <div class="filter-group" style="min-width:140px;">
+                <label>Site</label>
+                <input type="text" id="s-site" class="filter-input" placeholder="Site name…" title="Filter by site">
+            </div>
+            <div class="filter-group" style="min-width:140px;">
+                <label>Remarks</label>
+                <input type="text" id="s-remarks" class="filter-input" placeholder="Search remarks…" title="Filter by remarks">
+            </div>
+            <button class="btn btn-primary btn-sm" style="height:38px;align-self:flex-end;" onclick="fetchSummaryData()">Apply Filters</button>
+            <button class="btn btn-outline btn-sm" style="height:38px;align-self:flex-end;" onclick="resetSummaryFilters()">Reset</button>
+        </div>
+
+        <!-- Summary Stats -->
+        <div class="sum-stat-bar">
+            <div class="sum-stat">
+                <div class="stat-icon icon-blue">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                </div>
+                <div>
+                    <div class="sum-stat-lbl">Total Entries</div>
+                    <div class="sum-stat-val" id="s-total-entries">0</div>
+                </div>
+            </div>
+            <div class="sum-stat">
+                <div class="stat-icon icon-emerald">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </div>
+                <div>
+                    <div class="sum-stat-lbl">Total Manpower (TMP)</div>
+                    <div class="sum-stat-val" id="s-total-tmp">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Table -->
+        <div class="table-container">
+            <table class="salary-table" id="summary-table">
+                <thead>
+                    <tr>
+                        <th>SL</th>
+                        <th>Date</th>
+                        <th>Location</th>
+                        <th>Site</th>
+                        <th>Work Details</th>
+                        <th>TMP</th>
+                        <th>Employees</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody id="summary-tbody">
+                    <tr><td colspan="8" style="padding:3rem;text-align:center;color:#94a3b8;">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ── Monthly Report Generator ── -->
+        <div class="report-section" style="margin-top:1.5rem;border-top:2px solid #e2e8f0;padding-top:1.25rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem;flex-wrap:wrap;gap:.5rem;">
+                <h4 style="font-size:.85rem;font-weight:700;color:#1e293b;margin:0;">
+                    📄 Machine-Wise Monthly Attendance Report
+                </h4>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap;" id="report-dl-btns" style="display:none;">
+                    <button onclick="downloadReportPDF()" class="btn btn-outline btn-sm" id="btn-rpt-pdf" style="display:none;">
+                        <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                        PDF
+                    </button>
+                    <button onclick="downloadReportXLSX()" class="btn btn-outline btn-sm" id="btn-rpt-xlsx" style="display:none;">
+                        <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        XLSX
+                    </button>
+                </div>
+            </div>
+
+            <!-- Report filters -->
+            <div class="filter-card" style="margin-bottom:.85rem;">
+                <div class="filter-group" style="min-width:90px;">
+                    <label>Month <span style="color:#e11d48">*</span></label>
+                    <select id="r-month" class="filter-select">
+                        <option value="1">January</option><option value="2">February</option>
+                        <option value="3">March</option><option value="4">April</option>
+                        <option value="5">May</option><option value="6">June</option>
+                        <option value="7">July</option><option value="8">August</option>
+                        <option value="9">September</option><option value="10">October</option>
+                        <option value="11">November</option><option value="12">December</option>
+                    </select>
+                </div>
+                <div class="filter-group" style="min-width:80px;">
+                    <label>Year <span style="color:#e11d48">*</span></label>
+                    <input type="number" id="r-year" class="filter-input" min="2020" max="2099" placeholder="2025">
+                </div>
+                <div class="filter-group" style="min-width:150px;">
+                    <label>Location <span style="color:#e11d48">*</span></label>
+                    <select id="r-location" class="filter-select">
+                        <option value="">— Select —</option>
+                    </select>
+                </div>
+                <div class="filter-group" style="min-width:130px;">
+                    <label>Site</label>
+                    <input type="text" id="r-site" class="filter-input" placeholder="Optional…">
+                </div>
+                <button class="btn btn-primary btn-sm" style="height:38px;align-self:flex-end;" onclick="generateReport()">
+                    Generate Report
+                </button>
+            </div>
+
+            <!-- Report preview table -->
+            <div id="report-preview-wrap" style="display:none;">
+                <div id="report-preview-header" style="margin-bottom:.6rem;"></div>
+                <div class="table-container" style="overflow-x:auto;max-height:420px;">
+                    <table id="report-preview-table" style="border-collapse:collapse;font-size:.72rem;white-space:nowrap;min-width:600px;"></table>
+                </div>
+                <div style="margin-top:.6rem;font-size:.72rem;color:#64748b;">
+                    ✓ = worked on that date &nbsp;|&nbsp; TMP = Total Man Power
+                </div>
+            </div>
+            <div id="report-empty-msg" style="display:none;padding:1.5rem;text-align:center;color:#94a3b8;font-size:.82rem;">
+                No work log entries found for the selected period and location.
+            </div>
+        </div>
+
+    </div><!-- /tab-summary -->
+
+</div><!-- /salary-dashboard -->
+
+<!-- ══ MODAL: Add Machine Location ══ -->
+<div id="loc-modal" class="modal">
+    <div class="modal-content" style="max-width:400px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Add Location</h3>
+            <button onclick="closeLocModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
+                Enter the machine number / location name (e.g. G-606, WT-204, T-17).
+            </p>
+            <div class="form-group">
+                <label class="stat-label">Location Name <span style="color:#e11d48">*</span></label>
+                <input type="text" id="new-loc-name" class="filter-input" placeholder="e.g. G-606">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeLocModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveLocation()">Add Location</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Add Work Status ══ -->
+<div id="status-modal" class="modal">
+    <div class="modal-content" style="max-width:380px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Add Work Status</h3>
+            <button onclick="closeStatusModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
+                Add a reusable work type (e.g. Painting, Greasing, Inspection).
+            </p>
+            <div class="form-group">
+                <label class="stat-label">Status Name <span style="color:#e11d48">*</span></label>
+                <input type="text" id="new-status-name" class="filter-input" placeholder="e.g. Greasing">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeStatusModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveWorkStatus()">Add Status</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Add Global Site ══ -->
+<div id="site-modal" class="modal">
+    <div class="modal-content" style="max-width:380px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Add Site</h3>
+            <button onclick="closeAddSiteModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
+                Add a new site to the global location registry (e.g. Radhapuram, Valliyur, Kudankulam).
+                It will be immediately available across all modules.
+            </p>
+            <div class="form-group">
+                <label class="stat-label">Site Name <span style="color:#e11d48">*</span></label>
+                <input type="text" id="new-site-name" class="filter-input" placeholder="e.g. Radhapuram">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeAddSiteModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveGlobalSite()">Add Site</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast">Saved</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Server-side initial data ───────────────────────────────────────────────
+let machinesList  = {{ machines_json|safe }};
+let employeesList = {{ employees_json|safe }};
+let statusesList  = {{ statuses_json|safe }};
+let sitesList     = {{ global_sites_json|safe }};  // global LocationSite names
+
+// ── State ──────────────────────────────────────────────────────────────────
+let logMap       = {};   // { location_id: entry } for the current date
+let summaryRows  = [];
+let activeTab    = 'log';
+const TODAY_ISO  = new Date().toISOString().split('T')[0];
+
+// ── CSRF Helper ────────────────────────────────────────────────────────────
+function getCsrf() {
+    for (let c of document.cookie.split(';')) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'csrftoken') return decodeURIComponent(v);
+    }
+    return '';
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(tab) {
+    activeTab = tab;
+    document.getElementById('tab-log').style.display     = tab === 'log'     ? '' : 'none';
+    document.getElementById('tab-summary').style.display = tab === 'summary' ? '' : 'none';
+    document.getElementById('tab-btn-log').classList.toggle('active',     tab === 'log');
+    document.getElementById('tab-btn-summary').classList.toggle('active', tab === 'summary');
+    if (tab === 'summary') fetchSummaryData();
+}
+
+// ── Download Dropdown ──────────────────────────────────────────────────────
+function toggleDl() {
+    const dd = document.getElementById('dl-dropdown');
+    dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+}
+function closeDl() { document.getElementById('dl-dropdown').style.display = 'none'; }
+document.addEventListener('click', e => {
+    const w = document.getElementById('dl-wrapper');
+    if (w && !w.contains(e.target)) closeDl();
+    // Close open employee dropdowns when click is outside BOTH the trigger-wrap AND the panel
+    // (panel may be teleported to body, so we query all panels directly)
+    document.querySelectorAll('.emp-dd-panel').forEach(panel => {
+        if (panel.style.display === 'none') return;
+        const lid   = panel.id.replace('emp-panel-', '');
+        const wrap  = document.getElementById(`emp-dd-${lid}`);
+        const trig  = document.getElementById(`emp-trigger-${lid}`);
+        const arrow = document.getElementById(`emp-arrow-${lid}`);
+        const inWrap  = wrap  && wrap.contains(e.target);
+        const inPanel = panel.contains(e.target);
+        if (!inWrap && !inPanel) {
+            panel.style.display = 'none';
+            if (wrap) wrap.appendChild(panel);  // return teleported panel to wrapper
+            if (trig)  trig.classList.remove('open');
+            if (arrow) arrow.classList.remove('rotated');
+        }
+    });
+});
+
+// ── Build option HTML helpers ──────────────────────────────────────────────
+function buildStatusOptions(selectedVal) {
+    let html = `<option value="">— Select —</option>`;
+    statusesList.forEach(s => {
+        const sel = s.name === selectedVal ? ' selected' : '';
+        html += `<option value="${escAttr(s.name)}"${sel}>${escHtml(s.name)}</option>`;
+    });
+    return html;
+}
+
+function buildSiteOptions(selectedVal) {
+    let html = `<option value="">— Select Site —</option>`;
+    // Include current value only if truly absent from global list (case-insensitive to prevent visual duplicates)
+    const _svLow = (selectedVal || '').toLowerCase();
+    if (selectedVal && !sitesList.some(s => s.toLowerCase() === _svLow)) {
+        html += `<option value="${escAttr(selectedVal)}" selected>${escHtml(selectedVal)}</option>`;
+    }
+    sitesList.forEach(s => {
+        const sel = s === selectedVal ? ' selected' : '';
+        html += `<option value="${escAttr(s)}"${sel}>${escHtml(s)}</option>`;
+    });
+    return html;
+}
+
+function empLabel(e) {
+    return e.employee_id ? `${escHtml(e.employee_id)} - ${escHtml(e.name)}` : escHtml(e.name);
+}
+
+// ── Employee Selection State ───────────────────────────────────────────────
+const empSelMap = {};   // locId → Set of selected emp ids (numbers)
+
+function initEmpSel(locId, empIds) {
+    empSelMap[locId] = new Set((empIds || []).map(Number));
+}
+
+function getSelectedEmpIds(locId) {
+    return empSelMap[locId] ? [...empSelMap[locId]] : [];
+}
+
+function buildEmpDisplayHtml(locId) {
+    const sel = empSelMap[locId] ? [...empSelMap[locId]] : [];
+    if (!sel.length) return `<span class="emp-dd-placeholder">— Select Employees —</span>`;
+    const empMap = {};
+    employeesList.forEach(e => { empMap[e.id] = e; });
+    if (sel.length <= 2) {
+        return sel.map(id => {
+            const e = empMap[id];
+            return e ? `<span class="emp-chip">${empLabel(e)}</span>` : '';
+        }).join('');
+    }
+    return `<span class="emp-dd-count">${sel.length} Employees Selected</span>`;
+}
+
+function buildEmpDropdown(locId, empIds, tmp) {
+    initEmpSel(locId, empIds);
+    let listHtml = '';
+    if (!employeesList.length) {
+        listHtml = `<div class="emp-dd-empty">No active employees found.</div>`;
+    } else {
+        listHtml = employeesList.map(e => {
+            const checked = (empIds || []).map(Number).includes(e.id);
+            return `<label class="emp-dd-item${checked ? ' selected' : ''}" id="emp-item-${locId}-${e.id}">
+                <input type="checkbox" value="${e.id}" ${checked ? 'checked' : ''}
+                    onchange="onEmpCheck(${locId},${e.id},this.checked)">
+                ${empLabel(e)}
+            </label>`;
+        }).join('');
+    }
+    const displayHtml = buildEmpDisplayHtml(locId);
+    return `<div class="emp-dd-wrap" id="emp-dd-${locId}" data-loc-id="${locId}" data-tmp="${tmp}">
+        <div class="emp-dd-trigger" id="emp-trigger-${locId}" onclick="toggleEmpDropdown(event,${locId})">
+            <span class="emp-dd-display" id="emp-display-${locId}">${displayHtml}</span>
+            <svg class="emp-dd-arrow" id="emp-arrow-${locId}" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="emp-dd-panel" id="emp-panel-${locId}" style="display:none;">
+            <input type="text" class="emp-dd-search" placeholder="Search employee…"
+                oninput="filterEmpList(${locId},this.value)" autocomplete="off">
+            <div class="emp-dd-list" id="emp-list-${locId}">${listHtml}</div>
+            <div class="emp-dd-limit-msg" id="emp-limit-${locId}" style="display:none;"></div>
+        </div>
+    </div>`;
+}
+
+function toggleEmpDropdown(event, locId) {
+    event.stopPropagation();
+    const panel   = document.getElementById(`emp-panel-${locId}`);
+    const trigger = document.getElementById(`emp-trigger-${locId}`);
+    const arrow   = document.getElementById(`emp-arrow-${locId}`);
+    const isOpen  = panel.style.display !== 'none';
+    // Close all other open panels and return any teleported ones to their wrappers
+    document.querySelectorAll('.emp-dd-panel').forEach(p => {
+        if (p !== panel) {
+            p.style.display = 'none';
+            const lid = p.id.replace('emp-panel-', '');
+            const wr = document.getElementById(`emp-dd-${lid}`);
+            if (wr && p.parentNode !== wr) wr.appendChild(p);
+            const t = document.getElementById(`emp-trigger-${lid}`);
+            const a = document.getElementById(`emp-arrow-${lid}`);
+            if (t) t.classList.remove('open');
+            if (a) a.classList.remove('rotated');
+        }
+    });
+    if (!isOpen) {
+        // Position using viewport coords, then teleport to body to escape all overflow/transform ancestors
+        const rect = trigger.getBoundingClientRect();
+        panel.style.top  = (rect.bottom + 3) + 'px';
+        panel.style.left = rect.left + 'px';
+        document.body.appendChild(panel);
+    } else {
+        // Return panel to its wrapper on close
+        const wrap = document.getElementById(`emp-dd-${locId}`);
+        if (wrap) wrap.appendChild(panel);
+    }
+    panel.style.display = isOpen ? 'none' : '';
+    trigger.classList.toggle('open', !isOpen);
+    arrow.classList.toggle('rotated', !isOpen);
+    if (!isOpen) {
+        const srch = panel.querySelector('.emp-dd-search');
+        if (srch) { srch.value = ''; filterEmpList(locId, ''); setTimeout(() => srch.focus(), 40); }
+    }
+}
+
+function filterEmpList(locId, query) {
+    const listEl = document.getElementById(`emp-list-${locId}`);
+    if (!listEl) return;
+    const q = query.toLowerCase().trim();
+    listEl.querySelectorAll('.emp-dd-item').forEach(item => {
+        item.style.display = !q || item.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function onEmpCheck(locId, empId, checked) {
+    const wrap  = document.getElementById(`emp-dd-${locId}`);
+    const tmp   = parseInt(wrap?.dataset.tmp) || 0;
+    const sel   = empSelMap[locId] || (empSelMap[locId] = new Set());
+    const lmEl  = document.getElementById(`emp-limit-${locId}`);
+    if (checked) {
+        if (tmp > 0 && sel.size >= tmp) {
+            const cb = document.querySelector(`#emp-item-${locId}-${empId} input`);
+            if (cb) cb.checked = false;
+            if (lmEl) {
+                lmEl.textContent = `Maximum ${tmp} employee(s) allowed (TMP limit).`;
+                lmEl.style.display = '';
+                setTimeout(() => { if (lmEl) lmEl.style.display = 'none'; }, 2500);
+            }
+            return;
+        }
+        sel.add(empId);
+    } else {
+        sel.delete(empId);
+    }
+    const itemEl = document.getElementById(`emp-item-${locId}-${empId}`);
+    if (itemEl) itemEl.classList.toggle('selected', sel.has(empId));
+    updateEmpDisplay(locId);
+    if (lmEl && (!tmp || sel.size <= tmp)) lmEl.style.display = 'none';
+}
+
+function updateEmpDisplay(locId) {
+    const el = document.getElementById(`emp-display-${locId}`);
+    if (el) el.innerHTML = buildEmpDisplayHtml(locId);
+}
+
+// ── Render inline machine rows ─────────────────────────────────────────────
+function renderMachineRows() {
+    // Remove any panels teleported to body before destroying table rows
+    document.querySelectorAll('body > .emp-dd-panel').forEach(p => p.remove());
+
+    const tbody  = document.getElementById('log-tbody');
+    const dateVal = document.getElementById('wl-date').value || TODAY_ISO;
+
+    if (!machinesList.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">No locations added yet. Click <strong>+ Add Location</strong> to register machine numbers.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = machinesList.map(m => {
+        const entry      = logMap[m.id] || {};
+        const entryDate  = entry.date_iso      || dateVal;
+        const site       = entry.site          || '';
+        const workDet    = entry.work_details  || '';
+        const tmp        = entry.tmp !== undefined ? entry.tmp : 0;
+        const remarks    = entry.remarks       || '';
+        const empIds     = entry.employee_ids  || [];
+        const savedClass = entry.id ? ' row-saved' : '';
+        // empCountLbl no longer used — display handled by custom dropdown
+
+        // Actions: saved rows show Edit+Del; new rows show Save
+        const actionsCells = entry.id
+            ? `<button class="btn-row-edit"   id="act-edit-${m.id}"   onclick="editRow(${m.id})"        title="Edit entry">Edit</button>
+               <button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save changes" style="display:none;">Save</button>
+               <button class="btn-row-cancel" id="act-cancel-${m.id}" onclick="cancelEditRow(${m.id})"  title="Cancel edit"  style="display:none;">✕</button>
+               <button class="btn-row-del" id="act-del-${m.id}" onclick="deleteRow(${m.id},${entry.id})" title="Delete">Del</button>`
+            : `<button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save entry">Save</button>`;
+
+        return `
+        <tr id="row-m${m.id}" data-loc-id="${m.id}" data-log-id="${entry.id || ''}" class="${savedClass}">
+            <td style="text-align:center;">
+                <input type="checkbox" class="row-chk" data-loc-id="${m.id}">
+            </td>
+            <td><span class="loc-chip">${escHtml(m.name)}</span></td>
+            <td>
+                <div class="wd-wrap">
+                    <select class="wl-select" id="site-${m.id}" title="Site">
+                        ${buildSiteOptions(site)}
+                    </select>
+                    <button class="btn-add-status" onclick="openAddSiteModal(${m.id})" title="Add new global site">+</button>
+                </div>
+            </td>
+            <td>
+                <input type="date" class="wl-input" id="date-${m.id}"
+                    value="${entryDate}" max="${TODAY_ISO}" title="Past/today only">
+            </td>
+            <td>
+                <div class="wd-wrap">
+                    <select class="wl-select" id="wd-${m.id}" title="Work type">
+                        ${buildStatusOptions(workDet)}
+                    </select>
+                    <button class="btn-add-status" onclick="openAddStatusModal(${m.id})" title="Add new work status">+</button>
+                </div>
+            </td>
+            <td>
+                <input type="number" class="wl-input" id="tmp-${m.id}" value="${tmp}" min="0"
+                    style="width:62px;text-align:center;"
+                    onchange="onTmpChange(${m.id})">
+            </td>
+            <td>
+                ${buildEmpDropdown(m.id, empIds, tmp)}
+            </td>
+            <td>
+                <input type="text" class="wl-input" id="rmk-${m.id}"
+                    value="${escAttr(remarks)}" placeholder="Remarks…">
+            </td>
+            <td style="text-align:right;white-space:nowrap;">
+                ${actionsCells}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Load existing entries for selected date ────────────────────────────────
+async function loadLogForDate() {
+    const dateVal = document.getElementById('wl-date').value;
+    if (!dateVal) { renderMachineRows(); return; }
+
+    try {
+        const url  = `{% url 'projects:list' %}?format=json&tab=log&date=${encodeURIComponent(dateVal)}`;
+        const res  = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const data = await res.json();
+
+        // Update shared lists if server returned updated versions
+        if (data.locations && data.locations.length) machinesList = data.locations;
+        if (data.statuses  && data.statuses.length)  statusesList = data.statuses;
+        if (data.employees && data.employees.length)  employeesList = data.employees;
+
+        // Build a map: location_id → entry
+        logMap = {};
+        (data.entries || []).forEach(e => { logMap[e.location_id] = e; });
+
+        syncSummaryLocationDropdown(data.locations || machinesList);
+        renderMachineRows();
+    } catch(err) {
+        showToast('Failed to load data', 'error');
+    }
+}
+
+// ── Save single row ────────────────────────────────────────────────────────
+async function saveRow(locId) {
+    const row    = document.getElementById(`row-m${locId}`);
+    const date   = document.getElementById(`date-${locId}`).value;
+    const site   = document.getElementById(`site-${locId}`).value.trim();
+    const wd     = document.getElementById(`wd-${locId}`).value;
+    const tmp    = parseInt(document.getElementById(`tmp-${locId}`).value) || 0;
+    const rmk    = document.getElementById(`rmk-${locId}`).value.trim();
+
+    if (!date) { showToast('Date required.', 'error'); return; }
+    if (date > TODAY_ISO) { showToast('Future dates not allowed.', 'error'); return; }
+
+    const empIds = getSelectedEmpIds(locId).map(Number);
+
+    // Frontend TMP enforcement
+    if (tmp > 0 && empIds.length > tmp) {
+        showToast(`Max ${tmp} employee(s) allowed (TMP limit).`, 'error'); return;
+    }
+
+    const payload = {
+        date:         date,
+        location_id:  locId,
+        site:         site,
+        work_details: wd,
+        tmp:          tmp,
+        employee_ids: empIds,
+        remarks:      rmk,
+    };
+
+    try {
+        const res    = await fetch(`{% url 'projects:work_log_upsert' %}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify(payload),
+        });
+        const result = await res.json();
+        if (result.success) {
+            row.dataset.logId = result.id;
+            row.classList.add('row-saved');
+            showToast('Saved.');
+            // Refresh to get updated Del button
+            loadLogForDate();
+        } else {
+            showToast(result.error || 'Save failed.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+// ── Delete single row entry ────────────────────────────────────────────────
+async function deleteRow(locId, logId) {
+    if (!confirm('Delete this work log entry?')) return;
+    try {
+        const res    = await fetch(`/projects/log/${logId}/delete/`, {
+            method:  'POST',
+            headers: { 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const result = await res.json();
+        if (result.success) {
+            delete logMap[locId];
+            showToast('Deleted.', 'error');
+            loadLogForDate();
+        } else {
+            showToast(result.error || 'Delete failed.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+// ── Save all selected rows ─────────────────────────────────────────────────
+async function saveSelected() {
+    const checked = [...document.querySelectorAll('.row-chk:checked')];
+    if (!checked.length) { showToast('Select at least one row.', 'error'); return; }
+
+    const msg = document.getElementById('wl-status-msg');
+    msg.textContent = `Saving ${checked.length} row(s)…`;
+
+    let done = 0, errors = 0;
+    for (const chk of checked) {
+        const locId = parseInt(chk.dataset.locId);
+        const date  = document.getElementById(`date-${locId}`).value;
+        if (!date || date > TODAY_ISO) { errors++; continue; }
+
+        const empIds = getSelectedEmpIds(locId).map(Number);
+        const tmpVal = parseInt(document.getElementById(`tmp-${locId}`).value) || 0;
+
+        // Skip rows exceeding TMP limit
+        if (tmpVal > 0 && empIds.length > tmpVal) { errors++; continue; }
+
+        const payload = {
+            date:         date,
+            location_id:  locId,
+            site:         document.getElementById(`site-${locId}`).value.trim(),
+            work_details: document.getElementById(`wd-${locId}`).value,
+            tmp:          tmpVal,
+            employee_ids: empIds,
+            remarks:      document.getElementById(`rmk-${locId}`).value.trim(),
+        };
+
+        try {
+            const res = await fetch(`{% url 'projects:work_log_upsert' %}`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+                body:    JSON.stringify(payload),
+            });
+            const r = await res.json();
+            if (r.success) done++;
+            else errors++;
+        } catch { errors++; }
+    }
+
+    msg.textContent = '';
+    showToast(errors ? `${done} saved, ${errors} failed.` : `${done} row(s) saved.`, errors ? 'error' : 'success');
+    document.getElementById('chk-all').checked = false;
+    loadLogForDate();
+}
+
+// ── Select all checkbox ────────────────────────────────────────────────────
+function toggleSelectAll(val) {
+    document.querySelectorAll('.row-chk').forEach(c => c.checked = val);
+}
+
+// ── Fetch Summary Data ─────────────────────────────────────────────────────
+async function fetchSummaryData() {
+    const dateFrom = document.getElementById('s-date-from').value;
+    const dateTo   = document.getElementById('s-date-to').value;
+    const location = document.getElementById('s-location').value;
+    const site     = document.getElementById('s-site').value;
+    const remarks  = document.getElementById('s-remarks').value;
+
+    let url = `{% url 'projects:list' %}?format=json&tab=summary`;
+    if (dateFrom)  url += `&date_from=${encodeURIComponent(dateFrom)}`;
+    if (dateTo)    url += `&date_to=${encodeURIComponent(dateTo)}`;
+    if (location)  url += `&location=${encodeURIComponent(location)}`;
+    if (site)      url += `&site=${encodeURIComponent(site)}`;
+    if (remarks)   url += `&remarks=${encodeURIComponent(remarks)}`;
+
+    try {
+        const res  = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const data = await res.json();
+        summaryRows = data.rows || [];
+        if (data.locations) syncSummaryLocationDropdown(data.locations);
+        document.getElementById('s-total-entries').textContent = data.total_entries || 0;
+        document.getElementById('s-total-tmp').textContent     = data.total_tmp     || 0;
+        renderSummaryTable();
+    } catch(e) {
+        showToast('Failed to load summary', 'error');
+    }
+}
+
+function syncSummaryLocationDropdown(locs) {
+    const el  = document.getElementById('s-location');
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">All Locations</option>`;
+    locs.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id; opt.textContent = l.name;
+        if (String(l.id) === String(cur)) opt.selected = true;
+        el.appendChild(opt);
+    });
+    syncReportLocationDropdown(locs);  // keep report dropdown in sync
+}
+
+function renderSummaryTable() {
+    const tbody = document.getElementById('summary-tbody');
+    if (!summaryRows.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="padding:3rem;text-align:center;color:#94a3b8;">No records match the selected filters.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = summaryRows.map(r => `
+        <tr>
+            <td><strong>${r.sl}</strong></td>
+            <td>${r.date}</td>
+            <td style="font-weight:700;color:#2563eb;">${escHtml(r.location_name)}</td>
+            <td>${escHtml(r.site)}</td>
+            <td style="max-width:200px;white-space:normal;font-size:.78rem;">${escHtml(r.work_details)}</td>
+            <td style="font-weight:700;color:#059669;">${r.tmp}</td>
+            <td style="font-size:.75rem;">${escHtml(r.employees)}</td>
+            <td>${escHtml(r.remarks)}</td>
+        </tr>
+    `).join('');
+}
+
+// ── Add Location Modal ─────────────────────────────────────────────────────
+function openAddLocationModal() {
+    document.getElementById('new-loc-name').value = '';
+    document.getElementById('loc-modal').classList.add('active');
+    setTimeout(() => document.getElementById('new-loc-name').focus(), 100);
+}
+function closeLocModal() {
+    document.getElementById('loc-modal').classList.remove('active');
+}
+async function saveLocation() {
+    const name = document.getElementById('new-loc-name').value.trim();
+    if (!name) { showToast('Location name is required.', 'error'); return; }
+    try {
+        const res    = await fetch(`{% url 'projects:add_machine_location' %}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify({ name }),
+        });
+        const result = await res.json();
+        if (result.success) {
+            if (result.created) {
+                machinesList.push({ id: result.id, name: result.name });
+                machinesList.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            closeLocModal();
+            showToast(result.created ? `Added: ${result.name}` : `${result.name} already exists.`);
+            renderMachineRows();
+        } else {
+            showToast(result.error || 'Failed.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+// ── Add Work Status Modal ──────────────────────────────────────────────────
+let _statusCallbackLocId = null;
+
+function openAddStatusModal(locId) {
+    _statusCallbackLocId = locId || null;
+    document.getElementById('new-status-name').value = '';
+    document.getElementById('status-modal').classList.add('active');
+    setTimeout(() => document.getElementById('new-status-name').focus(), 100);
+}
+function closeStatusModal() {
+    document.getElementById('status-modal').classList.remove('active');
+    _statusCallbackLocId = null;
+}
+async function saveWorkStatus() {
+    const name = document.getElementById('new-status-name').value.trim();
+    if (!name) { showToast('Status name is required.', 'error'); return; }
+    try {
+        const res    = await fetch(`{% url 'projects:add_work_status' %}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify({ name }),
+        });
+        const result = await res.json();
+        if (result.success) {
+            if (result.created) {
+                statusesList.push({ id: result.id, name: result.name });
+                statusesList.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            closeStatusModal();
+            showToast(result.created ? `Added: ${result.name}` : `${result.name} already exists.`);
+            // Re-build all work-details dropdowns inline
+            if (_statusCallbackLocId) {
+                const sel = document.getElementById(`wd-${_statusCallbackLocId}`);
+                if (sel) { sel.innerHTML = buildStatusOptions(sel.value); }
+            } else {
+                machinesList.forEach(m => {
+                    const sel = document.getElementById(`wd-${m.id}`);
+                    if (sel) { const cur = sel.value; sel.innerHTML = buildStatusOptions(cur); sel.value = cur; }
+                });
+            }
+        } else {
+            showToast(result.error || 'Failed.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+// ── Reset Summary Filters ──────────────────────────────────────────────────
+function resetSummaryFilters() {
+    document.getElementById('s-date-from').value = '';
+    document.getElementById('s-date-to').value   = '';
+    document.getElementById('s-location').value  = '';
+    document.getElementById('s-site').value      = '';
+    document.getElementById('s-remarks').value   = '';
+    fetchSummaryData();
+}
+
+// ── Export: PDF ────────────────────────────────────────────────────────────
+function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const isLog = activeTab === 'log';
+    const doc   = new jsPDF('l', 'mm', 'a4');
+
+    const title = isLog ? 'Daily Work Log' : 'Work Summary';
+    doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+    doc.text(`SPIM Suite — ${title}`, 14, 14);
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 14, 20);
+
+    if (isLog) {
+        const dateVal = document.getElementById('wl-date').value;
+        const head = [['SL', 'Location', 'Site', 'Date', 'Work Details', 'TMP', 'Employees', 'Remarks']];
+        const body = Object.values(logMap).map((e, i) => [
+            i + 1,
+            e.location_name || '—',
+            e.site || '—',
+            e.date || dateVal,
+            (e.work_details || '—').substring(0, 60),
+            e.tmp || 0,
+            (e.employee_names || []).join(', ') || '—',
+            e.remarks || '—',
+        ]);
+        doc.autoTable({ startY: 25, head, body, theme: 'grid', styles: { fontSize: 7, cellPadding: 2 }, headStyles: { fillColor: [30,41,59] } });
+    } else {
+        const head = [['SL', 'Date', 'Location', 'Site', 'Work Details', 'TMP', 'Employees', 'Remarks']];
+        const body = summaryRows.map(r => [r.sl, r.date, r.location_name, r.site, (r.work_details||'—').substring(0,60), r.tmp, r.employees||'—', r.remarks||'—']);
+        doc.autoTable({ startY: 25, head, body, theme: 'grid', styles: { fontSize: 7, cellPadding: 2 }, headStyles: { fillColor: [30,41,59] } });
+    }
+
+    doc.save(`SPIM_WorkLog_${title.replace(/ /g,'_')}_${new Date().toLocaleDateString('en-IN').replace(/\//g,'-')}.pdf`);
+}
+
+// ── Export: Excel ──────────────────────────────────────────────────────────
+function generateExcel() {
+    const isLog = activeTab === 'log';
+    const title = isLog ? 'Daily Work Log' : 'Work Summary';
+
+    let data;
+    if (isLog) {
+        data = Object.values(logMap).map((e, i) => ({
+            'SL':           i + 1,
+            'Location':     e.location_name || '—',
+            'Site':         e.site || '',
+            'Date':         e.date || '',
+            'Work Details': e.work_details || '',
+            'TMP':          e.tmp || 0,
+            'Employees':    (e.employee_names || []).join(', '),
+            'Remarks':      e.remarks || '',
+        }));
+    } else {
+        data = summaryRows.map(r => ({
+            'SL':           r.sl,
+            'Date':         r.date,
+            'Location':     r.location_name,
+            'Site':         r.site || '',
+            'Work Details': r.work_details || '',
+            'TMP':          r.tmp,
+            'Employees':    r.employees || '',
+            'Remarks':      r.remarks || '',
+        }));
+    }
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, title);
+    XLSX.writeFile(wb, `SPIM_WorkLog_${title.replace(/ /g,'_')}_${new Date().toLocaleDateString('en-IN').replace(/\//g,'-')}.xlsx`);
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function escHtml(str) {
+    if (!str && str !== 0) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = type === 'success' ? '#059669' : '#dc2626';
+    t.classList.add('active');
+    setTimeout(() => t.classList.remove('active'), 3000);
+}
+
+// ── TMP / Employee limit enforcement ──────────────────────────────────────
+function onTmpChange(locId) {
+    const tmpVal = parseInt(document.getElementById(`tmp-${locId}`).value) || 0;
+    const wrap   = document.getElementById(`emp-dd-${locId}`);
+    if (wrap) wrap.dataset.tmp = tmpVal;
+    const count = getSelectedEmpIds(locId).length;
+    if (tmpVal > 0 && count > tmpVal) {
+        showToast(`TMP is now ${tmpVal} but ${count} employee(s) are selected. Please remove excess.`, 'error');
+    }
+}
+
+// ── Edit / Cancel row ──────────────────────────────────────────────────────
+function editRow(locId) {
+    const row = document.getElementById(`row-m${locId}`);
+
+    // Snapshot current values for cancel
+    row.dataset.origDate   = document.getElementById(`date-${locId}`).value;
+    row.dataset.origSite   = document.getElementById(`site-${locId}`).value;
+    row.dataset.origWd     = document.getElementById(`wd-${locId}`).value;
+    row.dataset.origTmp    = document.getElementById(`tmp-${locId}`).value;
+    row.dataset.origRmk    = document.getElementById(`rmk-${locId}`).value;
+    row.dataset.origEmpIds = JSON.stringify(getSelectedEmpIds(locId).map(String));
+
+    // Switch buttons: hide Edit+Del, show Save+Cancel only
+    document.getElementById(`act-edit-${locId}`).style.display   = 'none';
+    document.getElementById(`act-save-${locId}`).style.display   = '';
+    document.getElementById(`act-cancel-${locId}`).style.display = '';
+    const _delBtn = document.getElementById(`act-del-${locId}`);
+    if (_delBtn) _delBtn.style.display = 'none';
+    row.classList.add('row-editing');
+    row.classList.remove('row-saved');
+}
+
+function cancelEditRow(locId) {
+    const row = document.getElementById(`row-m${locId}`);
+
+    // Restore snapshotted values
+    document.getElementById(`date-${locId}`).value = row.dataset.origDate || '';
+    document.getElementById(`site-${locId}`).value = row.dataset.origSite || '';
+    document.getElementById(`wd-${locId}`).value   = row.dataset.origWd   || '';
+    document.getElementById(`tmp-${locId}`).value  = row.dataset.origTmp  || '0';
+    document.getElementById(`rmk-${locId}`).value  = row.dataset.origRmk  || '';
+
+    try {
+        const origIds = JSON.parse(row.dataset.origEmpIds || '[]').map(Number);
+        empSelMap[locId] = new Set(origIds);
+        updateEmpDisplay(locId);
+        const listEl = document.getElementById(`emp-list-${locId}`);
+        if (listEl) {
+            listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
+                const eid = parseInt(cb.value);
+                cb.checked = origIds.includes(eid);
+                const item = cb.closest('.emp-dd-item');
+                if (item) item.classList.toggle('selected', cb.checked);
+            });
+        }
+    } catch(_) {}
+
+    // Restore buttons: Edit + Del visible, Save + Cancel hidden
+    document.getElementById(`act-edit-${locId}`).style.display   = '';
+    document.getElementById(`act-save-${locId}`).style.display   = 'none';
+    document.getElementById(`act-cancel-${locId}`).style.display = 'none';
+    const _delBtnC = document.getElementById(`act-del-${locId}`);
+    if (_delBtnC) _delBtnC.style.display = '';
+    row.classList.remove('row-editing');
+    row.classList.add('row-saved');
+}
+
+// ── Add Global Site ────────────────────────────────────────────────────────
+let _siteCallbackLocId = null;
+
+function openAddSiteModal(locId) {
+    _siteCallbackLocId = (locId !== undefined) ? locId : null;
+    document.getElementById('new-site-name').value = '';
+    document.getElementById('site-modal').classList.add('active');
+    setTimeout(() => document.getElementById('new-site-name').focus(), 100);
+}
+function closeAddSiteModal() {
+    document.getElementById('site-modal').classList.remove('active');
+    _siteCallbackLocId = null;
+}
+
+async function saveGlobalSite() {
+    const name = document.getElementById('new-site-name').value.trim();
+    if (!name) { showToast('Site name is required.', 'error'); return; }
+    try {
+        const res    = await fetch('/branches/api/locations/', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body:    JSON.stringify({ name }),
+        });
+        const result = await res.json();
+        if (result.success) {
+            sitesList = result.locations;   // server returns full updated list
+            closeAddSiteModal();
+            showToast(`Added site: ${name}`);
+            // Refresh the site dropdown in the triggering row (or all rows)
+            if (_siteCallbackLocId !== null) {
+                const sel = document.getElementById(`site-${_siteCallbackLocId}`);
+                if (sel) { const cur = sel.value; sel.innerHTML = buildSiteOptions(cur); sel.value = cur; }
+            } else {
+                machinesList.forEach(m => {
+                    const sel = document.getElementById(`site-${m.id}`);
+                    if (sel) { const cur = sel.value; sel.innerHTML = buildSiteOptions(cur); sel.value = cur; }
+                });
+            }
+        } else {
+            showToast(result.error || 'Failed to add site.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+// ── Report state ──────────────────────────────────────────────────────────
+let reportData = null;  // last successful report response
+
+// ── Populate report location dropdown ─────────────────────────────────────
+function syncReportLocationDropdown(locs) {
+    const el  = document.getElementById('r-location');
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">— Select —</option>`;
+    locs.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id; opt.textContent = l.name;
+        if (String(l.id) === String(cur)) opt.selected = true;
+        el.appendChild(opt);
+    });
+}
+
+// ── Generate machine-wise monthly report ──────────────────────────────────
+async function generateReport() {
+    const month   = document.getElementById('r-month').value;
+    const year    = document.getElementById('r-year').value;
+    const locId   = document.getElementById('r-location').value;
+    const site    = document.getElementById('r-site').value.trim();
+
+    if (!month || !year || !locId) {
+        showToast('Month, year, and location are required.', 'error'); return;
+    }
+
+    const url = `{% url 'projects:machine_monthly_report' %}?year=${year}&month=${month}&location=${locId}&site=${encodeURIComponent(site)}`;
+
+    try {
+        const res  = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const data = await res.json();
+
+        if (!data.success) { showToast(data.error || 'Failed to load report.', 'error'); return; }
+
+        reportData = data;
+
+        document.getElementById('report-preview-wrap').style.display = '';
+        document.getElementById('report-empty-msg').style.display    = 'none';
+        document.getElementById('btn-rpt-pdf').style.display         = '';
+        document.getElementById('btn-rpt-xlsx').style.display        = '';
+
+        renderReportPreview(data);
+    } catch(e) {
+        showToast('Network error loading report.', 'error');
+    }
+}
+
+function renderReportPreview(d) {
+    // Header block
+    const hdr = document.getElementById('report-preview-header');
+    hdr.innerHTML = `
+        <div style="font-size:.82rem;font-weight:700;color:#1e293b;">${escHtml(d.company_name) || '—'}</div>
+        <div style="font-size:.74rem;color:#475569;margin-top:.15rem;">
+            <strong>Location:</strong> ${escHtml(d.location)} &nbsp;|&nbsp;
+            <strong>Site:</strong> ${escHtml(d.site) || '—'} &nbsp;|&nbsp;
+            <strong>Period:</strong> ${d.month_name} ${d.year}
+        </div>`;
+
+    if (!d.emp_rows.length) {
+        document.getElementById('report-preview-wrap').style.display = 'none';
+        document.getElementById('report-empty-msg').style.display    = '';
+        return;
+    }
+
+    // Build table
+    const N = d.days_in_month;
+    let thead = `<thead><tr style="background:#1e293b;color:#fff;">
+        <th style="${thS()}width:28px;">SL</th>
+        <th style="${thS()}min-width:130px;">Employee Name</th>`;
+    for (let day = 1; day <= N; day++) {
+        thead += `<th style="${thS()}width:22px;text-align:center;">${day}</th>`;
+    }
+    thead += `</tr></thead>`;
+
+    let tbody = '<tbody>';
+    d.emp_rows.forEach(row => {
+        tbody += `<tr>
+            <td style="${tdS()}text-align:center;">${row.sl}</td>
+            <td style="${tdS()}font-weight:600;">${escHtml(row.name)}</td>`;
+        row.cells.forEach(c => {
+            tbody += `<td style="${tdS()}text-align:center;color:${c ? '#059669' : '#94a3b8'};">${c}</td>`;
+        });
+        tbody += '</tr>';
+    });
+
+    // TMP row
+    tbody += `<tr style="background:#f8fafc;font-weight:700;">
+        <td style="${tdS()}text-align:center;">—</td>
+        <td style="${tdS()}color:#1e293b;">TMP</td>`;
+    d.tmp_row.forEach(v => {
+        tbody += `<td style="${tdS()}text-align:center;color:${v ? '#2563eb' : '#94a3b8'};">${v !== '' ? v : '—'}</td>`;
+    });
+    tbody += '</tr></tbody>';
+
+    document.getElementById('report-preview-table').innerHTML = thead + tbody;
+}
+
+function thS() { return 'padding:4px 5px;border:1px solid #334155;font-size:.68rem;white-space:nowrap;'; }
+function tdS() { return 'padding:3px 4px;border:1px solid #e2e8f0;font-size:.7rem;'; }
+
+// ── Download Report PDF ────────────────────────────────────────────────────
+function downloadReportPDF() {
+    if (!reportData) { showToast('Generate report first.', 'error'); return; }
+    const d = reportData;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
+
+    const N       = d.days_in_month;
+    const margin  = 10;
+    let   cursorY = margin;
+
+    // ── Header ──
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+    doc.text(d.company_name || 'SPIM Suite', doc.internal.pageSize.width / 2, cursorY + 5, { align: 'center' });
+    cursorY += 9;
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+    doc.text('Machine-Wise Monthly Work Attendance Summary', doc.internal.pageSize.width / 2, cursorY + 4, { align: 'center' });
+    cursorY += 8;
+
+    doc.setFontSize(8);
+    doc.text(`Location: ${d.location}    Site: ${d.site || '—'}    Period: ${d.month_name} ${d.year}`, margin, cursorY + 4);
+    cursorY += 9;
+
+    // ── Table ──
+    const dateHeaders = d.dates.map(String);
+    const head = [['SL', 'Employee Name', ...dateHeaders]];
+
+    const body = d.emp_rows.map(row => [row.sl, row.name, ...row.cells]);
+    body.push(['—', 'TMP', ...d.tmp_row.map(v => v !== '' ? String(v) : '—')]);
+
+    // Each date column ~6.2 mm; name col wider
+    const dateColW    = 6.2;
+    const nameColW    = 38;
+    const slColW      = 10;
+    const columnStyles = { 0: { cellWidth: slColW }, 1: { cellWidth: nameColW } };
+    for (let i = 2; i < N + 2; i++) columnStyles[i] = { cellWidth: dateColW, halign: 'center' };
+
+    doc.autoTable({
+        startY: cursorY,
+        head,
+        body,
+        theme: 'grid',
+        styles:      { fontSize: 6.5, cellPadding: 1.5, overflow: 'ellipsize' },
+        headStyles:  { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+        columnStyles,
+        didParseCell(data) {
+            if (data.section === 'body') {
+                const val = data.cell.raw;
+                if (val === '✓')  { data.cell.styles.textColor = [5, 150, 105]; data.cell.styles.fontStyle = 'bold'; }
+                if (data.row.index === body.length - 1) {
+                    data.cell.styles.fillColor = [248, 250, 252];
+                    data.cell.styles.fontStyle = 'bold';
+                    if (data.column.index >= 2 && val && val !== '—') data.cell.styles.textColor = [37, 99, 235];
+                }
+            }
+        },
+        margin: { left: margin, right: margin },
+    });
+
+    const fname = `SPIM_MachineReport_${d.location}_${d.month_name}_${d.year}.pdf`;
+    doc.save(fname);
+}
+
+// ── Download Report XLSX ───────────────────────────────────────────────────
+function downloadReportXLSX() {
+    if (!reportData) { showToast('Generate report first.', 'error'); return; }
+    const d  = reportData;
+    const wb = XLSX.utils.book_new();
+    const N  = d.days_in_month;
+
+    // Build 2-D array
+    const rows = [];
+    rows.push([d.company_name || 'SPIM Suite']);
+    rows.push(['Machine-Wise Monthly Work Attendance Summary']);
+    rows.push([`Location: ${d.location}`, '', `Site: ${d.site || '—'}`]);
+    rows.push([`Period: ${d.month_name} ${d.year}`]);
+    rows.push([]);  // blank spacer
+
+    // Header row
+    rows.push(['SL', 'Employee Name', ...d.dates]);
+
+    // Employee rows
+    d.emp_rows.forEach(row => {
+        rows.push([row.sl, row.name, ...row.cells]);
+    });
+
+    // TMP row
+    rows.push(['—', 'TMP', ...d.tmp_row.map(v => v !== '' ? v : '')]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    // Column widths: SL=5, Name=22, dates=4 each
+    ws['!cols'] = [{ wch: 5 }, { wch: 22 }, ...Array(N).fill({ wch: 4 })];
+
+    // Merge title rows across all columns
+    const totalCols = N + 2;
+    ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } },
+        { s: { r: 3, c: 0 }, e: { r: 3, c: totalCols - 1 } },
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, `${d.location} ${d.month_name}`);
+    XLSX.writeFile(wb, `SPIM_MachineReport_${d.location}_${d.month_name}_${d.year}.xlsx`);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    // Set date picker to today and enforce max=today
+    const datePicker = document.getElementById('wl-date');
+    datePicker.value = TODAY_ISO;
+    datePicker.max   = TODAY_ISO;
+
+    // Seed report filters with current month / year
+    const _now = new Date();
+    document.getElementById('r-month').value = _now.getMonth() + 1;
+    document.getElementById('r-year').value  = _now.getFullYear();
+
+    // Populate report location dropdown from server-provided initial list
+    syncReportLocationDropdown(machinesList);
+
+    // Load today's entries and render all machine rows
+    loadLogForDate();
+
+    // Modal backdrop click handlers
+    ['loc-modal', 'status-modal', 'site-modal'].forEach(id => {
+        document.getElementById(id).addEventListener('click', function(e) {
+            if (e.target === this) this.classList.remove('active');
+        });
+    });
+
+    // Enter key in modals
+    document.getElementById('new-loc-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') saveLocation();
+    });
+    document.getElementById('new-status-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') saveWorkStatus();
+    });
+    document.getElementById('new-site-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') saveGlobalSite();
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Role Salary Master{% endblock %}
+{% block active_employees %}active{% endblock %}
+
+{% block head %}
+<style>
+    .role-card {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        transition: box-shadow 0.3s;
+    }
+    .role-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .role-name {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+    }
+    .role-salary {
+        font-size: 24px;
+        font-weight: 700;
+        color: #10b981;
+        margin-bottom: 8px;
+    }
+    .role-type {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .role-type.monthly { background: #dbeafe; color: #1e40af; }
+    .role-type.daily { background: #fef3c7; color: #92400e; }
+    .role-stats {
+        display: flex;
+        gap: 15px;
+        margin-top: 10px;
+    }
+    .stat-item {
+        font-size: 13px;
+        color: #666;
+    }
+    .stat-value {
+        font-weight: 600;
+        color: #333;
+    }
+    .role-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 15px;
+    }
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        display: inline-block;
+        cursor: pointer;
+        border: none;
+        transition: all 0.3s;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #6b7280; color: white; }
+    .btn-secondary:hover { background: #4b5563; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .filter-section {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    .filter-row {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .filter-input, .filter-dropdown {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    .filter-input { min-width: 200px; }
+    .no-roles {
+        text-align: center;
+        padding: 40px;
+        color: #999;
+    }
+</style>
+{% endblock %}
+
+{% block header_title %}Role Salary Master{% endblock %}
+
+{% block content %}
+<div class="section-title" style="margin-bottom: 20px;">Job Roles & Salary Definitions</div>
+
+<!-- Filters -->
+<div class="filter-section">
+    <form method="get" class="filter-row">
+        <div>
+            <label style="font-weight: 600; margin-right: 8px;">Search:</label>
+            <input type="text" name="q" value="{{ search_q }}" placeholder="Role name..." class="filter-input">
+        </div>
+        <div>
+            <label style="font-weight: 600; margin-right: 8px;">Type:</label>
+            <select name="salary_type" class="filter-dropdown">
+                <option value="">All Types</option>
+                {% for value, display in salary_types %}
+                    <option value="{{ value }}" {% if salary_type_f == value %}selected{% endif %}>{{ display }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="padding: 8px 16px;">Filter</button>
+        {% if search_q or salary_type_f %}
+            <a href="{% url 'employees:role_list' %}" class="btn btn-secondary" style="padding: 8px 16px;">Clear</a>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Create New Role Button -->
+<div style="margin-bottom: 20px;">
+    <a href="{% url 'employees:role_create' %}" class="btn btn-primary" style="padding: 10px 20px; font-size: 14px;">
+        ➕ Create New Role
+    </a>
+</div>
+
+<!-- Roles Grid -->
+<div class="roles-grid">
+    {% for role in roles %}
+        <div class="role-card">
+            <div class="role-name">{{ role.name }}</div>
+            <div class="role-salary">₹{{ role.base_salary|floatformat:2 }}</div>
+            <div class="role-type role-type.{{ role.salary_type }}">{{ role.get_salary_type_display }}</div>
+            
+            <div class="role-stats">
+                <div class="stat-item">
+                    Employees: <span class="stat-value">{{ role.employees.count }}</span>
+                </div>
+                <div class="stat-item">
+                    Created: <span class="stat-value">{{ role.created_at|date:"M d, Y" }}</span>
+                </div>
+            </div>
+            
+            <div class="role-actions">
+                <a href="{% url 'employees:role_detail' role.pk %}" class="btn-sm btn-secondary">👁️ View</a>
+                <a href="{% url 'employees:role_edit' role.pk %}" class="btn-sm btn-primary">✏️ Edit</a>
+                <a href="{% url 'employees:role_delete' role.pk %}" class="btn-sm btn-danger" 
+                   onclick="return confirm('Delete role {{ role.name }}?')">🗑️ Delete</a>
+            </div>
+        </div>
+    {% empty %}
+        <div class="no-roles">
+            <h3>No job roles found</h3>
+            <p>Create your first role to define salary structures for your employees.</p>
+            <a href="{% url 'employees:role_create' %}" class="btn btn-primary" style="margin-top: 15px;">Create First Role</a>
+        </div>
+    {% endfor %}
+</div>
+
+<!-- Summary Stats -->
+{% if roles %}
+<div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+    <h4 style="margin-bottom: 15px; color: #333;">Summary</h4>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+        <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #3b82f6;">{{ roles|length }}</div>
+            <div style="font-size: 13px; color: #666;">Total Roles</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #10b981;">{{ roles|length|add:0 }}</div>
+            <div style="font-size: 13px; color: #666;">Monthly Roles</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #f59e0b;">{{ roles|length|add:0 }}</div>
+            <div style="font-size: 13px; color: #666;">Daily Roles</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #ef4444;">{{ roles.count }}</div>
+            <div style="font-size: 13px; color: #666;">Assigned Employees</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

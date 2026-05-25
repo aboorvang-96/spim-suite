@@ -1,0 +1,59 @@
+{
+  // ═══════════════════════════════════════════════════════════
+  // SPIM Suite - VS Code Workspace Settings
+  // ═══════════════════════════════════════════════════════════
+  // IMPORTANT: Django template tags require spaces around
+  // operators (==, !=, >=, <=, etc.) inside {% if %} tags.
+  // HTML formatters strip these spaces, causing Django
+  // TemplateSyntaxError at runtime.
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Disable format-on-save globally for this project ──
+  "editor.formatOnSave": false,
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+
+  // ── HTML files: disable all auto-formatting ──
+  "[html]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false,
+    "editor.defaultFormatter": null
+  },
+
+  // ── Django HTML files: disable all auto-formatting ──
+  "[django-html]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false,
+    "editor.defaultFormatter": null
+  },
+
+  // ── Jinja HTML files: disable all auto-formatting ──
+  "[jinja-html]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false,
+    "editor.defaultFormatter": null
+  },
+
+  // ── Python files: keep formatter enabled ──
+  "[python]": {
+    "editor.formatOnSave": true
+  },
+
+  // ── Treat .html files as Django HTML for syntax highlighting ──
+  "files.associations": {
+    "**templates/**/*.html": "django-html",
+    "**/templates/**/*.html": "django-html"
+  },
+
+  // ── Disable Prettier for HTML/Django templates ──
+  "prettier.disableLanguages": ["html", "django-html", "jinja-html"],
+
+  // ── Emmet support in Django HTML templates ──
+  "emmet.includeLanguages": {
+    "django-html": "html",
+    "jinja-html": "html"
+  }
+}

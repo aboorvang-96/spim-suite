@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ title }}{% endblock %}
+{% block active_employees %}active{% endblock %}
+
+{% block header_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="card p-8 max-w-2xl mx-auto">
+    <div class="text-2xl font-bold text-slate-800 mb-2 text-center">{{ title }}</div>
+    <div class="text-sm text-slate-500 text-center mb-8">
+        {% if action == 'Create' %}
+            Define a new job role with salary structure
+        {% else %}
+            Update role salary and settings
+        {% endif %}
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="grid grid-2 gap-4">
+            <!-- Role Name -->
+            <div class="form-group col-span-2">
+                <label class="form-label">
+                    Role Name <span class="text-red-500 ml-1">*</span>
+                </label>
+                {{ form.name }}
+                {% if form.name.errors %}
+                    <span class="text-red-500 text-sm mt-1 block">{{ form.name.errors.0 }}</span>
+                {% endif %}
+                <div class="text-xs text-slate-400 mt-1.5">Enter a descriptive name for this job role (e.g., "Senior Technician", "Project Manager")</div>
+            </div>
+
+            <!-- Salary Type -->
+            <div class="form-group">
+                <label class="form-label">
+                    Salary Type <span class="text-red-500 ml-1">*</span>
+                </label>
+                {{ form.salary_type }}
+                {% if form.salary_type.errors %}
+                    <span class="text-red-500 text-sm mt-1 block">{{ form.salary_type.errors.0 }}</span>
+                {% endif %}
+                <div class="text-xs text-slate-400 mt-1.5">Choose how this role is paid - monthly salary or daily wage</div>
+            </div>
+
+            <!-- Base Salary -->
+            <div class="form-group">
+                <label class="form-label">
+                    Base Salary (₹) <span class="text-red-500 ml-1">*</span>
+                </label>
+                {{ form.base_salary }}
+                {% if form.base_salary.errors %}
+                    <span class="text-red-500 text-sm mt-1 block">{{ form.base_salary.errors.0 }}</span>
+                {% endif %}
+                <div class="text-xs text-slate-400 mt-1.5 form-help">
+                    {% if form.salary_type.value == 'monthly' %}
+                        Monthly base salary amount
+                    {% else %}
+                        Daily wage amount per day worked
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Salary Preview -->
+        <div class="bg-blue-50 border border-blue-100 rounded-lg p-5 mt-6" id="salaryPreview" style="display: none;">
+            <div class="text-sm font-semibold text-blue-800 mb-1 tracking-wide uppercase">Salary Preview</div>
+            <div class="text-3xl font-bold text-blue-900 mb-1" id="previewAmount">₹0.00</div>
+            <div class="text-xs text-blue-600" id="previewNote"></div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex gap-3 justify-end mt-8 pt-6 border-t border-slate-100">
+            <button type="submit" class="btn btn-primary">
+                {% if action == 'Create' %}➕ {% endif %}{{ action }} Role
+            </button>
+            <a href="{% url 'employees:role_list' %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const salaryTypeSelect = document.querySelector('#{{ form.salary_type.id_for_label }}');
+    const baseSalaryInput = document.querySelector('#{{ form.base_salary.id_for_label }}');
+    const previewDiv = document.getElementById('salaryPreview');
+    const previewAmount = document.getElementById('previewAmount');
+    const previewNote = document.getElementById('previewNote');
+    const helpText = document.querySelector('.form-help');
+
+    function updatePreview() {
+        const salaryType = salaryTypeSelect.value;
+        const baseSalary = parseFloat(baseSalaryInput.value) || 0;
+
+        if (baseSalary > 0) {
+            previewDiv.style.display = 'block';
+            previewAmount.textContent = '₹' + baseSalary.toLocaleString('en-IN', {minimumFractionDigits: 2});
+            
+            if (salaryType === 'monthly') {
+                previewNote.textContent = 'Monthly base salary - attendance deductions apply for absences';
+                if (helpText) helpText.textContent = 'Monthly base salary amount';
+            } else if (salaryType === 'daily') {
+                previewNote.textContent = 'Daily wage - paid only for days worked';
+                if (helpText) helpText.textContent = 'Daily wage amount per day worked';
+            }
+        } else {
+            previewDiv.style.display = 'none';
+        }
+    }
+
+    if (salaryTypeSelect && baseSalaryInput) {
+        salaryTypeSelect.addEventListener('change', updatePreview);
+        baseSalaryInput.addEventListener('input', updatePreview);
+        updatePreview();
+    }
+});
+</script>
+{% endblock %}

@@ -11,14 +11,29 @@ from branches.models import LocationSite
 from datetime import date as date_type
 import json
 
+# ─── Tenant-scoping helpers (Project / Task) ────────────────────────────────
+# Project and Task both have an admin_id column on the DB (added by
+# migration 0002). Admins see every project/task in their own org;
+# non-admin users continue to see only the projects they personally own.
+def _tenant_project_qs(user):
+    if user.is_admin:
+        return Project.objects.filter(admin_id=get_admin_id(user))
+    return Project.objects.filter(owner=user, admin_id=get_admin_id(user))
+
+def _tenant_task_qs(user):
+    if user.is_admin:
+        return Task.objects.filter(admin_id=get_admin_id(user))
+    return Task.objects.filter(project__owner=user, admin_id=get_admin_id(user))
+
+
 @login_required
 def project_list(request):
-    qs = Project.objects.all() if request.user.is_admin else Project.objects.filter(owner=request.user)
+    qs = _tenant_project_qs(request.user)
     return render(request, 'projects/list.html', {'projects': qs.select_related('client','owner')})
 
 @login_required
 def project_detail(request, pk):
-    qs = Project.objects.all() if request.user.is_admin else Project.objects.filter(owner=request.user)
+    qs = _tenant_project_qs(request.user)
     p  = get_object_or_404(qs, pk=pk)
     return render(request, 'projects/detail.html', {
         'project': p, 'tasks': p.tasks.select_related('assigned_to'), 'task_form': TaskForm()
@@ -29,7 +44,10 @@ def add_project(request):
     form = ProjectForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         p = form.save(commit=False)
-        p.owner = request.user
+        p.owner    = request.user
+        # Stamp the tenant so the row is isolated for every subsequent
+        # admin_id-scoped query (list / detail / edit / delete / tasks).
+        p.admin_id = get_admin_id(request.user)
         p.save()
         messages.success(request, "Project created.")
         return redirect('projects:detail', pk=p.pk)
@@ -37,7 +55,7 @@ def add_project(request):
 
 @login_required
 def edit_project(request, pk):
-    qs = Project.objects.all() if request.user.is_admin else Project.objects.filter(owner=request.user)
+    qs = _tenant_project_qs(request.user)
     p  = get_object_or_404(qs, pk=pk)
     form = ProjectForm(request.POST or None, instance=p)
     if request.method == 'POST' and form.is_valid():
@@ -48,7 +66,7 @@ def edit_project(request, pk):
 
 @login_required
 def delete_project(request, pk):
-    qs = Project.objects.all() if request.user.is_admin else Project.objects.filter(owner=request.user)
+    qs = _tenant_project_qs(request.user)
     p  = get_object_or_404(qs, pk=pk)
     if request.method == 'POST':
         p.delete()
@@ -57,19 +75,22 @@ def delete_project(request, pk):
 
 @login_required
 def add_task(request, project_pk):
-    qs      = Project.objects.all() if request.user.is_admin else Project.objects.filter(owner=request.user)
+    qs      = _tenant_project_qs(request.user)
     project = get_object_or_404(qs, pk=project_pk)
     form    = TaskForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         t = form.save(commit=False)
-        t.project = project
+        t.project  = project
+        # Inherit tenancy from the parent project so list / status / delete
+        # queries scoped to admin_id pick this task up.
+        t.admin_id = project.admin_id
         t.save()
         messages.success(request, "Task added.")
     return redirect('projects:detail', pk=project_pk)
 
 @login_required
 def update_task_status(request, pk):
-    task_qs = Task.objects.all() if request.user.is_admin else Task.objects.filter(project__owner=request.user)
+    task_qs = _tenant_task_qs(request.user)
     task    = get_object_or_404(task_qs, pk=pk)
     ns   = request.POST.get('status')
     if ns in dict(Task.STATUS):
@@ -79,7 +100,7 @@ def update_task_status(request, pk):
 
 @login_required
 def delete_task(request, pk):
-    task_qs = Task.objects.all() if request.user.is_admin else Task.objects.filter(project__owner=request.user)
+    task_qs = _tenant_task_qs(request.user)
     task    = get_object_or_404(task_qs, pk=pk)
     pid  = task.project_id
     if request.method == 'POST':

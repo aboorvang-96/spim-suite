@@ -1,0 +1,704 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Branches - SPIM Suite{% endblock %}
+{% block nav_branches %}active{% endblock %}
+{% block page_title %}Branches{% endblock %}
+{% block page_sub %}Manage your business branches and locations{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-3">
+  <button type="button" id="openAddBranchModal" class="btn btn-primary btn-sm">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 4v16m8-8H4" /></svg>
+    Add Branch
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Page Container ── */
+  .branch-page-container {
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  /* ── Responsive Grid ── */
+  .branch-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 1024px) {
+    .branch-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .branch-grid { grid-template-columns: 1fr; }
+    .branch-page-container { padding: 16px; }
+  }
+
+  /* ── Branch Card ── */
+  .branch-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s;
+  }
+  .branch-card:hover {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07);
+    border-color: #cbd5e1;
+    transform: translateY(-2px);
+  }
+
+  .branch-card-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .branch-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: #eff6ff;
+    color: #2563eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .branch-card-info { flex: 1; min-width: 0; }
+  .branch-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Meta Rows ── */
+  .branch-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px dashed #f1f5f9;
+  }
+  .branch-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .branch-meta-label {
+    font-size: 9px;
+    font-weight: 900;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    min-width: 58px;
+    flex-shrink: 0;
+  }
+  .branch-meta-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .branch-meta-value.empty { color: #cbd5e1; font-style: italic; }
+
+  /* ── Card Actions ── */
+  .branch-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid #f1f5f9;
+  }
+  .branch-btn {
+    height: 32px;
+    padding: 0 14px;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 6px;
+    background: #fff;
+    border: 1.5px solid #e2e8f0;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .branch-btn.edit:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+  .branch-btn.delete:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; }
+
+  /* ── Empty State ── */
+  .branch-empty-state {
+    grid-column: 1 / -1;
+    padding: 64px 20px;
+    text-align: center;
+    background: #fff;
+    border-radius: 16px;
+    border: 2px dashed #e2e8f0;
+  }
+  .branch-empty-icon {
+    width: 52px; height: 52px;
+    background: #f8fafc;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px;
+    color: #94a3b8;
+  }
+  .branch-empty-state p {
+    font-size: 12px; font-weight: 800; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.12em; margin: 0;
+  }
+
+  /* ── Modal Overlay ── */
+  .branch-modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 2000;
+    align-items: center; justify-content: center;
+    padding: 20px;
+    animation: bModalFade 0.2s ease-out;
+  }
+  @keyframes bModalFade { from { opacity: 0; } to { opacity: 1; } }
+  .branch-modal-overlay.open { display: flex; }
+
+  .branch-modal-content {
+    background: #fff;
+    border-radius: 20px;
+    width: 100%; max-width: 460px;
+    box-shadow: 0 25px 70px rgba(0, 0, 0, 0.22);
+    border: 1px solid #e2e8f0;
+    animation: bModalSlide 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes bModalSlide {
+    from { opacity: 0; transform: scale(0.95) translateY(12px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0);    }
+  }
+
+  .branch-modal-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .branch-modal-header h3 {
+    font-size: 1rem; font-weight: 800; color: #1e293b;
+    display: flex; align-items: center; gap: 8px; margin: 0;
+  }
+  .branch-modal-close {
+    background: none; border: none; cursor: pointer; color: #94a3b8;
+    padding: 6px; border-radius: 8px; transition: all 0.2s;
+    display: flex; align-items: center;
+  }
+  .branch-modal-close:hover { background: #f1f5f9; color: #475569; }
+  .branch-modal-body { padding: 24px; }
+
+  /* ── Branch Form ── */
+  #branchForm { display: flex; flex-direction: column; gap: 16px; }
+  #branchForm .field-label {
+    display: block; font-size: 11px; font-weight: 700; color: #64748b;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px;
+  }
+  #branchFormError {
+    font-size: 12px; font-weight: 600; color: #b91c1c;
+    background: #fef2f2; border: 1px solid #fecaca;
+    border-radius: 8px; padding: 8px 12px;
+  }
+  .branch-modal-actions {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    padding-top: 16px; border-top: 1px solid #f1f5f9; margin-top: 4px;
+  }
+  .branch-modal-actions .btn { width: 100%; }
+  @media (max-width: 420px) {
+    .branch-modal-actions { grid-template-columns: 1fr; }
+  }
+
+  /* ── Delete Confirm Modal ── */
+  .branch-confirm-overlay {
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 3000;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .branch-confirm-overlay.open { display: flex; }
+  .branch-confirm-card {
+    background: #fff; width: 100%; max-width: 380px;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    animation: bModalSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .branch-confirm-icon {
+    width: 52px; height: 52px;
+    background: #fee2e2; color: #ef4444;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 24px auto 12px;
+  }
+  .branch-confirm-title {
+    font-size: 1.05rem; font-weight: 800; color: #1e293b;
+    text-align: center; padding: 0 24px 6px;
+  }
+  .branch-confirm-body {
+    text-align: center; padding: 0 24px 20px;
+  }
+  .branch-confirm-body p { font-size: 0.875rem; color: #64748b; line-height: 1.5; margin: 0; }
+  .branch-confirm-name {
+    font-weight: 700; color: #0f172a; font-size: 0.9rem; margin-top: 6px;
+  }
+  .branch-confirm-note {
+    font-size: 11px; color: #94a3b8; margin-top: 10px; font-style: italic;
+  }
+  .branch-confirm-footer {
+    display: flex; gap: 10px;
+    padding: 16px 24px;
+    background: #f8fafc; border-top: 1px solid #f1f5f9;
+  }
+  .branch-confirm-footer .btn { flex: 1; }
+</style>
+
+<div class="branch-page-container">
+  <div class="branch-grid" id="branchGrid">
+    <!-- Cards rendered by JS below -->
+    <div id="branchEmptyState" class="branch-empty-state" style="display: none;">
+      <div class="branch-empty-icon">
+        <svg width="26" height="26" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+          <path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </div>
+      <p>No branches found &mdash; add your first branch</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Add / Edit Branch Modal ═══════════════ -->
+<div id="branchModal" class="branch-modal-overlay">
+  <div class="branch-modal-content">
+    <div class="branch-modal-header">
+      <h3>
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color: #2563eb;">
+          <path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+          <path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span id="branchModalTitle">Add Branch</span>
+      </h3>
+      <button type="button" class="branch-modal-close" id="closeBranchModalX" aria-label="Close">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="branch-modal-body">
+      <form id="branchForm" novalidate>
+        {% csrf_token %}
+        <input type="hidden" id="branchEditId" value="">
+        <div id="branchFormError" class="hidden"></div>
+
+        <div>
+          <label class="field-label" for="branchNameInput">
+            Branch Name <span style="color: #ef4444;">*</span>
+          </label>
+          <input id="branchNameInput" type="text" class="form-input" placeholder="e.g. Chennai North"
+                 list="branchNameDatalist" autocomplete="off" required />
+          <datalist id="branchNameDatalist"></datalist>
+        </div>
+
+        <div>
+          <label class="field-label" for="branchLocationInput">Location / Site</label>
+          <input id="branchLocationInput" type="text" class="form-input" placeholder="e.g. Anna Nagar, Chennai"
+                 list="branchLocationDatalist" autocomplete="off" />
+          <datalist id="branchLocationDatalist"></datalist>
+        </div>
+
+        <div>
+          <label class="field-label" for="branchStateInput">State</label>
+          <input id="branchStateInput" type="text" class="form-input" placeholder="e.g. Tamil Nadu"
+                 list="branchStateDatalist" autocomplete="off" />
+          <datalist id="branchStateDatalist"></datalist>
+        </div>
+
+        <div class="branch-modal-actions">
+          <button type="button" class="btn btn-outline" id="closeBranchModalCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveBranchBtn">Save Branch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Delete Confirmation Modal ═══════════════ -->
+<div id="branchDeleteModal" class="branch-confirm-overlay">
+  <div class="branch-confirm-card">
+    <div class="branch-confirm-icon">
+      <svg width="26" height="26" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+      </svg>
+    </div>
+    <div class="branch-confirm-title">Delete Branch</div>
+    <div class="branch-confirm-body">
+      <p>Are you sure you want to delete:</p>
+      <p class="branch-confirm-name" id="branchDeleteName"></p>
+      <p class="branch-confirm-note">This action cannot be undone.</p>
+    </div>
+    <div class="branch-confirm-footer">
+      <button type="button" class="btn btn-outline" id="branchDeleteCancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="branchDeleteConfirm">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── Data from server ── */
+  const branches = {{ branches_json|safe }};
+  const MANAGE_URL = "{% url 'branches:manage_ajax' %}";
+  const DELETE_URL_TPL = "{% url 'branches:delete_ajax' 0 %}"; /* /branches/0/delete/ */
+  const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+  /* ── DOM refs ── */
+  const branchGrid       = document.getElementById('branchGrid');
+  const emptyState       = document.getElementById('branchEmptyState');
+  const modal            = document.getElementById('branchModal');
+  const modalTitle       = document.getElementById('branchModalTitle');
+  const branchForm       = document.getElementById('branchForm');
+  const editIdInput      = document.getElementById('branchEditId');
+  const nameInput        = document.getElementById('branchNameInput');
+  const locationInput    = document.getElementById('branchLocationInput');
+  const stateInput       = document.getElementById('branchStateInput');
+  const formError        = document.getElementById('branchFormError');
+  const saveBtn          = document.getElementById('saveBranchBtn');
+  const deleteModal      = document.getElementById('branchDeleteModal');
+  const deleteNameEl     = document.getElementById('branchDeleteName');
+
+  let pendingDeleteId = null;
+
+  /* ── Helpers ── */
+  function esc(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function deleteUrl(id) {
+    return DELETE_URL_TPL.replace('/0/', '/' + id + '/');
+  }
+
+  /* ── Card builder ── */
+  function buildCard(b) {
+    const locationVal = b.location || '';
+    const stateVal    = b.manager  || '';  /* "State" is stored in the manager field */
+
+    const card = document.createElement('div');
+    card.className   = 'branch-card';
+    card.dataset.id       = b.id;
+    card.dataset.name     = b.name     || '';
+    card.dataset.location = locationVal;
+    card.dataset.state    = stateVal;
+
+    card.innerHTML = `
+      <div class="branch-card-top">
+        <div class="branch-icon">
+          <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+            <path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </div>
+        <div class="branch-card-info">
+          <div class="branch-name" title="${esc(b.name)}">${esc(b.name)}</div>
+        </div>
+      </div>
+
+      <div class="branch-meta">
+        <div class="branch-meta-row">
+          <span class="branch-meta-label">Location</span>
+          <span class="branch-meta-value ${locationVal ? '' : 'empty'}">${esc(locationVal) || '&mdash;'}</span>
+        </div>
+        <div class="branch-meta-row">
+          <span class="branch-meta-label">State</span>
+          <span class="branch-meta-value ${stateVal ? '' : 'empty'}">${esc(stateVal) || '&mdash;'}</span>
+        </div>
+      </div>
+
+      <div class="branch-card-actions">
+        <button type="button" class="branch-btn edit" data-edit="${b.id}">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+          Edit
+        </button>
+        <button type="button" class="branch-btn delete" data-delete="${b.id}" data-name="${esc(b.name)}">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+          Delete
+        </button>
+      </div>
+    `;
+    return card;
+  }
+
+  /* ── Render all cards ── */
+  function renderAll() {
+    Array.from(branchGrid.children).forEach(el => {
+      if (el !== emptyState) el.remove();
+    });
+    if (branches.length === 0) {
+      emptyState.style.display = '';
+      return;
+    }
+    emptyState.style.display = 'none';
+    branches.forEach(b => branchGrid.appendChild(buildCard(b)));
+  }
+
+  renderAll();
+
+  /* ── Modal open / close ── */
+  function openModal(isEdit) {
+    formError.textContent = '';
+    formError.classList.add('hidden');
+    modalTitle.textContent = isEdit ? 'Edit Branch' : 'Add Branch';
+    saveBtn.textContent    = isEdit ? 'Save Changes' : 'Save Branch';
+    modal.classList.add('open');
+    nameInput.focus();
+  }
+  function closeModal() {
+    modal.classList.remove('open');
+    branchForm.reset();
+    editIdInput.value = '';
+    formError.classList.add('hidden');
+  }
+
+  document.getElementById('openAddBranchModal').addEventListener('click', () => {
+    branchForm.reset();
+    editIdInput.value = '';
+    openModal(false);
+  });
+  document.getElementById('closeBranchModalX').addEventListener('click', closeModal);
+  document.getElementById('closeBranchModalCancel').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+  });
+
+  /* ── Grid click delegation: Edit / Delete ── */
+  branchGrid.addEventListener('click', e => {
+    const editBtn = e.target.closest('[data-edit]');
+    if (editBtn) {
+      const card = branchGrid.querySelector('.branch-card[data-id="' + editBtn.dataset.edit + '"]');
+      if (!card) return;
+      editIdInput.value   = card.dataset.id;
+      nameInput.value     = card.dataset.name;
+      locationInput.value = card.dataset.location;
+      stateInput.value    = card.dataset.state;
+      openModal(true);
+      return;
+    }
+    const delBtn = e.target.closest('[data-delete]');
+    if (delBtn) {
+      pendingDeleteId        = delBtn.dataset.delete;
+      deleteNameEl.textContent = '“' + delBtn.dataset.name + '”';
+      deleteModal.classList.add('open');
+    }
+  });
+
+  /* ── Form submit (AJAX, JSON) ── */
+  branchForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const name = nameInput.value.trim();
+    if (!name) {
+      formError.textContent = 'Branch name is required.';
+      formError.classList.remove('hidden');
+      nameInput.focus();
+      return;
+    }
+
+    const editId  = editIdInput.value;
+    const payload = {
+      name:     name,
+      location: locationInput.value.trim(),
+      manager:  stateInput.value.trim(),   /* State stored in manager field */
+      code:     '',
+      note:     '',
+    };
+    if (editId) payload.id = parseInt(editId, 10);
+
+    const origLabel    = saveBtn.textContent;
+    saveBtn.disabled   = true;
+    saveBtn.textContent = 'Saving…';
+    formError.classList.add('hidden');
+
+    try {
+      const res  = await fetch(MANAGE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type':    'application/json',
+          'X-CSRFToken':     CSRF,
+          'X-Requested-With':'XMLHttpRequest',
+        },
+        body: JSON.stringify(payload),
+        credentials: 'same-origin',
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        const savedId = data.id;
+        if (editId) {
+          const idx = branches.findIndex(b => String(b.id) === String(editId));
+          if (idx !== -1) {
+            branches[idx] = Object.assign({}, branches[idx], payload, { id: savedId });
+          }
+        } else {
+          branches.push(Object.assign({ id: savedId }, payload));
+        }
+        renderAll();
+        closeModal();
+      } else {
+        formError.textContent = data.error || 'Failed to save branch. Please try again.';
+        formError.classList.remove('hidden');
+      }
+    } catch (_) {
+      formError.textContent = 'Network error. Please try again.';
+      formError.classList.remove('hidden');
+    } finally {
+      saveBtn.disabled    = false;
+      saveBtn.textContent = origLabel;
+    }
+  });
+
+  /* ── Delete confirmation ── */
+  document.getElementById('branchDeleteCancel').addEventListener('click', () => {
+    deleteModal.classList.remove('open');
+    pendingDeleteId = null;
+  });
+  deleteModal.addEventListener('click', e => {
+    if (e.target === deleteModal) {
+      deleteModal.classList.remove('open');
+      pendingDeleteId = null;
+    }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && deleteModal.classList.contains('open')) {
+      deleteModal.classList.remove('open');
+      pendingDeleteId = null;
+    }
+  });
+
+  document.getElementById('branchDeleteConfirm').addEventListener('click', async () => {
+    if (!pendingDeleteId) return;
+    const id = pendingDeleteId;
+    deleteModal.classList.remove('open');
+    pendingDeleteId = null;
+
+    const confirmBtn       = document.getElementById('branchDeleteConfirm');
+    confirmBtn.disabled    = true;
+    confirmBtn.textContent = 'Deleting…';
+
+    try {
+      const res  = await fetch(deleteUrl(id), {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken':      CSRF,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+      });
+      const data = await res.json();
+      if (data.success) {
+        const idx = branches.findIndex(b => String(b.id) === String(id));
+        if (idx !== -1) branches.splice(idx, 1);
+        renderAll();
+      } else {
+        alert('Failed to delete branch: ' + (data.error || 'Unknown error'));
+      }
+    } catch (_) {
+      alert('Network error. Please try again.');
+    } finally {
+      confirmBtn.disabled    = false;
+      confirmBtn.textContent = 'Delete';
+    }
+  });
+
+})();
+
+// ── Centralized location/site datalist population ──────────────────────────
+(function () {
+  const serverLocations = {{ location_sites_json|safe }};
+  const SHARED_KEY = 'spim_shared_locations';
+
+  // Merge server centralized list into shared localStorage
+  const existing  = JSON.parse(localStorage.getItem(SHARED_KEY) || '[]');
+  const lowerSeen = new Set(existing.map(x => x.toLowerCase()));
+  serverLocations.forEach(n => {
+    if (n && !lowerSeen.has(n.toLowerCase())) { existing.push(n); lowerSeen.add(n.toLowerCase()); }
+  });
+  localStorage.setItem(SHARED_KEY, JSON.stringify(existing));
+
+  // Split entries into name-parts (before " / ") and location-parts (after " / ")
+  const nameParts     = new Set();
+  const locationParts = new Set();
+  existing.forEach(entry => {
+    const idx = entry.indexOf(' / ');
+    if (idx > -1) {
+      nameParts.add(entry.substring(0, idx).trim());
+      locationParts.add(entry.substring(idx + 3).trim());
+    } else {
+      nameParts.add(entry.trim());
+      locationParts.add(entry.trim());
+    }
+  });
+
+  // Collect unique states from existing branch records
+  const stateParts = new Set(
+    ({{ branches_json|safe }}).filter(b => b.manager).map(b => b.manager.trim())
+  );
+
+  function fillDatalist(id, items) {
+    const dl = document.getElementById(id);
+    if (!dl) return;
+    dl.innerHTML = '';
+    [...items].sort().forEach(val => {
+      if (!val) return;
+      const opt = document.createElement('option');
+      opt.value = val;
+      dl.appendChild(opt);
+    });
+  }
+
+  fillDatalist('branchNameDatalist',     nameParts);
+  fillDatalist('branchLocationDatalist', locationParts);
+  fillDatalist('branchStateDatalist',    stateParts);
+})();
+</script>
+{% endblock %}

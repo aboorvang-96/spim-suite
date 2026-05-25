@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Step 1: Employee Details{% endblock %}
+{% block active_employees %}active{% endblock %}
+{% block header_title %}Basic Employee Details{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="card p-6">
+        <div class="flex items-center justify-between mb-8 border-b border-slate-200 pb-4">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800">Step 1: Employee Information</h3>
+                <p class="text-slate-500 text-sm">Required basic data</p>
+            </div>
+            <div class="flex gap-2">
+                <div class="avatar bg-blue-600 w-8 h-8 text-xs">1</div>
+                <div class="avatar bg-slate-100 border border-slate-200 text-slate-500 w-8 h-8 text-xs">2</div>
+                <div class="avatar bg-slate-100 border border-slate-200 text-slate-500 w-8 h-8 text-xs">3</div>
+            </div>
+        </div>
+        
+        <form method="POST">
+            {% csrf_token %}
+            <div class="grid grid-3">
+                <div class="form-group col-span-2"><label class="form-label">Full Name</label>{{ form.name }}</div>
+                <div class="form-group"><label class="form-label">Employee ID #</label>{{ form.employee_id }}</div>
+                <div class="form-group"><label class="form-label">Job Role</label>{{ form.job_role }}</div>
+                <div class="form-group"><label class="form-label">Designation</label>{{ form.designation }}</div>
+                <div class="form-group"><label class="form-label">Department</label>{{ form.department }}</div>
+                <div class="form-group"><label class="form-label">Joining Date</label>{{ form.joining_date }}</div>
+                <div class="form-group"><label class="form-label">Status</label>{{ form.status }}</div>
+                <div class="form-group"><label class="form-label">Location</label>{{ form.location }}</div>
+                <div class="form-group"><label class="form-label">Site (Exact Project)</label>{{ form.site }}</div>
+                <div class="form-group"><label class="form-label">Base Monthly Salary</label>{{ form.base_salary }}</div>
+                <div class="form-group"><label class="form-label">Fixed Allowance</label>{{ form.fixed_allowance }}</div>
+            </div>
+            
+            <div class="mt-8 flex justify-end gap-4 border-t border-slate-200 pt-6">
+                <a href="{% url 'employees:list' %}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Save & Next: Bank Details →</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

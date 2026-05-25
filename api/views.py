@@ -268,6 +268,33 @@ def mobile_profile(request):
             'net_pay':         str(latest.net_pay),
         }
 
+    # Company block — sourced from dashboard.CompanySettings for the
+    # employee's tenant so SPIM Lite renders the same Company Name / Logo /
+    # Address / Phone / Email as the Suite. Deferred import keeps this
+    # module loadable when dashboard is not installed in some environments.
+    company_block = None
+    try:
+        from dashboard.models import CompanySettings  # deferred to avoid cycles
+        cs = CompanySettings.get_settings(emp.admin_id)
+        if cs:
+            logo_url = ''
+            try:
+                if cs.logo and hasattr(cs.logo, 'url'):
+                    logo_url = request.build_absolute_uri(cs.logo.url)
+            except Exception:
+                logo_url = ''
+            company_block = {
+                'name':              cs.name or '',
+                'logo_url':          logo_url,
+                'address':           cs.address or '',
+                'contact_number':    cs.contact_number or '',
+                'email':             cs.email or '',
+                'gst_number':        cs.gst_number or '',
+                'managing_director': cs.managing_director or '',
+            }
+    except Exception:
+        company_block = None
+
     # Attendance summary for the current calendar month
     today = date.today()
     month_qs = AttendanceRecord.objects.filter(
@@ -322,6 +349,9 @@ def mobile_profile(request):
             } if pf else None,
             'latest_salary':      latest_salary,
             'attendance_summary': attendance_summary,
+            # Company details for the SPIM Lite dashboard. Frontend should
+            # safely skip individual fields that are empty strings.
+            'company':            company_block,
         },
     })
 

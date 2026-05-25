@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dashboard{% endblock %} - SPIM Suite</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Style -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <!-- ChartJS -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="app-shell">
+        <!-- ══════════ SIDEBAR (PRESERVED ORIGINAL STRUCTURE) ══════════ -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
+                <div class="logo-mark">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 2L22 7V17L12 22L2 17V7L12 2Z" fill="white"/>
+                        <path d="M8 12L11 15L16 9" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <span class="logo-name">SPIM Suite</span>
+                    <span class="logo-tag">Enterprise Ops</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <span class="nav-group-label">MAIN MENU</span>
+                <a href="{% url 'dashboard:index' %}" class="nav-item {% block active_dash %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                    Dashboard
+                </a>
+                <a href="{% url 'finance:list' %}" class="nav-item {% block active_finance %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+                    Expenses
+                </a>
+                <a href="{% url 'income:list' %}" class="nav-item {% block active_income %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                    Income
+                </a>
+                <a href="{% url 'transactions:list' %}" class="nav-item {% block active_transactions %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    Transactions
+                </a>
+                <a href="{% url 'reports:index' %}" class="nav-item {% block active_reports %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    Reports
+                </a>
+
+                <span class="nav-group-label">OPERATIONS</span>
+                <a href="{% url 'projects:list' %}" class="nav-item {% block active_projects %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    Projects
+                </a>
+                <a href="{% url 'clients:list' %}" class="nav-item {% block active_clients %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                    Clients
+                </a>
+                <a href="{% url 'invoices:list' %}" class="nav-item {% block active_invoices %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Invoices
+                </a>
+               
+                <span class="nav-group-label">MANAGE</span>
+                <a href="{% url 'branches:list' %}" class="nav-item {% block active_branches %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 3h6v6H3z"/><path d="M15 3h6v6h-6z"/><path d="M3 15h6v6H3z"/><path d="M6 9v3"/><path d="M6 15v-3"/><path d="M18 9v3"/><path d="M18 12H6"/></svg>
+                    Branches
+                </a>
+                <a href="{% url 'categories:list' %}" class="nav-item {% block active_categories %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    Categories
+                </a>
+                <a href="{% url 'employees:salary_manager' %}" class="nav-item {% block active_salary_manager %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    Employees
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user">
+                    <div class="user-avatar">{{ request.user.initials }}</div>
+                    <div class="user-info user-info-wrap">
+                        <span class="user-name">{{ request.user.full_name|default:request.user.username }}</span>
+                        <div class="user-role-row">
+                            <span class="badge badge-info" style="font-size:0.6rem; padding: 1px 6px;">{{ request.user.role }}</span>
+                        </div>
+                    </div>
+                </div>
+                <a href="{% url 'accounts:logout' %}" class="logout-btn" title="Sign out">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    Sign Out
+                </a>
+            </div>
+        </aside>
+
+        <!-- ══════════ MAIN ══════════ -->
+        <div class="main-area">
+            <header class="topbar" id="topbar">
+                <div class="topbar-left">
+                    <div class="topbar-greeting">{% block header_title %}Good afternoon, {{ request.user.full_name|default:request.user.username }}{% endblock %}</div>
+                    <div class="topbar-date">{% now "l, j F Y" %}</div>
+                </div>
+                <div class="topbar-right">
+                    {% block topbar_right %}
+                    <div class="branch-selector-wrap">
+                        {% block header_actions %}{% endblock %}
+                    </div>
+                    {% endblock %}
+                    <div class="topbar-avatar">{{ request.user.initials }}</div>
+                </div>
+            </header>
+            
+            {% block top_filters %}{% endblock %}
+
+            <div class="view-container">
+                <section class="view active">
+                    {% if messages %}
+                        <div style="margin-bottom: 2rem;">
+                            {% for message in messages %}
+                                <div class="badge {% if message.tags == 'success' %}badge-success{% else %}badge-error{% endif %}" style="padding: 0.85rem 1.25rem; width: 100%; margin-bottom: 0.75rem; border-radius: 10px; justify-content: flex-start; text-transform: none;">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    
+                    {% block content %}{% endblock %}
+                </section>
+            </div>
+        </div>
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

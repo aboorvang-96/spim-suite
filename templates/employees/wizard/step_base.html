@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block active_employees %}active{% endblock %}
+{% block header_title %}Finish Registration{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="card p-6">
+        <div class="flex items-center justify-between mb-8 border-b border-slate-200 pb-4">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800">Step {{ step }}: {{ title }}</h3>
+                <p class="text-slate-500 text-sm">Employee: <strong>{{ employee.name }}</strong></p>
+            </div>
+            <div class="flex gap-2">
+                <div class="avatar bg-green-600 text-white w-8 h-8 text-xs">✓</div>
+                <div class="avatar {% if step == 2 %}bg-blue-600 text-white{% else %}bg-green-600 text-white{% endif %} w-8 h-8 text-xs">{% if step > 2 %}✓{% else %}2{% endif %}</div>
+                <div class="avatar {% if step == 3 %}bg-blue-600 text-white{% else %}bg-slate-100 border border-slate-200 text-slate-500{% endif %} w-8 h-8 text-xs">3</div>
+            </div>
+        </div>
+        
+        <form method="POST">
+            {% csrf_token %}
+            <div class="grid grid-2 gap-6">
+                {% for field in form %}
+                <div class="form-group">
+                    <label class="form-label">{{ field.label }}</label>
+                    {{ field }}
+                </div>
+                {% endfor %}
+            </div>
+            
+            <div class="mt-8 flex justify-end gap-4 border-t border-slate-200 pt-6">
+                <a href="{% url 'employees:detail' employee.pk %}" class="btn btn-secondary">Skip & Save</a>
+                <button type="submit" class="btn btn-primary">Save & Continue →</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

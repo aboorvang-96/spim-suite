@@ -1,0 +1,325 @@
+{% extends 'base.html' %}
+{% block title %}Categories{% endblock %}
+{% block active_categories %}active{% endblock %}
+
+{% block header_title %}Categories{% endblock %}
+
+{% block top_filters %}
+<div class="header-right" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+  <button class="btn btn-primary" onclick="openCatModal()" style="display:flex; align-items:center; gap:8px;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Add Category
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="cat-page-container">
+
+    <!-- Filter Tabs (Playground Style) -->
+    <div class="cat-type-tabs">
+      <button class="cat-tab active" data-ctype="all" onclick="setCatType('all', this)">All</button>
+      <button class="cat-tab" data-ctype="income" onclick="setCatType('income', this)">Income</button>
+      <button class="cat-tab" data-ctype="expense" onclick="setCatType('expense', this)">Expense</button>
+    </div>
+
+    <!-- Categories Grid (Manage Grid) -->
+    <div class="manage-grid" id="categories-grid"></div>
+
+    <div class="empty-state hidden" id="categories-empty" style="text-align:center;padding:100px 40px;display:none; background:var(--bg-card); border-radius:12px; border:1px dashed var(--border);">
+      <div style="font-size:3rem; margin-bottom:15px; opacity:0.3;">📂</div>
+      <p style="color:var(--text-secondary); font-weight:500;">No categories found in this section.</p>
+    </div>
+</div>
+
+<style>
+    /* --- TABS & CARDS (Restored from ancient-expanse) --- */
+    .cat-type-tabs { display: flex; gap: 4px; margin-bottom: 24px; }
+    .cat-tab {
+        padding: 6px 16px; border-radius: 20px; border: 1px solid #e2e8f0;
+        background: transparent; font-size: 0.75rem; font-weight: 600;
+        color: #64748b; cursor: pointer; transition: 0.2s;
+    }
+    .cat-tab:hover { background: #f1f5f9; }
+    .cat-tab.active { background: #1e2d45; border-color: #1e2d45; color: #fff; }
+
+    .manage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .manage-card {
+        background: #fff; border-radius: 10px; border: 1px solid #e2e8f0;
+        padding: 16px; display: flex; flex-direction: column; gap: 12px; transition: 0.2s;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .manage-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .manage-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .mcard-header-inner { display: flex; gap: 12px; align-items: center; }
+    .manage-card-icon {
+        width: 36px; height: 36px; border-radius: 8px; display: flex;
+        align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .manage-card-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; }
+    .manage-card-subtitle { font-size: 0.73rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .color-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.08); }
+    
+    .mcard-cat-desc { font-size: 0.8rem; color: #64748b; line-height: 1.5; margin: 0; min-height: 3em; }
+    
+    .manage-card-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .meta-item {
+        font-size: 0.72rem; color: #64748b; background: #f1f5f9;
+        padding: 3px 10px; border-radius: 6px; display: flex; align-items: center; gap: 4px;
+    }
+    .mcard-meta-strong { font-weight: 700; color: #334155; }
+
+    .manage-card-actions { display: flex; gap: 8px; margin-top: 4px; }
+    .manage-btn {
+        flex: 1; height: 28px; border-radius: 6px; border: 1px solid #e2e8f0;
+        background: transparent; font-size: 0.75rem; font-weight: 600;
+        color: #475569; cursor: pointer; transition: 0.2s;
+    }
+    .manage-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+    .manage-btn.delete-btn:hover { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+
+    input[type="color"].field-input {
+        padding: 4px; height: 38px; cursor: pointer; -webkit-appearance: none; border: 1px solid #e2e8f0;
+    }
+    input[type="color"].field-input::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"].field-input::-webkit-color-swatch { border: none; border-radius: 4px; }
+    
+    .hidden { display: none !important; }
+
+    /* --- MODALS (Restored from ancient-expanse) --- */
+    .modal-overlay {
+        position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+        z-index: 10000; display: none; align-items: center; justify-content: center; padding: 20px;
+        animation: fadeIn 0.15s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+    .modal {
+        background: #fff; border-radius: 10px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+        width: 480px; max-width: 100%; max-height: 90vh; overflow: hidden;
+        animation: slideUp 0.2s ease; border: 1px solid #e2e8f0;
+    }
+    .modal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 18px 20px 16px; border-bottom: 1px solid #f1f5f9;
+    }
+    .modal-title { font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0; }
+    .modal-close {
+        width: 28px; height: 28px; border: 1px solid #e2e8f0; border-radius: 6px;
+        background: transparent; color: #64748b; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; transition: 0.2s;
+    }
+    .modal-close:hover { background: #f8fafc; color: #1e293b; }
+
+    .modal-form { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .field-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .field-label { font-size: 0.8rem; font-weight: 600; color: #475569; }
+    .field-input {
+        height: 38px; padding: 0 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+        font-size: 0.9rem; color: #1e293b; background: #fff; outline: none; transition: 0.2s;
+    }
+    .field-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.06); }
+    textarea.field-input { height: auto; padding: 10px 12px; resize: none; }
+
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+    
+    .primary-btn {
+        height: 38px; padding: 0 20px; background: #2563eb; color: #fff; border: none;
+        border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: 0.2s;
+    }
+    .primary-btn:hover { background: #1d4ed8; }
+    .ghost-btn {
+        height: 38px; padding: 0 20px; background: #fff; color: #64748b; border: 1px solid #e2e8f0;
+        border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.2s;
+    }
+    .ghost-btn:hover { background: #f8fafc; color: #1e293b; }
+</style>
+
+<!-- Category Modal -->
+<div class="modal-overlay hidden" id="cat-modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="cat-modal-title">Edit Category</h3>
+      <button class="modal-close" onclick="closeCatModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    
+    <form id="cat-form" class="modal-form" onsubmit="event.preventDefault(); saveCategory();">
+      <div class="field-group">
+        <label class="field-label" for="catf-name">Category Name *</label>
+        <input type="text" id="catf-name" class="field-input" placeholder="e.g. Services" required>
+      </div>
+      
+      <div class="form-row-2">
+        <div class="field-group">
+          <label class="field-label" for="catf-type">Applies To *</label>
+          <select id="catf-type" class="field-input" required>
+            <option value="expense">Expense Only</option>
+            <option value="income">Income Only</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="catf-color">Colour</label>
+          <input type="color" id="catf-color" class="field-input" value="#2563EB">
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="catf-desc">Description</label>
+        <textarea id="catf-desc" class="field-input" placeholder="Add a short description about this category..." rows="3"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="ghost-btn" id="cat-modal-cancel" onclick="closeCatModal()">Cancel</button>
+        <button type="submit" class="primary-btn">Save Category</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let categories = JSON.parse('{{ categories_json|escapejs }}');
+let currentCatFilter = 'all';
+let editingCatId = null;
+
+function setCatType(type, element) {
+  currentCatFilter = type;
+  document.querySelectorAll('.cat-type-tabs button').forEach(b => b.classList.remove('active'));
+  element.classList.add('active');
+  renderCategories();
+}
+
+function renderCategories() {
+  const grid = document.getElementById('categories-grid');
+  const empty = document.getElementById('categories-empty');
+  
+  const filtered = currentCatFilter === 'all' ? categories : categories.filter(c => c.type === currentCatFilter);
+  
+  if (filtered.length === 0) {
+    grid.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  
+  grid.style.display = 'grid';
+  empty.style.display = 'none';
+  
+  grid.innerHTML = filtered.map(c => {
+    const typeLabel = c.type === 'income' ? 'Income Category' : 'Expense Category';
+    const typeColor = c.type === 'income' ? '#16a34a' : '#dc2626';
+    const color = c.color || (c.type==='income' ? '#16a34a' : '#ef4444');
+    const totalFriendly = '₹' + c.total.toLocaleString('en-IN', {minimumFractionDigits: 2});
+    
+    return `<div class="manage-card">
+      <div class="manage-card-header">
+        <div class="mcard-header-inner">
+          <div class="manage-card-icon" style="background:${color}18; color:${color};">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          </div>
+          <div>
+            <div class="manage-card-title">${c.name}</div>
+            <div class="manage-card-subtitle" style="color:${typeColor}">${typeLabel}</div>
+          </div>
+        </div>
+        <div class="color-swatch" style="background:${color}"></div>
+      </div>
+
+      <p class="mcard-cat-desc">${c.desc || ''}</p>
+
+      <div class="manage-card-meta">
+        <span class="meta-item"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${c.count} txns</span>
+        <span class="meta-item mcard-meta-strong">${totalFriendly} total</span>
+      </div>
+
+      <div class="manage-card-actions">
+        <button class="manage-btn" onclick="openCatModal('${c.id}')">Edit</button>
+        <button class="manage-btn delete-btn" onclick="deleteCategory('${c.id}', '${c.source}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openCatModal(id = null) {
+  editingCatId = id;
+  const modal = document.getElementById('cat-modal-overlay');
+  const title = document.getElementById('cat-modal-title');
+  const form = document.getElementById('cat-form');
+  
+  if (id) {
+    const c = categories.find(x => x.id == id);
+    if (!c) return;
+    title.textContent = 'Edit Category';
+    document.getElementById('catf-name').value = c.name;
+    document.getElementById('catf-type').value = c.type;
+    document.getElementById('catf-color').value = c.color || '#2563EB';
+    document.getElementById('catf-desc').value = c.desc || '';
+    window.currentEditingSource = c.source; // Track source for editing
+  } else {
+    title.textContent = 'Add Category';
+    form.reset();
+    document.getElementById('catf-type').value = currentCatFilter === 'all' ? 'expense' : currentCatFilter;
+    document.getElementById('catf-color').value = '#2563EB';
+    window.currentEditingSource = 'finance'; // Default for new
+  }
+  
+  modal.classList.remove('hidden');
+}
+
+function closeCatModal() {
+  document.getElementById('cat-modal-overlay').classList.add('hidden');
+  editingCatId = null;
+}
+
+async function saveCategory() {
+  const name = document.getElementById('catf-name').value.trim();
+  const type = document.getElementById('catf-type').value;
+  const color = document.getElementById('catf-color').value;
+  const desc = document.getElementById('catf-desc').value.trim();
+  
+  if (!name) return;
+  
+  const payload = { 
+    id: editingCatId, 
+    source: window.currentEditingSource || 'finance',
+    name, type, color, desc 
+  };
+  
+  try {
+    const res = await fetch("{% url 'categories:manage_ajax' %}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(data.success) {
+        window.location.reload();
+    } else {
+        alert(data.error);
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function deleteCategory(id, type) {
+  if(!confirm('Are you sure you want to delete this category? This action cannot be undone.')) return;
+  try {
+    const res = await fetch(`/categories/${id}/delete/${type}/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    });
+    const data = await res.json();
+    if(data.success) {
+      window.location.reload();
+    }
+  } catch(e) { console.error(e); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderCategories();
+});
+</script>
+{% endblock %}

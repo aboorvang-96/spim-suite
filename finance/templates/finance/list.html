@@ -1,0 +1,542 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Transactions{% endblock %}
+{% block active_finance %}active{% endblock %}
+
+{% block page_title %}Good morning, {{ request.user.first_name|default:request.user.username }}{% endblock %}
+{% block page_sub %}{% now "l, j F Y" %}{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
+        <label for="global-branch-select"
+            class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-0">Branch</label>
+        <select id="global-branch-select" class="form-input h-9 w-40 text-sm" onchange="updateBranchFilter(this.value)">
+            <option value="all">All Branches</option>
+            {% for b in branches %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="user-avatar user-avatar-header">{{ request.user.initials|default:"TA" }}</div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="txn-page-wrapper">
+    <!-- Compact Horizontal Filter Bar -->
+    <div class="card mb-6 p-4">
+        <div class="flex flex-wrap gap-3 items-center" id="filter-bar">
+
+            <!-- Search -->
+            <div class="relative flex-1 min-w-[160px]">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                    width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <label for="txn-search" class="sr-only">Search transactions</label>
+                <input type="text" id="txn-search"
+                    class="form-input h-9 pl-9 text-sm w-full"
+                    placeholder="Search..."
+                    aria-label="Search transactions">
+            </div>
+
+            <!-- Account (Payment Mode) -->
+            <select id="cf-account" class="form-input h-9 w-36 text-sm shrink-0"
+                title="Filter by account" onchange="updateAccountFilter(this.value)">
+                <option value="all">All Accounts</option>
+                <option value="cash">Cash</option>
+                <option value="bank">Bank Transfer</option>
+                <option value="card">Credit/Debit Card</option>
+                <option value="upi">UPI/Online</option>
+            </select>
+
+            <!-- Date / Month -->
+            <input type="month" id="cf-month"
+                class="form-input h-9 w-36 text-sm shrink-0"
+                title="Filter by month"
+                onchange="updateMonthFilter(this.value)">
+
+            <!-- Income Source (populated by JS) -->
+            <select id="cf-income-source" class="form-input h-9 w-40 text-sm shrink-0"
+                title="Filter by income source" onchange="updateIncomeSrcFilter(this.value)">
+                <option value="all">All Sources</option>
+            </select>
+
+            <!-- Category -->
+            <select id="cf-category" class="form-input h-9 w-36 text-sm shrink-0"
+                title="Filter by category" onchange="updateCategoryFilter(this.value)">
+                <option value="all">All Categories</option>
+                {% for c in categories %}
+                <option value="{{ c.id }}">{{ c.name }}</option>
+                {% endfor %}
+            </select>
+
+            <!-- Clear -->
+            <button type="button"
+                class="btn btn-secondary h-9 px-4 text-sm shrink-0 flex items-center gap-1.5"
+                onclick="resetFilters()" title="Clear all filters">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 1 0 2.13-5.88L21 8"/>
+                </svg>
+                Clear
+            </button>
+
+        </div>
+    </div>
+
+    <!-- Results Table -->
+    <div class="card p-0 overflow-hidden">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div>
+                <h3 class="font-bold text-slate-800" id="view-title">All Transactions</h3>
+                <p class="text-xs text-slate-400 mt-0.5">Complete transaction history</p>
+            </div>
+            <div class="badge badge-neutral py-2 px-4" id="results-count">0</div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="data-table w-full text-left">
+                <thead>
+                    <tr>
+                        <th class="w-32 uppercase text-xs text-slate-500 tracking-wider">DATE</th>
+                        <th class="uppercase text-xs text-slate-500 tracking-wider">DESCRIPTION</th>
+                        <th class="uppercase text-xs text-slate-500 tracking-wider">CATEGORY</th>
+                        <th class="w-24 uppercase text-xs text-slate-500 tracking-wider">TYPE</th>
+                        <th class="w-40 text-right uppercase text-xs text-slate-500 tracking-wider">AMOUNT</th>
+                        <th class="w-24 text-right"></th>
+                    </tr>
+                </thead>
+                <tbody id="txn-tbody">
+                    <!-- Dynamic Rows -->
+                </tbody>
+            </table>
+        </div>
+        <div id="results-empty" class="hidden text-center py-20 text-slate-400">
+            <svg width="64" height="64" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"
+                class="mb-4 mx-auto text-slate-200">
+                <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <p class="font-bold text-slate-800">No transactions found</p>
+            <p class="text-sm mt-1">Try adjusting your filters or search query.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Transaction Modal -->
+<div class="modal-overlay hidden" id="tx-modal-overlay">
+    <div class="modal-container w-full max-w-lg">
+        <div class="modal-header">
+            <h3 class="modal-title" id="tx-modal-title">Add Transaction</h3>
+            <button class="modal-close" onclick="closeTxModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+            </button>
+        </div>
+
+        <form id="tx-form" class="modal-body" onsubmit="event.preventDefault(); saveTransaction();">
+            <div class="grid grid-2 gap-4 mb-5">
+                <div class="form-group">
+                    <label class="form-label">Date *</label>
+                    <input type="date" id="txf-date" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type *</label>
+                    <select id="txf-type" class="form-select" required>
+                        <option value="expense">Expense</option>
+                        <option value="income">Income</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group mb-5">
+                <label class="form-label">Description *</label>
+                <input type="text" id="txf-desc" class="form-input" placeholder="e.g. Office supplies or Client payment"
+                    required>
+            </div>
+
+            <div class="grid grid-2 gap-4 mb-5">
+                <div class="form-group">
+                    <label class="form-label">Amount (₹) *</label>
+                    <input type="number" id="txf-amount" class="form-input" placeholder="0.00" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category *</label>
+                    <select id="txf-category" class="form-select" required>
+                        <option value="">Select Category</option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}" data-type="{{ c.type }}">{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group mb-5">
+                <label class="form-label">Branch</label>
+                <select id="txf-branch" class="form-select">
+                    <option value="">No Branch</option>
+                    {% for b in branches %}
+                    <option value="{{ b.id }}">{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Note (optional)</label>
+                <textarea id="txf-note" class="form-textarea h-80"
+                    placeholder="Additional context about this transaction..."></textarea>
+            </div>
+        </form>
+
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeTxModal()">Cancel</button>
+            <button type="submit" form="tx-form" class="btn btn-primary" id="tx-btn-save">Save Transaction</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .txn-page-wrapper {
+        animation: fadeIn var(--transition);
+    }
+
+    .period-tab {
+        padding: 8px 16px;
+        border-radius: var(--radius-sm);
+        border: none;
+        background: transparent;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--slate-600);
+        cursor: pointer;
+        transition: all var(--transition);
+        font-family: 'Outfit', sans-serif;
+    }
+
+    .period-tab:hover {
+        background: var(--slate-200);
+        color: var(--slate-900);
+    }
+
+    .period-tab.active {
+        background: var(--primary);
+        color: #fff;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .cat-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+    }
+
+    .type-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .badge-income {
+        background: var(--success-soft);
+        color: var(--success);
+    }
+
+    .badge-expense {
+        background: var(--danger-soft);
+        color: var(--danger);
+    }
+
+    .amount-positive {
+        color: var(--success);
+        font-weight: 700;
+    }
+
+    .amount-negative {
+        color: var(--danger);
+        font-weight: 700;
+    }
+
+    .delete-row-btn {
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        border: 1px solid var(--slate-200);
+        background: #fff;
+        color: var(--slate-400);
+        transition: all var(--transition);
+        cursor: pointer;
+    }
+
+    .delete-row-btn:hover {
+        border-color: var(--slate-300);
+        color: var(--slate-900);
+        background: var(--slate-50);
+    }
+
+    .hidden {
+        display: none !important;
+    }
+</style>
+
+<script>
+    // ── Data from server ──
+    let transactions = JSON.parse('{{ transactions_json|escapejs }}');
+
+    // ── Filter State ──
+    let State = {
+        monthFilter:    '',
+        accountFilter:  'all',
+        incomeSrcFilter: 'all',
+        categoryFilter: 'all',
+        branchFilter:   'all',
+        searchQuery:    '',
+        editingId:      null
+    };
+
+    function fmt(val) {
+        return '₹' + parseFloat(val).toLocaleString('en-IN', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    }
+
+    function fmtDate(iso) {
+        const d = new Date(iso + 'T00:00:00');
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    // ── Modal ──
+    function openTxModal(id = null) {
+        State.editingId = id;
+        const modal = document.getElementById('tx-modal-overlay');
+        const title = document.getElementById('tx-modal-title');
+        const form  = document.getElementById('tx-form');
+        if (id) {
+            const t = transactions.find(x => x.id == id);
+            if (!t) return;
+            title.textContent = 'Edit Transaction';
+            document.getElementById('txf-date').value     = t.date;
+            document.getElementById('txf-type').value     = t.type;
+            document.getElementById('txf-desc').value     = t.desc;
+            document.getElementById('txf-amount').value   = t.amount;
+            document.getElementById('txf-category').value = t.catId || '';
+            document.getElementById('txf-branch').value   = t.branchId || '';
+            document.getElementById('txf-note').value     = t.vendor || '';
+        } else {
+            title.textContent = 'Add Transaction';
+            form.reset();
+            document.getElementById('txf-date').value = new Date().toISOString().split('T')[0];
+        }
+        modal.classList.remove('hidden');
+    }
+
+    function closeTxModal() {
+        document.getElementById('tx-modal-overlay').classList.add('hidden');
+        State.editingId = null;
+    }
+
+    async function saveTransaction() {
+        const payload = {
+            id:       State.editingId,
+            date:     document.getElementById('txf-date').value,
+            type:     document.getElementById('txf-type').value,
+            desc:     document.getElementById('txf-desc').value.trim(),
+            amount:   document.getElementById('txf-amount').value,
+            catId:    document.getElementById('txf-category').value,
+            branchId: document.getElementById('txf-branch').value,
+            vendor:   document.getElementById('txf-note').value.trim()
+        };
+        if (!payload.desc || !payload.amount) { alert('Please fill required fields.'); return; }
+        try {
+            const url = State.editingId
+                ? `/expenses/${State.editingId}/edit/`
+                : "{% url 'expenses:add' %}";
+            const res  = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) { window.location.reload(); }
+            else { alert(data.error || 'Failed to save.'); }
+        } catch (e) { console.error(e); }
+    }
+
+    async function deleteTx(id) {
+        if (!confirm('Are you sure you want to delete this transaction?')) return;
+        try {
+            await fetch(`/expenses/${id}/delete/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+            });
+            window.location.reload();
+        } catch (e) { console.error(e); }
+    }
+
+    // ── Filter Functions ──
+    function updateAccountFilter(val) {
+        State.accountFilter = val;
+        renderTransactions();
+    }
+
+    function updateMonthFilter(val) {
+        State.monthFilter = val;
+        renderTransactions();
+    }
+
+    function updateIncomeSrcFilter(val) {
+        State.incomeSrcFilter = val;
+        renderTransactions();
+    }
+
+    function updateCategoryFilter(id) {
+        State.categoryFilter = id;
+        renderTransactions();
+    }
+
+    function updateBranchFilter(id) {
+        State.branchFilter = id;
+        renderTransactions();
+    }
+
+    function resetFilters() {
+        State.monthFilter    = '';
+        State.accountFilter  = 'all';
+        State.incomeSrcFilter = 'all';
+        State.categoryFilter = 'all';
+        State.branchFilter   = 'all';
+        State.searchQuery    = '';
+
+        document.getElementById('txn-search').value       = '';
+        document.getElementById('cf-account').value       = 'all';
+        document.getElementById('cf-month').value         = '';
+        document.getElementById('cf-income-source').value = 'all';
+        document.getElementById('cf-category').value      = 'all';
+        const branchSel = document.getElementById('global-branch-select');
+        if (branchSel) branchSel.value = 'all';
+
+        renderTransactions();
+    }
+
+    // ── Search ──
+    document.getElementById('txn-search').addEventListener('input', function(e) {
+        State.searchQuery = e.target.value.toLowerCase().trim();
+        renderTransactions();
+    });
+
+    // ── Render ──
+    function renderTransactions() {
+        const tbody = document.getElementById('txn-tbody');
+        const empty = document.getElementById('results-empty');
+        const count = document.getElementById('results-count');
+
+        let filtered = transactions;
+
+        // 1. Month filter  (YYYY-MM prefix match)
+        if (State.monthFilter) {
+            filtered = filtered.filter(t => t.date.startsWith(State.monthFilter));
+        }
+
+        // 2. Branch filter
+        if (State.branchFilter !== 'all') {
+            filtered = filtered.filter(t => t.branchId == State.branchFilter);
+        }
+
+        // 3. Category filter
+        if (State.categoryFilter !== 'all') {
+            filtered = filtered.filter(t => t.catId == State.categoryFilter);
+        }
+
+        // 4. Account (payment_mode) filter
+        if (State.accountFilter !== 'all') {
+            filtered = filtered.filter(t => t.account === State.accountFilter);
+        }
+
+        // 5. Income source filter
+        if (State.incomeSrcFilter !== 'all') {
+            filtered = filtered.filter(t => t.incomeSource === State.incomeSrcFilter);
+        }
+
+        // 6. Search filter
+        if (State.searchQuery) {
+            filtered = filtered.filter(t =>
+                t.desc.toLowerCase().includes(State.searchQuery) ||
+                (t.vendor && t.vendor.toLowerCase().includes(State.searchQuery)) ||
+                (t.ref && t.ref.toLowerCase().includes(State.searchQuery)) ||
+                (t.incomeSource && t.incomeSource.toLowerCase().includes(State.searchQuery))
+            );
+        }
+
+        count.textContent = filtered.length + ' record' + (filtered.length !== 1 ? 's' : '');
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '';
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        empty.classList.add('hidden');
+        tbody.innerHTML = filtered.map(t => `
+            <tr>
+                <td class="font-bold-600 text-gray-700">${fmtDate(t.date)}</td>
+                <td>
+                    <div class="font-bold-600 text-navy text-sm">${t.desc || '—'}</div>
+                    <div class="text-xs text-gray-400 mt-0.5">${t.branchName ? t.branchName + ' &bull; ' : ''}${t.mode || ''}</div>
+                </td>
+                <td>
+                    <span class="cat-chip" style="color:${t.catColor}; background:${t.catColor}15; border-color:${t.catColor}30">
+                        ${t.catName}
+                    </span>
+                </td>
+                <td>
+                    <span class="type-badge badge-${t.type}">${t.type.toUpperCase()}</span>
+                </td>
+                <td class="text-right ${t.type === 'income' ? 'amount-positive' : 'amount-negative'}">
+                    ${t.type === 'income' ? '+' : '-'}${fmt(t.amount)}
+                </td>
+                <td class="text-right">
+                    <div class="flex justify-end gap-2">
+                        <button class="delete-row-btn" onclick="openTxModal(${t.id})" title="Edit">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        </button>
+                        <button class="delete-row-btn text-red-500" onclick="deleteTx(${t.id})" title="Delete">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Populate Income Source dropdown from server-provided list
+        try {
+            const srcList = JSON.parse('{{ income_sources_json|escapejs }}');
+            const srcSel  = document.getElementById('cf-income-source');
+            srcList.forEach(function(s) {
+                if (!s) return;
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                srcSel.appendChild(opt);
+            });
+        } catch (e) { /* income_sources_json unavailable — dropdown stays empty */ }
+
+        renderTransactions();
+    });
+</script>
+{% endblock %}

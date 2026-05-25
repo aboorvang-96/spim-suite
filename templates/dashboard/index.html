@@ -14,6 +14,10 @@
                 <p class="stat-label">Organisation</p>
                 <p class="text-base font-bold text-slate-900">{% if company %}{{ company.name }}{% else %}<span class="text-slate-400 font-medium">Not configured</span>{% endif %}</p>
             </div>
+            <div>
+                <p class="stat-label">Organization Code</p>
+                <p class="text-sm font-semibold text-slate-700">{% if org_code %}{{ org_code }}{% elif company and company.admin_id and company.admin_id != 'PENDING' %}{{ company.admin_id }}{% else %}<span class="text-slate-400 font-medium">Not Configured</span>{% endif %}</p>
+            </div>
             {% if company and company.gst_number %}
             <div>
                 <p class="stat-label">GST No.</p>

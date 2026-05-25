@@ -1,0 +1,219 @@
+﻿python.exe : Not Found: /dashboard/settings/
+At line:1 char:34
++ ...  = "utf-8"; & "E:\Freelancing\SPIM Suite\.venv\Scripts\python.exe" qa ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Not Found: /dashboard/settings/:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Not Found: /employees/63/
+Not Found: /employees/salary/
+Not Found: /employees/salary/
+Not Found: /salary/
+Not Found: /employees/payslip/
+Not Found: /payslip/
+Not Found: /employees/salary-manager/
+Not Found: /expense/
+Not Found: /expense-manager/
+Not Found: /finance/expense/
+Not Found: /incomes/
+Not Found: /finance/income/
+Not Found: /categories/
+Not Found: /category/
+Not Found: /finance/categories/
+Not Found: /finance/transactions/
+Not Found: /branch/
+Not Found: /work-log/
+Not Found: /worklog/
+Not Found: /projects/list/
+Not Found: /material_stock/
+Not Found: /stock/
+Not Found: /inventory/
+Not Found: /reports/finance/
+Not Found: /reports/salary/
+Not Found: /dashboard/settings/
+Not Found: /settings/
+Not Found: /company/
+Not Found: /company/profile/
+ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+Γòæ   SPIM Suite - Full Runtime QA Test                  Γòæ
+ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
+  Date: 2026-05-23 06:52:58.977997
+  Server: http://127.0.0.1:8000
+
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Authentication / Login
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γ£à Authentication: GET /auth/login/ ΓåÆ 200 (Login page)
+  Γ£à Authentication: 'email' present in login page
+  Γ£à Authentication: 'password' present in login page
+  ≡ƒÉ¢ [CRITICAL] Authentication: Super Admin Org1 login FAILED
+  Γ£à Authentication: Invalid login correctly rejected
+  Γ£à Authentication: Logout works correctly
+
+  ΓåÆ Creating Super Admin Org1 session...
+  ΓÜá∩╕Å  Login: super_admin_org1@test.com -> status 200, path=[]
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Dashboard
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  ΓÜá∩╕Å  Dashboard: GET /dashboard/ ΓåÆ 302 redirect (possibly requires auth) (Dashboard home)
+  ≡ƒÉ¢ [MAJOR] Dashboard: 'dashboard' MISSING from Dashboard home
+  ≡ƒÉ¢ [MAJOR] Dashboard: Unexpected status 404 for /dashboard/settings/
+  ≡ƒÉ¢ [CRITICAL] Dashboard: Server error found in dashboard response
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Employees
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  ΓÜá∩╕Å  Employees: GET /employees/ ΓåÆ 302 redirect (possibly requires auth) (Employee list)
+  ΓÜá∩╕Å  Employees: GET /employees/add/ ΓåÆ 302 redirect (possibly requires auth) (Add employee)
+  ≡ƒÉ¢ [MAJOR] Employees: Unexpected status 404 for /employees/63/
+  Γ£à Employees: Minimum 15 employees exist: 26 found
+  Γ£à Employees: Bank details exist for 26 employees
+  Γ£à Employees: PF details exist for 26 employees
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Attendance
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  Attendance records (ADMORG1): 1174
+  Γ£à Attendance: Sufficient attendance records: 1174 (expected ΓëÑ416)
+  Γ£à Attendance: Realistic variation in statuses: {'absent', 'leave', 'present', 'half_day'}
+  ΓÜá∩╕Å  Attendance: GET /attendance/ ΓåÆ 302 redirect (possibly requires auth) (Attendance list)
+  Γ£à Attendance: GET /attendance/?date=2026-05-01 ΓåÆ 302 (Attendance by date)
+  Γä╣∩╕Å  Sunday attendance records: 162
+  Γä╣∩╕Å  Attendance Apr 26-May 21: 624 records
+  Γ£à Attendance: Attendance range correct: 624 records Apr 26-May 21
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Salary
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γ£à Salary: GET /employees/salary/ ΓåÆ 404 (Salary page)
+  ≡ƒÉ¢ [MAJOR] Salary: No salary page found at common URLs
+  Γä╣∩╕Å  SalaryUpdate records (ADMORG1): 22
+  Γ£à Salary: SalaryUpdate records exist: 22
+  Γ£à Salary: Employee base_salary populated: Alice Brown = Γé╣45000.00
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Salary Workflow Validation
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  Employee: Alice Brown (SPIM001)
+  Γä╣∩╕Å  May attendance: Total=21, Present=18, Half=0, Leave=3, Absent=0
+  Γ£à Salary Workflow: Attendance records found for salary calculation: 21 days
+  Γ£à Salary Workflow: Base salary set: Γé╣45000.00
+  Γä╣∩╕Å  Rough calculated salary: Γé╣31153.85 (base=45000.00, per_day=1730.77, effective_days=18.0)
+  Γ£à Salary Workflow: Manual salary estimate possible: Γé╣31153.85
+  ≡ƒÉ¢ [MAJOR] Salary Workflow: PFDetail not found for employee
+  Γä╣∩╕Å  SalaryUpdate (payslip) records: 22
+  Γ£à Salary Workflow: SalaryUpdate records exist: 22
+  Γä╣∩╕Å  Sample payslip: John Doe, Period=2026-04-01, Net=Γé╣75692.31
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Expense
+Traceback (most recent call last):
+  File "E:\Freelancing\SPIM Suite\qa_runtime_test.py", line 986, in <module>
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  ΓÜá∩╕Å  Expense: /expenses/ ΓåÆ 302 redirect
+  ΓÜá∩╕Å  Expense: /transactions/?type=expense ΓåÆ 302 redirect
+  Γä╣∩╕Å  Expense transactions (ADMORG1): 37
+  Γ£à Expense: Expense transaction records exist: 37
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Income
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  /income/ ΓåÆ 302
+  Γä╣∩╕Å  /transactions/?type=income ΓåÆ 302
+  Γä╣∩╕Å  Income records (ADMORG1): 8
+  Γ£à Income: Income records exist: 8
+  Γ£à Income: Finance income transactions exist: 10
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Categories
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  IncomeCategory: 3, ExpenseCategory: 5, FinanceCategory: 12
+  Γ£à Categories: Categories exist: 3 income, 5 expense
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Transactions
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  /transactions/ ΓåÆ 302
+  Γä╣∩╕Å  /finance/ ΓåÆ 302
+  Γä╣∩╕Å  Total transactions (ADMORG1): 47
+  Γ£à Transactions: Transaction records exist: 47
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Branches
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  /branches/ ΓåÆ 302
+  Γä╣∩╕Å  Branches (ADMORG1): 3
+  Γ£à Branches: 3 branches exist for ADMORG1
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Projects / Work Log
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  ΓÜá∩╕Å  Projects: /projects/ ΓåÆ 302
+  ≡ƒÉ¢ [MAJOR] Projects: Projects page not found at common URLs
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Material Stock
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  /material-stock/ ΓåÆ 302
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Reports
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Company Profile
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  MODULE: Multi-Account / Data Isolation
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Γä╣∩╕Å  Employees: ADMORG1=26, ADMORG2=3
+  Γ£à Multi-Account: Both orgs have employees: ORG1=26, ORG2=3
+  Γ£à Multi-Account: No employee name overlap between Org1 and Org2
+  Γä╣∩╕Å  Attendance: ADMORG1=1174, ADMORG2=153
+  Γ£à Multi-Account: Attendance isolated by org: ORG1=1174, ORG2=153
+  Γ£à Multi-Account: Branches isolated: ORG1=3, ORG2=1
+  Γä╣∩╕Å  Transactions: ADMORG1=47, ADMORG2=9
+  Γ£à Multi-Account: Transactions isolated: ORG1=47, ORG2=9
+  ≡ƒÉ¢ [MAJOR] Multi-Account: Org2 super admin login failed
+  Γä╣∩╕Å  Employees created by admin1_org1: 7
+  Γ£à Multi-Account: admin1_org1 created 7 employees (shared within org)
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  DATABASE INTEGRITY CHECKS
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+    main()
+  File "E:\Freelancing\SPIM Suite\qa_runtime_test.py", line 931, in main
+    test_db_integrity()
+  File "E:\Freelancing\SPIM Suite\qa_runtime_test.py", line 869, in test_db_integrity
+    ).exclude(bankdetail__isnull=False).count()
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\query.py", line 1444, in exclude
+    return self._filter_or_exclude(True, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\query.py", line 1454, in _filter_or_exclude
+    clone._filter_or_exclude_inplace(negate, args, kwargs)
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\query.py", line 1459, in 
+_filter_or_exclude_inplace
+    self._query.add_q(~Q(*args, **kwargs))
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\sql\query.py", line 1546, in add_q
+    clause, _ = self._add_q(q_object, self.used_aliases)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\sql\query.py", line 1577, in _add_q
+    child_clause, needed_inner = self.build_filter(
+                                 ^^^^^^^^^^^^^^^^^^
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\sql\query.py", line 1427, in build_filter
+    lookups, parts, reffed_expression = self.solve_lookup_type(arg, summarize)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\sql\query.py", line 1237, in 
+solve_lookup_type
+    _, field, _, lookup_parts = self.names_to_path(lookup_splitted, self.get_meta())
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Freelancing\SPIM Suite\.venv\Lib\site-packages\django\db\models\sql\query.py", line 1725, in names_to_path
+    raise FieldError(
+django.core.exceptions.FieldError: Cannot resolve keyword 'bankdetail' into field. Choices are: admin_id, attendances, 
+bank_details, base_salary, created_at, created_by, created_by_id, department, designation, employee_id, 
+fixed_allowance, id, job_role, job_role_id, joining_date, location, mobile_app_password, modified_by, modified_by_id, 
+name, pf_details, salary_history, site, status, updated_at, work_logs

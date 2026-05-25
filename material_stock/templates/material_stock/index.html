@@ -1,0 +1,1486 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Material & Stock Register{% endblock %}
+{% block active_material_stock %}active{% endblock %}
+
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<style>
+    /* ─── Summary Cards ─── */
+    .ms-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 20px;
+    }
+    @media (max-width: 1080px) { .ms-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 640px)  { .ms-summary-grid { grid-template-columns: 1fr; } }
+
+    .ms-summary-card {
+        background: #fff;
+        border: 1px solid var(--slate-200);
+        border-radius: var(--radius);
+        padding: 20px;
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .ms-summary-card.accent { border-left: 4px solid var(--navy); }
+    .ms-summary-label {
+        display: block;
+        color: var(--slate-500);
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .ms-summary-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: var(--slate-900);
+        line-height: 1;
+    }
+
+    /* ─── Nav Row (tabs + persistent action buttons) ─── */
+    .ms-nav-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 12px;
+        border-bottom: 1px solid var(--slate-200);
+        margin-bottom: 20px;
+        padding-bottom: 4px;
+        flex-wrap: wrap;
+    }
+
+    /* ─── Tab Nav ─── */
+    .ms-tab-nav {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+    }
+    .ms-tab-btn {
+        padding: 10px 22px;
+        font-weight: 600;
+        color: var(--slate-500);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+        border-radius: var(--radius-sm);
+        font-size: 0.9rem;
+    }
+    .ms-tab-btn:hover { color: var(--navy); background: var(--slate-50); }
+    .ms-tab-btn.active { color: var(--navy); background: #fff; box-shadow: var(--shadow-sm); }
+    .ms-tab-content { display: none; }
+    .ms-tab-content.active { display: block; animation: msFadeIn 0.3s ease; }
+    @keyframes msFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ─── Panel ─── */
+    .ms-panel { background: #fff; border: 1px solid var(--slate-200); border-radius: var(--radius); box-shadow: var(--shadow-sm); margin-bottom: 20px; overflow: hidden; }
+    .ms-panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--slate-100); background: #fafbfc; }
+    .ms-panel-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--slate-900); }
+    .ms-panel-note { margin: 3px 0 0; color: var(--slate-500); font-size: 0.82rem; }
+
+    /* ─── Inline Form Container ─── */
+    .ms-form-container {
+        display: none;
+        background: #fff;
+        padding: 20px;
+        border: 1px solid var(--slate-200);
+        border-radius: var(--radius);
+        margin-bottom: 20px;
+        box-shadow: var(--shadow-sm);
+    }
+    .ms-form-container.show { display: block; animation: msFadeIn 0.25s ease; }
+    .ms-form-title { margin: 0 0 14px; font-size: 1rem; font-weight: 700; color: var(--navy); }
+    .ms-form-section-head {
+        font-size: 0.78rem; font-weight: 700; color: var(--slate-500);
+        margin: 16px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--slate-100);
+        text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .ms-form-section-head:first-child { margin-top: 0; }
+    .ms-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+    .ms-form-footer { margin-top: 18px; display: flex; gap: 8px; align-items: center; }
+
+    /* ─── Site Tag List ─── */
+    .ms-site-tag-list {
+        display: flex; flex-wrap: wrap; gap: 8px;
+        padding: 16px 20px; background: #f8fafc;
+        border-radius: var(--radius-sm); border: 1px solid var(--slate-200); margin: 16px 20px;
+    }
+    .ms-site-tag {
+        background: #fff; border: 1px solid var(--slate-300);
+        padding: 5px 12px; border-radius: 6px;
+        font-size: 0.85rem; font-weight: 600; color: var(--slate-700);
+    }
+    .ms-site-empty { color: var(--slate-400); font-size: 0.88rem; }
+
+    /* ─── Bulk Widget (inline) ─── */
+    .ms-bulk-widget {
+        display: none;
+        background: #fff; border: 1px solid var(--navy);
+        padding: 14px 20px; border-radius: var(--radius);
+        margin-bottom: 16px; box-shadow: var(--shadow-sm);
+    }
+    .ms-bulk-widget.active { display: block; animation: msFadeIn 0.25s ease; }
+    .ms-bulk-flex { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+    .ms-bulk-item-box { flex: 1; min-width: 140px; }
+    .ms-bulk-label { font-size: 0.75rem; color: var(--slate-500); font-weight: 600; margin-bottom: 2px; }
+    .ms-bulk-value { font-weight: 700; font-size: 1rem; }
+    .ms-bulk-input-group { display: flex; align-items: center; gap: 8px; }
+    .ms-bulk-input-group label { font-size: 0.8rem; font-weight: 600; white-space: nowrap; color: var(--slate-600); }
+
+    /* ─── Download Menu ─── */
+    .ms-download-wrap { position: relative; display: inline-block; }
+    .ms-download-menu {
+        display: none; position: absolute; top: calc(100% + 4px); right: 0;
+        background: #fff; border: 1px solid var(--slate-200); border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-lg); min-width: 180px; z-index: 100; overflow: hidden;
+    }
+    .ms-download-menu.open { display: block; }
+    .ms-download-menu button { display: block; width: 100%; padding: 10px 16px; background: #fff; border: none; text-align: left; cursor: pointer; font-size: 0.875rem; color: var(--slate-700); font-weight: 500; }
+    .ms-download-menu button:hover { background: var(--slate-50); color: var(--navy); }
+    .ms-download-menu button + button { border-top: 1px solid var(--slate-100); }
+
+    /* ─── Table & Draft Rows ─── */
+    .ms-group-row td { background: #f1f5f9 !important; font-weight: 700; color: var(--navy); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .draft-main-row.editing-row td { background: #f5fbff; }
+    .draft-main-row.selected-row td { outline: 2px solid rgba(22,93,141,0.15); outline-offset: -2px; }
+    .advanced-row { display: none; }
+    .advanced-row.show { display: table-row; }
+    .advanced-cell { padding: 12px 16px 14px !important; background: #fbfdff; }
+    .advanced-box { border: 1px solid var(--slate-200); border-radius: 10px; padding: 14px; background: #fff; }
+    .advanced-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+
+    /* ─── Mini Actions ─── */
+    .mini-actions { display: flex; gap: 4px; }
+    .mini-btn { padding: 5px 10px; border-radius: 5px; background: #fff; border: 1px solid var(--slate-200); font-size: 0.78rem; font-weight: 600; color: var(--slate-500); cursor: pointer; transition: all 0.15s; }
+    .mini-btn:hover { background: var(--slate-50); color: var(--navy); }
+    .mini-btn.danger { color: var(--danger); border-color: #fee2e2; }
+    .mini-btn.danger:hover { background: var(--danger-soft); }
+
+    /* ─── Balance Chip ─── */
+    .balance-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 78px; padding: 5px 10px; border-radius: 999px; font-weight: 700; font-size: 0.78rem; background: var(--success-soft); color: var(--success); }
+    .balance-chip.pending { background: var(--slate-100); color: var(--slate-500); }
+    .balance-chip.invalid { background: var(--danger-soft); color: var(--danger); }
+    .row-status { margin-top: 3px; font-size: 0.72rem; color: var(--slate-400); }
+    .row-status.error { color: var(--danger); }
+
+    /* ─── Tags & Badges ─── */
+    .site-tag { background: #fff; border: 1px solid var(--slate-300); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; color: var(--slate-700); display: inline-flex; align-items: center; gap: 6px; }
+    .tag-blue { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; border-radius: 5px; padding: 3px 8px; font-size: 0.77rem; font-weight: 600; }
+    .tag-green { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; border-radius: 5px; padding: 3px 8px; font-size: 0.77rem; font-weight: 600; }
+    .log-badge { font-size: 0.7rem; padding: 2px 7px; border-radius: 4px; font-weight: 700; text-transform: uppercase; }
+    .log-add { background: var(--success-soft); color: var(--success); }
+    .log-remove { background: var(--danger-soft); color: var(--danger); }
+    .log-cond { background: var(--slate-100); color: var(--slate-600); }
+
+    /* ─── Feedback Bar ─── */
+    .ms-feedback { margin: 0 20px 14px; padding: 10px 14px; border-radius: 8px; font-size: 0.875rem; display: none; }
+    .ms-feedback.show { display: block; }
+    .ms-feedback.success { background: var(--success-soft); color: var(--success); }
+    .ms-feedback.error { background: var(--danger-soft); color: var(--danger); }
+
+    /* ─── Field Labels & Required ─── */
+    .field-label { display: block; margin-bottom: 5px; color: var(--slate-500); font-size: 0.8rem; font-weight: 600; }
+    .required-star { color: var(--danger); font-weight: bold; }
+
+    /* ─── Compact table inputs ─── */
+    .data-table .field, .data-table .field-select, .data-table .field-number { padding: 6px 8px; font-size: 0.85rem; min-width: 80px; }
+    .data-table textarea.field-textarea { min-height: 38px; resize: vertical; padding: 6px 8px; font-size: 0.85rem; width: 100%; }
+
+    /* ─── Adjustment Cards ─── */
+    .ms-adj-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 18px; margin-bottom: 20px; }
+    .ms-adj-card { background: #fff; border: 1px solid var(--slate-200); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow-sm); }
+
+    /* ─── Report Filters ─── */
+    .ms-report-filters { background: #f8fafc; border: 1px solid var(--slate-200); border-radius: var(--radius-sm); padding: 18px; margin-bottom: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; align-items: end; }
+
+    /* ─── Master Control Toolbar ─── */
+    .ms-master-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .ms-master-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+
+    /* ─── Locations Dropdown ─── */
+    .ms-loc-wrap { position: relative; }
+    .ms-loc-panel {
+        display: none;
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        z-index: 200;
+        background: #fff;
+        border: 1px solid var(--slate-200);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-lg);
+        min-width: 300px;
+        max-width: 460px;
+        padding: 14px 16px;
+    }
+    .ms-loc-panel.open { display: block; animation: msFadeIn 0.2s ease; }
+    .ms-loc-panel-head {
+        font-size: 0.77rem; font-weight: 700; color: var(--slate-500);
+        text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px;
+        padding-bottom: 8px; border-bottom: 1px solid var(--slate-100);
+    }
+    .ms-loc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* ─── Utilities ─── */
+    .hidden { display: none !important; }
+    .ms-empty-state { padding: 30px; text-align: center; color: var(--slate-400); font-size: 0.88rem; }
+    .ms-accent-top { border-top: 4px solid var(--navy); }
+    .ms-w-40  { width: 40px; }
+    .ms-w-90  { width: 90px; }
+    .ms-w-110 { width: 110px; }
+    .ms-w-130 { width: 130px; }
+    .ms-w-140 { width: 140px; }
+    .ms-w-150 { width: 150px; }
+</style>
+{% endblock %}
+
+{% block header_title %}Material & Stock Register{% endblock %}
+
+{% block header_actions %}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <span id="todayDisplay" style="display:none;"></span>
+
+    <div class="ms-nav-row">
+        <nav class="ms-tab-nav">
+            <button type="button" class="ms-tab-btn" data-tab="master">Master Control</button>
+            <button type="button" class="ms-tab-btn active" data-tab="entry">Daily Stock</button>
+            <button type="button" class="ms-tab-btn" data-tab="adjustment">Adjustments</button>
+        </nav>
+        <div class="ms-master-actions">
+            <button class="btn btn-outline btn-sm" id="exportJsonBtn">Export JSON</button>
+            <button class="btn btn-outline btn-sm" id="importJsonBtn">Import JSON</button>
+            <input type="file" id="importJsonInput" class="hidden" accept=".json">
+            <button class="btn btn-navy btn-sm" id="showAddItemBtn">+ Add Item</button>
+        </div>
+    </div>
+
+    <!-- ══════════════════ MASTER CONTROL ══════════════════ -->
+    <div id="tab-master" class="ms-tab-content">
+
+        <!-- Locations dropdown -->
+        <div class="ms-loc-wrap mb-4">
+            <button type="button" class="btn btn-outline btn-sm" id="locDropdownBtn">
+                <i class="fas fa-map-marker-alt mr-1"></i>Locations <i class="fas fa-chevron-down ml-1"></i>
+            </button>
+            <div id="locDropdownPanel" class="ms-loc-panel">
+                <div class="ms-loc-panel-head">Site &amp; Location Registry</div>
+                <div id="siteTagList" class="ms-loc-tags">
+                    <span class="ms-site-empty">Loading locations…</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Master Item Form (inline, shown on demand) -->
+        <div id="itemFormContainer" class="ms-form-container">
+            <h5 id="itemFormTitle" class="ms-form-title">Add Master Item</h5>
+            <button type="button" id="unlockDescBtn" class="btn btn-sm hidden mb-3" style="border:1px solid #fde68a;color:#b45309;background:#fffbeb;">🔒 Unlock Item Description</button>
+
+            <div class="ms-form-section-head">Basic Information</div>
+            <div class="ms-form-grid mb-3">
+                <div>
+                    <label class="field-label">Item Serial No <span class="required-star">*</span></label>
+                    <input type="text" id="masterItemSerial" class="form-input form-input-sm" placeholder="E.g. WM-HELM-001">
+                </div>
+                <div>
+                    <label class="field-label">Primary Site <span class="required-star">*</span></label>
+                    <select id="masterItemSite" class="form-input form-input-sm"></select>
+                </div>
+                <div>
+                    <label class="field-label">Item Name <span class="required-star">*</span></label>
+                    <select id="masterItemNameSelect" class="form-input form-input-sm">
+                        <option value="">Select Item...</option>
+                        <option value="Hardness Belt">Hardness Belt</option>
+                        <option value="Rig">Rig</option>
+                        <option value="Giri-Giri Tool">Giri-Giri Tool</option>
+                        <option value="Shunt">Shunt</option>
+                        <option value="Hand Jammer">Hand Jammer</option>
+                        <option value="Pulley">Pulley</option>
+                        <option value="Petzl ID">Petzl ID</option>
+                        <option value="Petzl ASAP">Petzl ASAP</option>
+                        <option value="Petzl ASAP Lock">Petzl ASAP Lock</option>
+                        <option value="Rope IBS">Rope IBS</option>
+                        <option value="Rope Petzl">Rope Petzl</option>
+                        <option value="Carabiners">Carabiners</option>
+                        <option value="Motor">Motor</option>
+                        <option value="Safety Harness">Safety Harness</option>
+                        <option value="Work Positioning Lanyard">Work Positioning Lanyard</option>
+                        <option value="Energy Absorber">Energy Absorber</option>
+                        <option value="Helmet">Helmet</option>
+                        <option value="Chest Ascender">Chest Ascender</option>
+                        <option value="Foot Loop">Foot Loop</option>
+                        <option value="Sling / Anchor Strap">Sling / Anchor Strap</option>
+                        <option value="Spider Tool">Spider Tool</option>
+                        <option value="CUSTOM">-- Custom / Other Item --</option>
+                    </select>
+                    <input type="text" id="masterItemNameCustom" class="form-input form-input-sm mt-2 hidden" placeholder="Enter Item Name">
+                </div>
+                <div>
+                    <label class="field-label">Initial Quantity</label>
+                    <input type="number" id="masterItemQty" class="form-input form-input-sm" value="0">
+                </div>
+            </div>
+
+            <div class="ms-form-section-head">Secondary Details</div>
+            <div class="ms-form-grid">
+                <div>
+                    <label class="field-label">Category</label>
+                    <input type="text" id="masterItemCategory" class="form-input form-input-sm" placeholder="e.g. Safety Gear">
+                </div>
+                <div>
+                    <label class="field-label">Brand / Type</label>
+                    <input type="text" id="masterItemBrand" class="form-input form-input-sm" placeholder="e.g. Petzl">
+                </div>
+                <div>
+                    <label class="field-label">Condition</label>
+                    <select id="masterItemCondition" class="form-input form-input-sm">
+                        <option value="Good">Good</option>
+                        <option value="Damaged">Damaged</option>
+                        <option value="Repair">Repair</option>
+                        <option value="Missing">Missing</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="field-label">Remarks / Storage Note</label>
+                    <input type="text" id="masterItemRemarks" class="form-input form-input-sm" placeholder="Storage notes...">
+                </div>
+            </div>
+
+            <div class="ms-form-footer">
+                <button class="btn btn-navy btn-sm" id="saveItemBtn">Save Record</button>
+                <button class="btn btn-outline btn-sm" id="cancelItemBtn">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Master Inventory Table -->
+        <div class="ms-panel">
+            <div class="ms-panel-head">
+                <h5 class="ms-panel-title">Master Inventory (Grouped by Site)</h5>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table mb-0" style="min-width:880px;">
+                    <thead>
+                        <tr>
+                            <th>Serial No</th>
+                            <th>Item Name</th>
+                            <th>Category</th>
+                            <th>Brand / Type</th>
+                            <th>Qty</th>
+                            <th>Condition</th>
+                            <th>Remarks</th>
+                            <th class="ms-w-110">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="masterStockBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════ DAILY STOCK ══════════════════ -->
+    <div id="tab-entry" class="ms-tab-content active">
+
+        <!-- Summary Cards -->
+        <div class="ms-summary-grid">
+            <div class="ms-summary-card">
+                <span class="ms-summary-label">Distinct Items</span>
+                <strong class="ms-summary-value" id="totalItemsCard">0</strong>
+            </div>
+            <div class="ms-summary-card">
+                <span class="ms-summary-label">Today Out</span>
+                <strong class="ms-summary-value text-danger" id="todayOutCard">0</strong>
+            </div>
+            <div class="ms-summary-card">
+                <span class="ms-summary-label">Today In</span>
+                <strong class="ms-summary-value text-success" id="todayInCard">0</strong>
+            </div>
+            <div class="ms-summary-card accent">
+                <span class="ms-summary-label">Current Balance</span>
+                <strong class="ms-summary-value" id="currentBalanceCard">0</strong>
+            </div>
+        </div>
+
+        <!-- Bulk Widget (inline, appears when a row is selected) -->
+        <div id="bulkWidget" class="ms-bulk-widget">
+            <div class="ms-bulk-flex">
+                <div class="ms-bulk-item-box">
+                    <div class="ms-bulk-label">Moving Item</div>
+                    <div id="bulkSelectedItem" class="ms-bulk-value text-navy">--</div>
+                </div>
+                <div class="ms-bulk-item-box">
+                    <div class="ms-bulk-label">On-Hand Site Stock</div>
+                    <div id="bulkAvailableStock" class="ms-bulk-value text-success">0</div>
+                </div>
+                <div class="ms-bulk-input-group">
+                    <label>Bulk QTY Out</label>
+                    <input type="number" id="bulkInpOut" class="form-input form-input-sm" style="width:80px;" placeholder="0">
+                </div>
+                <div class="ms-bulk-input-group">
+                    <label>Bulk QTY In</label>
+                    <input type="number" id="bulkInpIn" class="form-input form-input-sm" style="width:80px;" placeholder="0">
+                </div>
+                <button type="button" class="btn btn-navy btn-sm" id="applyBulkBtn">Apply Movement</button>
+            </div>
+        </div>
+
+        <!-- New Movement Entry Table -->
+        <div class="ms-panel">
+            <div class="ms-panel-head">
+                <div>
+                    <h5 class="ms-panel-title">Daily Working Entry Table</h5>
+                    <p class="ms-panel-note">Required: <span class="required-star">*</span> Date, Site, Item. &ldquo;From Site&rdquo; = stock source; &ldquo;To Site&rdquo; = destination.</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-navy btn-sm" id="addRowBtn"><i class="fas fa-plus mr-1"></i>Add Row</button>
+                    <button type="button" class="btn btn-outline btn-sm" id="clearSelectedBtn">Clear Active</button>
+                    <button type="button" class="btn btn-navy btn-sm" id="saveEntriesBtn">Save &amp; Update Inventory</button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table mb-0" style="min-width:1500px;">
+                    <thead>
+                        <tr>
+                            <th class="ms-w-40">Sel.</th>
+                            <th class="ms-w-130">Date <span class="required-star">*</span></th>
+                            <th>From Site <span class="required-star">*</span></th>
+                            <th>To Site / Loc <span class="required-star">*</span></th>
+                            <th class="ms-w-150">Serial No</th>
+                            <th>Item Name <span class="required-star">*</span></th>
+                            <th class="ms-w-90">QTY Out</th>
+                            <th class="ms-w-90">QTY In</th>
+                            <th class="ms-w-110">Balance</th>
+                            <th>Worker Name</th>
+                            <th>Remarks</th>
+                            <th class="ms-w-140">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="draftTableBody"></tbody>
+                </table>
+            </div>
+            <div id="formFeedback" class="ms-feedback"></div>
+        </div>
+
+        <!-- Saved History -->
+        <div class="ms-panel">
+            <div class="ms-panel-head">
+                <div>
+                    <h5 class="ms-panel-title">Saved History &amp; Audit Log</h5>
+                    <p class="ms-panel-note">Search saved entries by site, item, or date.</p>
+                </div>
+                <div class="search-box" style="width:280px;">
+                    <input type="text" id="historySearch" class="form-input form-input-sm" placeholder="Search entries…">
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table mb-0" style="min-width:1400px;">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>From Site</th>
+                            <th>To</th>
+                            <th class="ms-w-150">Serial No</th>
+                            <th>Item</th>
+                            <th>Out</th>
+                            <th>In</th>
+                            <th>Balance</th>
+                            <th>Worker</th>
+                            <th>Remarks</th>
+                            <th class="ms-w-110">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody"></tbody>
+                </table>
+            </div>
+            <div class="ms-empty-state" id="historyEmptyState">No saved entries yet.</div>
+        </div>
+
+        <!-- Reports -->
+        <div class="ms-panel ms-accent-top">
+            <div class="ms-panel-head">
+                <div>
+                    <h5 class="ms-panel-title">Stock &amp; Movement Reports</h5>
+                    <p class="ms-panel-note">Filter and export historical or summary data.</p>
+                </div>
+            </div>
+            <div style="padding:20px;">
+                <div class="ms-report-filters">
+                    <div>
+                        <label class="field-label">Report Type</label>
+                        <select id="rptType" class="form-input form-input-sm">
+                            <option value="daily">Daily Stock Report</option>
+                            <option value="master">Master Stock Report</option>
+                            <option value="adjustment">Adjustment Report</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="field-label">Filter Site</label>
+                        <input type="text" id="rptSite" list="siteDatalist" class="form-input form-input-sm" placeholder="All Sites">
+                    </div>
+                    <div>
+                        <label class="field-label">Filter Date</label>
+                        <input type="date" id="rptDate" class="form-input form-input-sm">
+                    </div>
+                    <div>
+                        <div class="ms-download-wrap">
+                            <button type="button" class="btn btn-navy btn-sm" id="downloadMainBtn">Download <i class="fas fa-chevron-down ml-1"></i></button>
+                            <div class="ms-download-menu" id="downloadMenu">
+                                <button type="button" data-format="xlsx"><i class="far fa-file-excel mr-2 text-success"></i>Excel (.xlsx)</button>
+                                <button type="button" data-format="pdf"><i class="far fa-file-pdf mr-2 text-danger"></i>PDF (.pdf)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="reportPreviewArea" style="min-height:120px;padding:20px;background:#fff;border:1px dashed var(--slate-200);border-radius:8px;font-size:0.9rem;color:var(--slate-400);text-align:center;">
+                    Select filters and export to generate documents.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════ ADJUSTMENTS ══════════════════ -->
+    <div id="tab-adjustment" class="ms-tab-content">
+        <div class="ms-adj-grid">
+            <div class="ms-adj-card">
+                <h5 class="ms-panel-title text-navy mb-3">Quantity Adjustment</h5>
+                <div class="form-group mb-3">
+                    <label class="field-label">Select Site &amp; Item</label>
+                    <select id="adjItemSelect" class="form-input form-input-sm"></select>
+                </div>
+                <div class="d-flex gap-2 align-items-end">
+                    <div class="flex-grow-1">
+                        <label class="field-label">Quantity</label>
+                        <input type="number" id="adjQtyValue" class="form-input form-input-sm" value="0" min="0">
+                    </div>
+                    <button type="button" class="btn btn-navy btn-sm" id="adjAddBtn">Add (+)</button>
+                    <button type="button" class="btn btn-outline btn-sm" style="border-color:#fecaca;color:var(--danger);" id="adjRemoveBtn">Remove (−)</button>
+                </div>
+            </div>
+            <div class="ms-adj-card">
+                <h5 class="ms-panel-title text-navy mb-3">Condition Control</h5>
+                <div class="form-group mb-3">
+                    <label class="field-label">Select Site &amp; Item</label>
+                    <select id="adjCondItemSelect" class="form-input form-input-sm"></select>
+                </div>
+                <div class="d-flex gap-2 align-items-end">
+                    <div class="flex-grow-1">
+                        <label class="field-label">New Condition</label>
+                        <select id="adjCondValue" class="form-input form-input-sm">
+                            <option value="Good">Good</option>
+                            <option value="Damaged">Damaged</option>
+                            <option value="Repair">Repair</option>
+                            <option value="Missing">Missing</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-navy btn-sm" id="saveCondBtn">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="ms-panel">
+            <div class="ms-panel-head">
+                <h5 class="ms-panel-title">Adjustment &amp; Condition History</h5>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Site</th><th>Item</th><th>Action</th><th>Qty</th><th>Condition</th><th>Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adjHistoryBody"></tbody>
+                </table>
+            </div>
+            <div class="ms-empty-state" id="adjEmptyState">No adjustments recorded yet.</div>
+        </div>
+    </div>
+</div>
+
+<datalist id="siteDatalist"></datalist>
+<datalist id="itemDatalist"></datalist>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  const STORAGE_KEY = "material_stock_maintenance_entries_v1";
+  const SITES_KEY   = "material_stock_sites_v1";
+  const MASTER_KEY  = "material_stock_master_v1";
+  const ADJ_KEY     = "material_stock_adjustments_v1";
+
+  const ITEM_CONFIG = {
+    "Hardness Belt":            { typeOptions: ["Petzl", "IBS", "Half Belt", "Others"] },
+    "Rig":                      { typeOptions: ["Standard", "Heavy Duty", "Others"] },
+    "Giri-Giri Tool":           { typeOptions: ["Standard", "Others"] },
+    "Shunt":                    { typeOptions: ["Petzl", "Others"] },
+    "Hand Jammer":              { typeOptions: ["Left", "Right", "Pair", "Others"] },
+    "Pulley":                   { typeOptions: ["Single", "Double", "Others"] },
+    "Petzl ID":                 { typeOptions: ["Standard", "Large", "Others"] },
+    "Petzl ASAP":               { typeOptions: ["Standard", "Mobile", "Others"] },
+    "Petzl ASAP Lock":          { typeOptions: ["Standard", "Lockable", "Others"] },
+    "Rope IBS":                 { typeOptions: ["IBS"], lengthOptions: ["200m", "100m", "75m", "50m"] },
+    "Rope Petzl":               { typeOptions: ["Petzl"], lengthOptions: ["200m", "100m"] },
+    "Carabiners":               { typeOptions: ["Screw Lock", "Auto Lock", "Steel", "Aluminum", "Others"] },
+    "Motor":                    { typeOptions: ["Petrol", "Electric"] },
+    "Safety Harness":           { typeOptions: ["Full Body", "Half Body", "Rescue", "Others"] },
+    "Work Positioning Lanyard": { typeOptions: ["Grillon", "Progression", "Others"] },
+    "Energy Absorber":          { typeOptions: ["Absorbica", "Asap'Sorber", "Others"] },
+    "Helmet":                   { typeOptions: ["Petzl Vertex", "Petzl Alveo", "Standard", "Others"] },
+    "Chest Ascender":           { typeOptions: ["Croll S", "Croll L", "Others"] },
+    "Foot Loop":                { typeOptions: ["Footcord", "Footpro", "Others"] },
+    "Sling / Anchor Strap":     { typeOptions: ["Anneau", "Jane", "Others"] },
+    "Spider Tool":              { typeOptions: ["Standard", "Others"] }
+  };
+
+  const ITEM_NAMES = Object.keys(ITEM_CONFIG);
+
+  const elements = {
+    todayDisplay:      document.getElementById("todayDisplay"),
+    totalItemsCard:    document.getElementById("totalItemsCard"),
+    todayOutCard:      document.getElementById("todayOutCard"),
+    todayInCard:       document.getElementById("todayInCard"),
+    currentBalanceCard:document.getElementById("currentBalanceCard"),
+    addRowBtn:         document.getElementById("addRowBtn"),
+    clearSelectedBtn:  document.getElementById("clearSelectedBtn"),
+    saveEntriesBtn:    document.getElementById("saveEntriesBtn"),
+    draftTableBody:    document.getElementById("draftTableBody"),
+    formFeedback:      document.getElementById("formFeedback"),
+    historySearch:     document.getElementById("historySearch"),
+    historyTableBody:  document.getElementById("historyTableBody"),
+    historyEmptyState: document.getElementById("historyEmptyState"),
+    siteTagList:       document.getElementById("siteTagList"),
+    masterStockBody:   document.getElementById("masterStockBody"),
+    itemFormContainer: document.getElementById("itemFormContainer"),
+    masterItemSite:    document.getElementById("masterItemSite")
+  };
+
+  let savedEntries      = [];
+  let masterSites       = [];
+  let masterStock       = [];
+  let adjustmentHistory = [];
+  let draftRows         = [];
+  let draftSequence     = 0;
+  let searchQuery       = "";
+  let editingMasterItemId = null;
+
+  /* ── Utilities ── */
+  function escapeHtml(v) {
+    return String(v ?? "")
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  }
+  function getTodayLocalDate() {
+    const n = new Date();
+    return n.getFullYear() + "-" + String(n.getMonth()+1).padStart(2,"0") + "-" + String(n.getDate()).padStart(2,"0");
+  }
+  function formatTodayDisplay() {
+    return new Date().toLocaleDateString(undefined, {year:"numeric",month:"long",day:"numeric"});
+  }
+  function toNumber(v) { return (v===""||v==null||v===undefined) ? 0 : Math.max(0, Number(v)||0); }
+  function formatNumber(v) { return new Intl.NumberFormat().format(toNumber(v)); }
+  function requiresLength(n) { return !!(ITEM_CONFIG[n] && ITEM_CONFIG[n].lengthOptions); }
+  function getTypeOptions(n) { return ITEM_CONFIG[n] ? ITEM_CONFIG[n].typeOptions : []; }
+  function getLengthOptions(n) { return (ITEM_CONFIG[n] && ITEM_CONFIG[n].lengthOptions) || []; }
+  function getSortStamp(r) {
+    if (r.dateTime) { const d = new Date(r.dateTime).getTime(); if(!isNaN(d)) return d; }
+    if (r.date)     { const d = new Date(r.date+"T00:00:00").getTime(); if(!isNaN(d)) return d; }
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  /* ── Persistence ── */
+  function loadSavedData() {
+    try {
+      savedEntries      = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      masterSites       = JSON.parse(localStorage.getItem(SITES_KEY))   || [];
+      masterStock       = JSON.parse(localStorage.getItem(MASTER_KEY))  || [];
+      adjustmentHistory = JSON.parse(localStorage.getItem(ADJ_KEY))     || [];
+    } catch (e) { console.error("Load failed", e); }
+  }
+  function persistSavedEntries() { localStorage.setItem(STORAGE_KEY, JSON.stringify(savedEntries)); }
+  function persistMasterData() {
+    localStorage.setItem(SITES_KEY,  JSON.stringify(masterSites));
+    localStorage.setItem(MASTER_KEY, JSON.stringify(masterStock));
+    localStorage.setItem(ADJ_KEY,    JSON.stringify(adjustmentHistory));
+  }
+
+  /* ── Global Location Integration ── */
+  async function loadGlobalLocations() {
+    try {
+      const resp = await fetch('/branches/api/locations/');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const names = (data.locations || []).filter(Boolean);
+      names.forEach(name => {
+        if (!masterSites.find(s => s.name.toLowerCase() === name.toLowerCase())) {
+          masterSites.push({ id: 'gloc-' + name.replace(/\W+/g, '-').toLowerCase(), name: name });
+        }
+      });
+      localStorage.setItem(SITES_KEY, JSON.stringify(masterSites));
+    } catch (e) {
+      console.warn('Could not load global locations', e);
+    }
+  }
+
+  /* ── Draft Row Helpers ── */
+  function createDraftRow(overrides) {
+    draftSequence++;
+    return Object.assign({
+      draftId: "draft-" + Date.now() + "-" + draftSequence, sequence: draftSequence,
+      selected: false, expanded: false, editingId: null, date: getTodayLocalDate(),
+      fromSite: "", toSite: "", itemName: "", serialNumber: "", typeBrand: "", length: "",
+      quantityOut: "", quantityIn: "", remarks: "", workerName: "",
+      dateTime: "", missingStock: "", damageDeduction: "", approvalBy: ""
+    }, overrides || {});
+  }
+
+  function createEntryFromRow(row, existingId) {
+    const now = new Date().toISOString();
+    const existing = existingId ? savedEntries.find(e => e.id === existingId) : null;
+    return {
+      id: existingId || "entry-" + Date.now() + "-" + Math.random().toString(16).slice(2),
+      createdAt: existing ? existing.createdAt : now, updatedAt: now,
+      date: row.date, fromSite: (row.fromSite||"").trim(), toSite: (row.toSite||"").trim(),
+      itemName: row.itemName, serialNumber: (row.serialNumber||"").trim(), typeBrand: row.typeBrand,
+      length: requiresLength(row.itemName) ? row.length : "",
+      quantityOut: toNumber(row.quantityOut), quantityIn: toNumber(row.quantityIn),
+      remarks: (row.remarks||"").trim(), workerName: (row.workerName||"").trim(),
+      dateTime: row.dateTime, missingStock: toNumber(row.missingStock),
+      damageDeduction: toNumber(row.damageDeduction), approvalBy: (row.approvalBy||"").trim()
+    };
+  }
+
+  function isRowEmpty(r) {
+    return ![r.fromSite, r.toSite, r.itemName, r.typeBrand, r.length, r.quantityIn, r.quantityOut]
+      .some(v => String(v||"").trim() !== "");
+  }
+
+  /* ── Select Builders ── */
+  function buildItemOptions(sel) {
+    /* Master stock items first (actual inventory), then any predefined not yet in master */
+    const fromMaster = [...new Set(masterStock.map(i => i.itemName).filter(Boolean))];
+    const predefined = ITEM_NAMES.filter(n => !fromMaster.includes(n));
+    const allNames   = [...fromMaster, ...predefined];
+    return '<option value="">Select item</option>' +
+      allNames.map(n => `<option value="${escapeHtml(n)}"${sel===n?" selected":""}>${escapeHtml(n)}</option>`).join("");
+  }
+  function buildSelectOptions(opts, sel, ph) {
+    return `<option value="">${escapeHtml(ph)}</option>` +
+      opts.map(o => `<option value="${escapeHtml(o)}"${sel===o?" selected":""}>${escapeHtml(o)}</option>`).join("");
+  }
+  function buildSerialOptions(sel, itemFilter) {
+    const options = ['<option value="">Select serial</option>'];
+    const filter  = (itemFilter||"").trim().toLowerCase();
+    const seen    = {};
+    const pool    = masterStock.slice().sort((a,b) => String(a.serialNumber||"").localeCompare(String(b.serialNumber||"")));
+    pool.forEach(m => {
+      const s = (m.serialNumber||"").trim(); if (!s) return;
+      if (filter && (m.itemName||"").toLowerCase() !== filter) return;
+      if (seen[s]) return; seen[s] = true;
+      options.push(`<option value="${escapeHtml(s)}"${sel===s?" selected":""}>${escapeHtml(s)} - ${escapeHtml(m.itemName)}</option>`);
+    });
+    if (sel && !seen[sel]) options.push(`<option value="${escapeHtml(sel)}" selected>${escapeHtml(sel)} (not in master)</option>`);
+    return options.join("");
+  }
+
+  /* ── Datalists ── */
+  function updateDatalists() {
+    const sDl = document.getElementById("siteDatalist");
+    const iDl = document.getElementById("itemDatalist");
+    if (sDl) sDl.innerHTML = masterSites.map(s => `<option value="${escapeHtml(s.name)}">`).join("");
+    if (iDl) iDl.innerHTML = [...new Set(masterStock.map(i => i.itemName))].map(i => `<option value="${escapeHtml(i)}">`).join("");
+  }
+
+  /* ── Stock Calculations ── */
+  function calculateDraftBalances() {
+    const results = {};
+    draftRows.forEach(row => {
+      if (!row.itemName) {
+        results[row.draftId] = { previous:0, balance:0, balanceText:"0", stateClass:"pending", statusMessage:"Select item.", isError:false };
+        return;
+      }
+      const mi   = findMasterItem(row.fromSite, row.itemName, row.typeBrand, row.length);
+      const prev = mi ? mi.qty : 0;
+      const qIn  = toNumber(row.quantityIn), qOut = toNumber(row.quantityOut);
+      const bal  = prev + qIn - qOut;
+      if (bal < 0) {
+        results[row.draftId] = { previous:prev, balanceText:formatNumber(prev), stateClass:"invalid", statusMessage:"Neg stock! Max out: "+(prev+qIn), isError:true };
+      } else {
+        results[row.draftId] = { previous:prev, balanceText:formatNumber(bal), stateClass:bal===0?"pending":"", statusMessage:(mi?"Master Stock: ":"New: ")+formatNumber(prev), isError:false };
+      }
+    });
+    return results;
+  }
+
+  function calculateSavedHistoryBalances() {
+    const ledger = new Map();
+    return savedEntries.slice().sort((a,b) => getSortStamp(a) - getSortStamp(b)).map(e => {
+      const key  = e.itemName + "||" + e.typeBrand + "||" + (e.fromSite||"");
+      const prev = ledger.get(key) || 0;
+      const bal  = prev + toNumber(e.quantityIn) - toNumber(e.quantityOut);
+      ledger.set(key, bal);
+      return Object.assign({}, e, { balance: bal });
+    });
+  }
+
+  function calculateSummary() {
+    const today    = getTodayLocalDate();
+    let tOut = 0, tIn = 0;
+    savedEntries.forEach(e => { if (e.date === today) { tOut += toNumber(e.quantityOut); tIn += toNumber(e.quantityIn); } });
+    const total    = masterStock.reduce((s, i) => s + i.qty, 0);
+    const distinct = new Set(masterStock.map(i => i.itemName + "||" + i.brand + "||" + i.length)).size;
+    elements.totalItemsCard.textContent    = distinct;
+    elements.todayOutCard.textContent      = formatNumber(tOut);
+    elements.todayInCard.textContent       = formatNumber(tIn);
+    elements.currentBalanceCard.textContent= formatNumber(total);
+  }
+
+  /* ── Render: Draft Table ── */
+  function renderDraftRows() {
+    const bMap = calculateDraftBalances();
+    elements.draftTableBody.innerHTML = draftRows.map(r => {
+      const bInfo  = bMap[r.draftId];
+      const hasLen = requiresLength(r.itemName);
+      return `
+        <tr class="draft-main-row${r.editingId?" editing-row":""}${r.selected?" selected-row":""}" data-row-id="${r.draftId}">
+          <td><input type="radio" name="selD" data-field="selected" ${r.selected?"checked":""}></td>
+          <td><input type="date" class="field" data-field="date" value="${r.date}"></td>
+          <td><input type="text" list="siteDatalist" class="field" data-field="fromSite" value="${escapeHtml(r.fromSite)}" placeholder="From site…"></td>
+          <td><input type="text" list="siteDatalist" class="field" data-field="toSite" value="${escapeHtml(r.toSite)}" placeholder="To site…"></td>
+          <td><select class="field-select" data-field="serialNumber">${buildSerialOptions(r.serialNumber, r.itemName)}</select></td>
+          <td><select class="field-select" data-field="itemName">${buildItemOptions(r.itemName)}</select></td>
+          <td><input type="number" class="field-number" data-field="quantityOut" value="${r.quantityOut}" min="0"></td>
+          <td><input type="number" class="field-number" data-field="quantityIn"  value="${r.quantityIn}"  min="0"></td>
+          <td>
+            <div class="balance-chip${bInfo.stateClass?" "+bInfo.stateClass:""}">${bInfo.balanceText}</div>
+            <div class="row-status${bInfo.isError?" error":""}">${bInfo.statusMessage}</div>
+          </td>
+          <td><input type="text" class="field" data-field="workerName" value="${escapeHtml(r.workerName)}" placeholder="Worker"></td>
+          <td><textarea class="field-textarea" data-field="remarks">${escapeHtml(r.remarks)}</textarea></td>
+          <td>
+            <div class="mini-actions">
+              <button class="mini-btn" data-action="toggle-advanced">${r.expanded?"Less":"Details"}</button>
+              <button class="mini-btn danger" data-action="delete-draft">&times;</button>
+            </div>
+          </td>
+        </tr>
+        <tr class="advanced-row${r.expanded?" show":""}" data-advanced-for="${r.draftId}">
+          <td colspan="12" class="advanced-cell">
+            <div class="advanced-box">
+              <div class="advanced-grid">
+                <div>
+                  <label class="field-label">Type / Brand</label>
+                  <select class="field-select" data-field="typeBrand">${buildSelectOptions(getTypeOptions(r.itemName), r.typeBrand, "Select type")}</select>
+                </div>
+                <div>
+                  <label class="field-label">Length</label>
+                  <select class="field-select" data-field="length" ${hasLen?"":"disabled"}>${buildSelectOptions(getLengthOptions(r.itemName), r.length, hasLen?"Select length":"N/A")}</select>
+                </div>
+                <div>
+                  <label class="field-label">Date &amp; Time</label>
+                  <input type="datetime-local" class="field" data-field="dateTime" value="${r.dateTime}">
+                </div>
+                <div>
+                  <label class="field-label">Missing / Damage</label>
+                  <div class="d-flex gap-1">
+                    <input type="number" class="field-number" data-field="missingStock"    value="${r.missingStock}"    placeholder="Lost" min="0">
+                    <input type="number" class="field-number" data-field="damageDeduction" value="${r.damageDeduction}" placeholder="Dmg"  min="0">
+                  </div>
+                </div>
+                <div>
+                  <label class="field-label">Approval By</label>
+                  <input type="text" class="field" data-field="approvalBy" value="${escapeHtml(r.approvalBy)}">
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+    updateBulkWidget();
+    calculateSummary();
+  }
+
+  /* ── Render: History ── */
+  function renderHistory() {
+    const comp = calculateSavedHistoryBalances()
+      .filter(e => !searchQuery || [e.date, e.fromSite, e.toSite, e.itemName, e.serialNumber, e.workerName].join(" ").toLowerCase().includes(searchQuery))
+      .reverse();
+    elements.historyTableBody.innerHTML = comp.map(e => `
+      <tr data-entry-id="${e.id}">
+        <td>${e.date}</td>
+        <td>${escapeHtml(e.fromSite||"-")}</td>
+        <td>${escapeHtml(e.toSite||"-")}</td>
+        <td><strong>${escapeHtml(e.serialNumber||"-")}</strong></td>
+        <td>${escapeHtml(e.itemName)}</td>
+        <td>${formatNumber(e.quantityOut)}</td>
+        <td>${formatNumber(e.quantityIn)}</td>
+        <td><span class="balance-chip">${formatNumber(e.balance)}</span></td>
+        <td>${escapeHtml(e.workerName||"-")}</td>
+        <td>${escapeHtml(e.remarks||"-")}</td>
+        <td>
+          <div class="mini-actions">
+            <button class="mini-btn" data-action="edit-saved">Edit</button>
+            <button class="mini-btn danger" data-action="delete-saved">&times;</button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+    elements.historyEmptyState.style.display = comp.length ? "none" : "block";
+  }
+
+  /* ── Render: Master Tab ── */
+  function renderMasterTab() {
+    /* Site tags — read-only display of global locations */
+    elements.siteTagList.innerHTML = masterSites.length
+      ? masterSites.map(s => `<div class="ms-site-tag">${escapeHtml(s.name)}</div>`).join("")
+      : '<span class="ms-site-empty">No locations found. Add locations via Branches &amp; Locations.</span>';
+
+    elements.masterItemSite.innerHTML = '<option value="">Select site...</option>' +
+      masterSites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+
+    const rows = [];
+    masterSites.forEach(s => {
+      const items = masterStock.filter(i => i.siteId === s.id);
+      if (items.length) {
+        rows.push(`<tr class="ms-group-row"><td colspan="8">SITE: ${escapeHtml(s.name)}</td></tr>`);
+        items.forEach(i => rows.push(`
+          <tr>
+            <td><strong>${escapeHtml(i.serialNumber||"-")}</strong></td>
+            <td>${escapeHtml(i.itemName)}</td>
+            <td><span class="tag-blue">${escapeHtml(i.category||"-")}</span></td>
+            <td>${escapeHtml(i.brand||"-")}</td>
+            <td><strong class="balance-chip">${formatNumber(i.qty)}</strong></td>
+            <td><span class="tag-green">${escapeHtml(i.condition)}</span></td>
+            <td>${escapeHtml(i.remarks||"-")}</td>
+            <td>
+              <div class="mini-actions">
+                <button class="mini-btn" data-id="${i.id}" data-action="edit">Edit</button>
+                <button class="mini-btn danger" data-id="${i.id}" data-action="delete">&times;</button>
+              </div>
+            </td>
+          </tr>
+        `));
+      }
+    });
+    elements.masterStockBody.innerHTML = rows.length
+      ? rows.join("")
+      : '<tr><td colspan="8" class="ms-empty-state">No master items added yet.</td></tr>';
+  }
+
+  /* ── Render: Adjustment Tab ── */
+  function renderAdjustmentTab() {
+    const opts = masterStock
+      .filter(i => masterSites.find(s => s.id === i.siteId))
+      .map(i => {
+        const site = masterSites.find(s => s.id === i.siteId) || { name: "Unknown" };
+        return `<option value="${i.id}">${escapeHtml(site.name)}: ${escapeHtml(i.itemName)} (${escapeHtml(i.brand||"-")})</option>`;
+      }).join("");
+    document.getElementById("adjItemSelect").innerHTML     = '<option value="">Select Item…</option>' + opts;
+    document.getElementById("adjCondItemSelect").innerHTML = '<option value="">Select Item…</option>' + opts;
+    document.getElementById("adjHistoryBody").innerHTML = adjustmentHistory.map(h => `
+      <tr>
+        <td>${h.date}</td>
+        <td>${escapeHtml(h.siteName||"-")}</td>
+        <td>${escapeHtml(h.itemName)}</td>
+        <td><span class="log-badge ${h.qtyChange!==0?(h.qtyChange>0?"log-add":"log-remove"):"log-cond"}">${h.qtyChange!==0?"Qty":"Cond."}</span></td>
+        <td>${h.qtyChange||"-"}</td>
+        <td>${escapeHtml(h.condition)}</td>
+        <td>${escapeHtml(h.remarks||"-")}</td>
+      </tr>
+    `).join("");
+    document.getElementById("adjEmptyState").style.display = adjustmentHistory.length ? "none" : "block";
+  }
+
+  /* ── Bulk Widget ── */
+  function updateBulkWidget() {
+    const r = draftRows.find(x => x.selected);
+    const w = document.getElementById("bulkWidget");
+    if (!r || !r.itemName) { w.classList.remove("active"); return; }
+    w.classList.add("active");
+    document.getElementById("bulkSelectedItem").textContent  = r.itemName;
+    const b = calculateDraftBalances()[r.draftId];
+    document.getElementById("bulkAvailableStock").textContent = b.previous + (Number(r.quantityIn)||0);
+  }
+
+  /* ── Feedback ── */
+  function showFeedback(msg, type) {
+    elements.formFeedback.textContent = msg;
+    elements.formFeedback.className   = "ms-feedback show " + (type || "success");
+    setTimeout(() => elements.formFeedback.classList.remove("show"), 4000);
+  }
+
+  /* ── Sync All UI ── */
+  function syncUI() {
+    renderDraftRows();
+    renderHistory();
+    renderMasterTab();
+    renderAdjustmentTab();
+    updateDatalists();
+  }
+
+  /* ── Stock Mutation ── */
+  function reverseStock(e) {
+    const o = toNumber(e.quantityOut), f = e.fromSite;
+    if (o > 0 && f) { const mi = findMasterItem(f, e.itemName, e.typeBrand, e.length); if (mi) mi.qty += o; }
+    const i = toNumber(e.quantityIn),  t = e.toSite;
+    if (i > 0 && t) { const mi = findMasterItem(t, e.itemName, e.typeBrand, e.length); if (mi) mi.qty = Math.max(0, mi.qty - i); }
+  }
+  function updateStock(r) {
+    const o = toNumber(r.quantityOut), f = r.fromSite;
+    if (o > 0 && f) { const mi = findOrCreateMasterItem(f, r.itemName, r.typeBrand, r.length); if (mi) mi.qty = Math.max(0, mi.qty - o); }
+    const i = toNumber(r.quantityIn),  t = r.toSite;
+    if (i > 0 && t) { const mi = findOrCreateMasterItem(t, r.itemName, r.typeBrand, r.length); if (mi) mi.qty += i; }
+  }
+  function findMasterItem(sN, iN, b, l) {
+    const s = masterSites.find(x => x.name.toLowerCase() === (sN||"").trim().toLowerCase());
+    if (!s) return null;
+    return masterStock.find(i => i.siteId === s.id && i.itemName === iN && (i.brand === b || !b) && (i.length||"") === (l||""));
+  }
+  function findOrCreateMasterItem(sN, iN, b, l) {
+    const s = masterSites.find(x => x.name.toLowerCase() === (sN||"").trim().toLowerCase());
+    if (!s) return null;
+    let item = masterStock.find(i => i.siteId === s.id && i.itemName === iN && i.brand === b && (i.length||"") === (l||""));
+    if (!item) {
+      item = { id: "m-item-" + Date.now() + Math.random(), siteId: s.id, itemName: iN, brand: b, length: l||"", category: "General", qty: 0, condition: "Good" };
+      masterStock.push(item);
+    }
+    return item;
+  }
+
+  /* ── Save Entries ── */
+  function saveDraftRows() {
+    const toSave = draftRows.filter(r => !isRowEmpty(r));
+    if (!toSave.length) return showFeedback("No data to save", "error");
+    const bMap = calculateDraftBalances();
+    for (let r of toSave) {
+      if (!r.date || !r.itemName || (!r.fromSite && !r.toSite)) return showFeedback("Fill required fields (date, item, at least one site)", "error");
+      if (bMap[r.draftId].isError) return showFeedback("Stock balance error — check quantities", "error");
+    }
+    toSave.forEach(r => {
+      if (r.editingId) { const o = savedEntries.find(e => e.id === r.editingId); if (o) reverseStock(o); }
+      updateStock(r);
+      const entry = createEntryFromRow(r, r.editingId);
+      const idx   = savedEntries.findIndex(e => e.id === entry.id);
+      if (idx >= 0) savedEntries[idx] = entry; else savedEntries.push(entry);
+    });
+    persistSavedEntries(); persistMasterData();
+    syncUI();
+    draftRows = [createDraftRow({ selected: true })];
+    showFeedback("Saved successfully");
+  }
+
+  /* ── Report Export ── */
+  function exportReport(fmt) {
+    const type  = document.getElementById("rptType").value;
+    const siteF = document.getElementById("rptSite").value.trim().toLowerCase();
+    const dateF = document.getElementById("rptDate").value;
+    let data = [], headers = [], title = "";
+
+    if (type === "daily") {
+      headers = ["Date","From","To","Item","Out","In","Balance","Remarks"];
+      title   = "DAILY STOCK REPORT";
+      data    = calculateSavedHistoryBalances()
+        .filter(e => (!siteF || (e.fromSite||"").toLowerCase().includes(siteF) || (e.toSite||"").toLowerCase().includes(siteF)) && (!dateF || e.date === dateF))
+        .map(e => [e.date, e.fromSite||"", e.toSite||"", e.itemName, e.quantityOut, e.quantityIn, e.balance, e.remarks||""]);
+    } else if (type === "master") {
+      headers = ["Site","Item","Brand","Qty","Condition","Remarks"];
+      title   = "MASTER STOCK REPORT";
+      data    = masterStock
+        .filter(i => { const s = masterSites.find(x => x.id === i.siteId); return !siteF || (s && s.name.toLowerCase().includes(siteF)); })
+        .map(i   => { const s = masterSites.find(x => x.id === i.siteId); return [s ? s.name : "", i.itemName, i.brand, i.qty, i.condition, i.remarks||""]; });
+    } else {
+      headers = ["Date","Site","Item","Change","Cond","Remarks"];
+      title   = "ADJUSTMENT REPORT";
+      data    = adjustmentHistory
+        .filter(h => (!siteF || (h.siteName||"").toLowerCase().includes(siteF)) && (!dateF || h.date === dateF))
+        .map(h   => [h.date, h.siteName, h.itemName, h.qtyChange, h.condition, h.remarks||""]);
+    }
+
+    if (!data.length) return alert("No data found for the selected filters");
+    if (fmt === "xlsx") {
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Report");
+      XLSX.writeFile(wb, title.replace(/ /g,"_") + ".xlsx");
+    } else {
+      const { jsPDF } = window.jspdf; const doc = new jsPDF("l");
+      doc.text(title, 40, 30); doc.autoTable({ head:[headers], body:data, startY:40 }); doc.save(title.replace(/ /g,"_") + ".pdf");
+    }
+  }
+
+  /* ── Draft Table Input Handler ── */
+  function handleDraftTableInput(e) {
+    const t     = e.target;
+    const field = t.getAttribute("data-field");
+    if (!field) return;
+    const rowEl = t.closest("[data-row-id]") || t.closest("[data-advanced-for]");
+    const rid   = rowEl ? (rowEl.getAttribute("data-row-id") || rowEl.getAttribute("data-advanced-for")) : null;
+    if (!rid) return;
+
+    draftRows = draftRows.map(r => {
+      if (r.draftId !== rid) { if (field === "selected") r.selected = false; return r; }
+      const u = Object.assign({}, r);
+      if (field === "selected") {
+        u.selected = true;
+      } else if (field === "itemName") {
+        u.itemName = t.value; u.serialNumber = ""; u.typeBrand = ""; u.length = "";
+      } else if (field === "serialNumber") {
+        u.serialNumber = t.value;
+        const match = masterStock.find(m => (m.serialNumber||"").trim() === t.value);
+        if (match) {
+          u.itemName = match.itemName; u.typeBrand = match.brand;
+          const site = masterSites.find(s => s.id === match.siteId);
+          if (site) u.fromSite = site.name;
+        }
+      } else if (["quantityIn","quantityOut","missingStock","damageDeduction"].includes(field)) {
+        u[field] = t.value === "" ? "" : String(Math.max(0, Number(t.value)));
+      } else {
+        u[field] = t.value;
+      }
+      return u;
+    });
+    renderDraftRows();
+  }
+
+  /* ── Event Listeners ── */
+  function attachEvents() {
+    /* Tab navigation */
+    document.querySelectorAll(".ms-tab-btn").forEach(b => b.addEventListener("click", () => {
+      document.querySelectorAll(".ms-tab-btn, .ms-tab-content").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      document.getElementById("tab-" + b.dataset.tab).classList.add("active");
+      syncUI();
+    }));
+
+    /* Daily entry actions */
+    elements.addRowBtn.addEventListener("click", () => { draftRows.push(createDraftRow()); renderDraftRows(); });
+    elements.clearSelectedBtn.addEventListener("click", () => {
+      draftRows = draftRows.filter(r => !r.selected || r.editingId);
+      if (!draftRows.length) draftRows = [createDraftRow({ selected: true })];
+      renderDraftRows();
+    });
+    elements.saveEntriesBtn.addEventListener("click", saveDraftRows);
+    elements.draftTableBody.addEventListener("input", handleDraftTableInput);
+    elements.draftTableBody.addEventListener("click", e => {
+      const btn = e.target.closest("[data-action]"); if (!btn) return;
+      const rid = btn.closest("[data-row-id]").getAttribute("data-row-id");
+      if (btn.dataset.action === "toggle-advanced") {
+        draftRows.forEach(x => { if (x.draftId === rid) x.expanded = !x.expanded; });
+        renderDraftRows();
+      }
+      if (btn.dataset.action === "delete-draft") {
+        draftRows = draftRows.filter(x => x.draftId !== rid);
+        if (!draftRows.length) draftRows = [createDraftRow()];
+        renderDraftRows();
+      }
+    });
+
+    /* History actions */
+    elements.historyTableBody.addEventListener("click", e => {
+      const btn = e.target.closest("[data-action]"); if (!btn) return;
+      const eid = btn.closest("[data-entry-id]").getAttribute("data-entry-id");
+      if (btn.dataset.action === "edit-saved") {
+        const ent = savedEntries.find(x => x.id === eid);
+        const dr  = createDraftRow({ editingId: ent.id, ...ent, quantityOut: ent.quantityOut||"", quantityIn: ent.quantityIn||"", selected: true, expanded: true });
+        draftRows = [dr, ...draftRows.filter(x => !isRowEmpty(x))];
+        /* Switch to daily tab */
+        document.querySelectorAll(".ms-tab-btn, .ms-tab-content").forEach(x => x.classList.remove("active"));
+        document.querySelector('.ms-tab-btn[data-tab="entry"]').classList.add("active");
+        document.getElementById("tab-entry").classList.add("active");
+        renderDraftRows();
+        window.scrollTo(0, 0);
+      }
+      if (btn.dataset.action === "delete-saved") {
+        const ent = savedEntries.find(x => x.id === eid);
+        if (confirm("Delete this saved entry? Stock will be reversed.")) {
+          reverseStock(ent);
+          savedEntries = savedEntries.filter(x => x.id !== eid);
+          persistSavedEntries(); persistMasterData(); syncUI();
+        }
+      }
+    });
+
+    elements.historySearch.addEventListener("input", e => { searchQuery = e.target.value.toLowerCase(); renderHistory(); });
+
+    /* Master item form */
+    document.getElementById("showAddItemBtn").addEventListener("click", () => {
+      /* Always switch to Master Control tab first */
+      document.querySelectorAll(".ms-tab-btn, .ms-tab-content").forEach(x => x.classList.remove("active"));
+      document.querySelector('.ms-tab-btn[data-tab="master"]').classList.add("active");
+      document.getElementById("tab-master").classList.add("active");
+      /* Reset form for new item */
+      editingMasterItemId = null;
+      document.getElementById("itemFormTitle").textContent = "Add Master Item";
+      document.getElementById("unlockDescBtn").classList.add("hidden");
+      document.getElementById("masterItemNameSelect").disabled = false;
+      document.getElementById("masterItemSerial").value    = "";
+      document.getElementById("masterItemCategory").value  = "";
+      document.getElementById("masterItemBrand").value     = "";
+      document.getElementById("masterItemQty").value       = "0";
+      document.getElementById("masterItemRemarks").value   = "";
+      elements.masterItemSite.value = "";
+      elements.itemFormContainer.classList.add("show");
+      elements.itemFormContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    document.getElementById("cancelItemBtn").addEventListener("click", () => elements.itemFormContainer.classList.remove("show"));
+    document.getElementById("unlockDescBtn").addEventListener("click", () => {
+      document.getElementById("masterItemNameSelect").disabled = false;
+      document.getElementById("unlockDescBtn").classList.add("hidden");
+    });
+
+    document.getElementById("saveItemBtn").addEventListener("click", () => {
+      const s  = elements.masterItemSite.value;
+      const i  = document.getElementById("masterItemNameSelect").value;
+      const sn = document.getElementById("masterItemSerial").value.trim();
+      if (!s || !i || !sn) return alert("Fill all required fields (*)");
+
+      if (editingMasterItemId) {
+        const m = masterStock.find(x => x.id === editingMasterItemId);
+        if (m) {
+          m.siteId    = s; m.itemName   = i; m.serialNumber = sn;
+          m.brand     = document.getElementById("masterItemBrand").value;
+          m.qty       = toNumber(document.getElementById("masterItemQty").value);
+          m.condition = document.getElementById("masterItemCondition").value;
+          m.remarks   = document.getElementById("masterItemRemarks").value;
+          m.category  = document.getElementById("masterItemCategory").value;
+        }
+      } else {
+        masterStock.push({
+          id: "m-item-" + Date.now(), siteId: s, itemName: i, serialNumber: sn,
+          brand:     document.getElementById("masterItemBrand").value,
+          qty:       toNumber(document.getElementById("masterItemQty").value),
+          condition: document.getElementById("masterItemCondition").value,
+          remarks:   document.getElementById("masterItemRemarks").value,
+          category:  document.getElementById("masterItemCategory").value
+        });
+      }
+      persistMasterData();
+      renderMasterTab();
+      renderDraftRows();
+      updateDatalists();
+      elements.itemFormContainer.classList.remove("show");
+    });
+
+    /* Master stock body actions */
+    elements.masterStockBody.addEventListener("click", e => {
+      const btn = e.target.closest("[data-action]"); if (!btn) return;
+      const mid = btn.dataset.id;
+      if (btn.dataset.action === "edit") {
+        editingMasterItemId = mid;
+        const m = masterStock.find(x => x.id === mid);
+        if (m) {
+          document.getElementById("itemFormTitle").textContent = "Edit Master Item";
+          document.getElementById("unlockDescBtn").classList.remove("hidden");
+          document.getElementById("masterItemNameSelect").value   = m.itemName;
+          document.getElementById("masterItemNameSelect").disabled= true;
+          elements.masterItemSite.value                           = m.siteId;
+          document.getElementById("masterItemSerial").value       = m.serialNumber||"";
+          document.getElementById("masterItemCategory").value     = m.category||"";
+          document.getElementById("masterItemBrand").value        = m.brand||"";
+          document.getElementById("masterItemQty").value          = m.qty;
+          document.getElementById("masterItemCondition").value    = m.condition;
+          document.getElementById("masterItemRemarks").value      = m.remarks||"";
+          elements.itemFormContainer.classList.add("show");
+          elements.itemFormContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+      if (btn.dataset.action === "delete") {
+        if (confirm("Permanently delete this master record? History entries remain but balance calculations may be affected.")) {
+          masterStock = masterStock.filter(x => x.id !== mid);
+          persistMasterData(); renderMasterTab();
+        }
+      }
+    });
+
+    /* Export / Import JSON */
+    document.getElementById("exportJsonBtn").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify({ sites: masterSites, stock: masterStock, entries: savedEntries, adjustments: adjustmentHistory }, null, 2)], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "material_stock_backup.json"; a.click();
+    });
+    document.getElementById("importJsonBtn").addEventListener("click", () => document.getElementById("importJsonInput").click());
+    document.getElementById("importJsonInput").addEventListener("change", e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const d = JSON.parse(ev.target.result);
+          if (d.stock)       masterStock       = d.stock;
+          if (d.entries)     savedEntries      = d.entries;
+          if (d.adjustments) adjustmentHistory = d.adjustments;
+          persistMasterData(); persistSavedEntries(); syncUI();
+          alert("Import successful");
+        } catch { alert("Invalid JSON file"); }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    });
+
+    /* Adjustment actions */
+    document.getElementById("adjAddBtn").addEventListener("click", () => {
+      const id = document.getElementById("adjItemSelect").value;
+      const q  = toNumber(document.getElementById("adjQtyValue").value);
+      if (!id || !q) return;
+      const it   = masterStock.find(x => x.id === id);
+      const site = masterSites.find(s => s.id === it.siteId) || { name: "Unknown" };
+      it.qty += q;
+      adjustmentHistory.unshift({ date: getTodayLocalDate(), siteName: site.name, itemName: it.itemName, qtyChange: q, condition: it.condition, remarks: "Added" });
+      persistMasterData(); syncUI();
+    });
+    document.getElementById("adjRemoveBtn").addEventListener("click", () => {
+      const id = document.getElementById("adjItemSelect").value;
+      const q  = toNumber(document.getElementById("adjQtyValue").value);
+      if (!id || !q) return;
+      const it   = masterStock.find(x => x.id === id);
+      const site = masterSites.find(s => s.id === it.siteId) || { name: "Unknown" };
+      if (it.qty < q) return alert("Insufficient stock for removal");
+      it.qty -= q;
+      adjustmentHistory.unshift({ date: getTodayLocalDate(), siteName: site.name, itemName: it.itemName, qtyChange: -q, condition: it.condition, remarks: "Removed" });
+      persistMasterData(); syncUI();
+    });
+    document.getElementById("saveCondBtn").addEventListener("click", () => {
+      const id = document.getElementById("adjCondItemSelect").value;
+      const c  = document.getElementById("adjCondValue").value;
+      if (!id) return;
+      const it   = masterStock.find(x => x.id === id);
+      const site = masterSites.find(s => s.id === it.siteId) || { name: "Unknown" };
+      adjustmentHistory.unshift({ date: getTodayLocalDate(), siteName: site.name, itemName: it.itemName, qtyChange: 0, condition: c, remarks: "From " + it.condition });
+      it.condition = c;
+      persistMasterData(); syncUI();
+    });
+
+    /* Download menu */
+    document.getElementById("downloadMainBtn").addEventListener("click", () => document.getElementById("downloadMenu").classList.toggle("open"));
+    document.querySelectorAll("[data-format]").forEach(b => b.addEventListener("click", () => {
+      exportReport(b.dataset.format); document.getElementById("downloadMenu").classList.remove("open");
+    }));
+    document.addEventListener("click", e => {
+      if (!e.target.closest(".ms-download-wrap")) document.getElementById("downloadMenu").classList.remove("open");
+      if (!e.target.closest(".ms-loc-wrap")) document.getElementById("locDropdownPanel").classList.remove("open");
+    });
+    document.getElementById("locDropdownBtn").addEventListener("click", e => {
+      e.stopPropagation();
+      document.getElementById("locDropdownPanel").classList.toggle("open");
+    });
+
+    /* Bulk apply */
+    document.getElementById("applyBulkBtn").addEventListener("click", () => {
+      const r = draftRows.find(x => x.selected); if (!r) return;
+      const o = toNumber(document.getElementById("bulkInpOut").value);
+      const i = toNumber(document.getElementById("bulkInpIn").value);
+      if (o) r.quantityOut = String(o);
+      if (i) r.quantityIn  = String(i);
+      renderDraftRows();
+    });
+  }
+
+  /* ── Bootstrap ── */
+  function run() {
+    if (!localStorage.getItem(STORAGE_KEY) && !localStorage.getItem(MASTER_KEY)) {
+      const defaultSites = [
+        { id: "gloc-giga-hq", name: "Giga HQ" },
+        { id: "gloc-mega-site-alpha", name: "Mega Site Alpha" },
+        { id: "gloc-delta-factory", name: "Delta Factory" }
+      ];
+      const defaultStock = [
+        { id: "ms-1", siteId: "gloc-giga-hq", itemName: "Carabiners", brand: "Screw Lock", length: "", category: "General", qty: 120, condition: "Good" },
+        { id: "ms-2", siteId: "gloc-giga-hq", itemName: "Hardness Belt", brand: "Petzl", length: "", category: "General", qty: 35, condition: "Good" },
+        { id: "ms-3", siteId: "gloc-giga-hq", itemName: "Rope IBS", brand: "IBS", length: "200m", category: "General", qty: 15, condition: "Good" },
+        { id: "ms-4", siteId: "gloc-mega-site-alpha", itemName: "Carabiners", brand: "Auto Lock", length: "", category: "General", qty: 70, condition: "Good" },
+        { id: "ms-5", siteId: "gloc-mega-site-alpha", itemName: "Helmet", brand: "Petzl Vertex", length: "", category: "General", qty: 25, condition: "Good" },
+        { id: "ms-6", siteId: "gloc-delta-factory", itemName: "Rope Petzl", brand: "Petzl", length: "100m", category: "General", qty: 10, condition: "Good" }
+      ];
+      const defaultEntries = [
+        {
+          id: "entry-default-1",
+          createdAt: "2026-04-05T10:00:00.000Z",
+          updatedAt: "2026-04-05T10:00:00.000Z",
+          date: "2026-04-05",
+          fromSite: "",
+          toSite: "Giga HQ",
+          itemName: "Carabiners",
+          serialNumber: "SN-C-1001",
+          typeBrand: "Screw Lock",
+          length: "",
+          quantityOut: 0,
+          quantityIn: 200,
+          remarks: "Initial procurement of screw-lock carabiners",
+          workerName: "Store Manager",
+          dateTime: "2026-04-05T10:00:00",
+          missingStock: 0,
+          damageDeduction: 0,
+          approvalBy: "Super Admin"
+        },
+        {
+          id: "entry-default-2",
+          createdAt: "2026-04-10T14:30:00.000Z",
+          updatedAt: "2026-04-10T14:30:00.000Z",
+          date: "2026-04-10",
+          fromSite: "Giga HQ",
+          toSite: "Mega Site Alpha",
+          itemName: "Carabiners",
+          serialNumber: "SN-C-1001",
+          typeBrand: "Screw Lock",
+          length: "",
+          quantityOut: 80,
+          quantityIn: 80,
+          remarks: "Transfer safety gear for field engineers",
+          workerName: "Alice Brown",
+          dateTime: "2026-04-10T14:30:00",
+          missingStock: 0,
+          damageDeduction: 0,
+          approvalBy: "Org1 Admin 1"
+        },
+        {
+          id: "entry-default-3",
+          createdAt: "2026-04-12T16:00:00.000Z",
+          updatedAt: "2026-04-12T16:00:00.000Z",
+          date: "2026-04-12",
+          fromSite: "Mega Site Alpha",
+          toSite: "",
+          itemName: "Carabiners",
+          serialNumber: "SN-C-1001",
+          typeBrand: "Screw Lock",
+          length: "",
+          quantityOut: 10,
+          quantityIn: 0,
+          remarks: "10 carabiners discarded due to wear and tear during site work",
+          workerName: "Bob Johnson",
+          dateTime: "2026-04-12T16:00:00",
+          missingStock: 0,
+          damageDeduction: 1500,
+          approvalBy: "Org1 Admin 2"
+        }
+      ];
+      localStorage.setItem(SITES_KEY, JSON.stringify(defaultSites));
+      localStorage.setItem(MASTER_KEY, JSON.stringify(defaultStock));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultEntries));
+    }
+    loadSavedData();
+    draftRows = [createDraftRow({ selected: true })];
+    elements.todayDisplay.textContent = "Today: " + formatTodayDisplay();
+    attachEvents();
+    loadGlobalLocations().then(() => syncUI());
+  }
+
+  run();
+})();
+</script>
+{% endblock %}

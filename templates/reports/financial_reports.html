@@ -1,0 +1,321 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Financial Summary{% endblock %}
+{% block active_reports_financial %}active{% endblock %}
+{% block header_title %}Financial Summary{% endblock %}
+
+{% block top_filters %}
+<div class="filter-bar" style="display:flex; justify-content:space-between; align-items:center; overflow:visible !important; position:relative; z-index:2000; padding:12px 24px;">
+    <div class="filter-periods" style="display:flex; gap:10px;">
+        <a href="{% url 'reports:index' %}" class="period-tab" style="text-decoration:none;">Detailed Statement</a>
+        <a href="{% url 'reports:financial' %}" class="period-tab active" style="text-decoration:none;">Financial Summary</a>
+    </div>
+    
+    <!-- Repositioned Download Button to Filter Row -->
+    <div style="display:flex; align-items:baseline; gap:15px;">
+        <div style="display:flex; flex-direction:column; gap:4px;">
+             <span style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;">Summary Export</span>
+             <div class="dropdown" style="position:relative; display:inline-block;">
+                <button class="btn btn-primary" style="height:34px; gap:8px; border-radius:8px; display:flex; align-items:center; padding:0 18px; font-size:0.8rem; font-weight:700; cursor:pointer;" onclick="toggleDownloadDropdown()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download Report
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div id="downloadDropdown" class="dropdown-content-fixed" style="display:none; position:absolute; right:0; top:calc(100% + 8px); background:white; border:1px solid #e2e8f0; border-radius:10px; box-shadow:0 12px 30px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1); z-index:9999; min-width:180px; overflow:hidden;">
+                    <a href="javascript:void(0)" onclick="generateReport('excel')" style="display:flex; align-items:center; gap:10px; padding:12px 18px; font-size:0.85rem; color:#1e2d45; text-decoration:none; transition:0.2s; border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Business Excel
+                    </a>
+                    <a href="javascript:void(0)" onclick="generateReport('pdf')" style="display:flex; align-items:center; gap:10px; padding:12px 18px; font-size:0.85rem; color:#1e2d45; text-decoration:none; transition:0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Business PDF
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let selectedPeriod = null;
+
+    function selectCard(card, period) {
+        // Remove selected class from all cards
+        document.querySelectorAll('.fin-card').forEach(c => {
+            c.classList.remove('selected');
+        });
+        
+        // Add selected class to clicked card
+        card.classList.add('selected');
+        selectedPeriod = period;
+    }
+
+    function toggleDownloadDropdown() {
+        const dd = document.getElementById('downloadDropdown');
+        dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+        
+        // Ensure no other parent is clipping this
+        let parent = dd.parentElement;
+        while(parent && parent.classList.contains('main-area') === false) {
+            parent.style.overflow = 'visible';
+            parent = parent.parentElement;
+        }
+    }
+
+    // Close dropdown when clicking outside
+    window.addEventListener('click', function(event) {
+        if (!event.target.closest('.dropdown')) {
+            const dd = document.getElementById('downloadDropdown');
+            if(dd) dd.style.display = 'none';
+        }
+    });
+
+
+    function generateReport(format) {
+        if (!selectedPeriod) {
+            alert('Please select a report section (card) first!');
+            return;
+        }
+        const baseUrl = format === 'excel' ? "{% url 'reports:export_excel' %}" : "{% url 'reports:export_pdf' %}";
+        window.open(`${baseUrl}?period=${selectedPeriod}`, '_blank');
+        document.getElementById('downloadDropdown').style.display = 'none';
+    }
+</script>
+{% endblock %}
+
+{% block content %}
+<style>
+    .fin-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 20px;
+        padding: 5px 0 30px 0;
+    }
+    .fin-card {
+        background: #fff;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        display: flex;
+        flex-direction: column;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        position: relative;
+    }
+    .fin-card:hover { transform: translateY(-4px); border-color: #cbd5e1; }
+    .fin-card.selected {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37,99,235,0.1), 0 10px 15px -3px rgba(0,0,0,0.1);
+        transform: translateY(-4px);
+    }
+    .fin-card.selected::before {
+        content: "";
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 20px;
+        height: 20px;
+        background: #2563eb;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .fin-card.selected::after {
+        content: "✓";
+        position: absolute;
+        top: 10px;
+        right: 14px;
+        color: white;
+        font-size: 12px;
+        font-weight: 900;
+    }
+    [data-theme="dark"] .fin-card { background: #1e293b; border-color: #334155; }
+    [data-theme="dark"] .fin-card.selected { border-color: #2563eb; }
+
+    .fin-card-header { margin-bottom: 24px; }
+    .fin-card-label { font-size: 0.7rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+    .fin-card-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-top: 4px; }
+    [data-theme="dark"] .fin-card-title { color: #f1f5f9; }
+
+    .fin-stat-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 0.85rem; }
+    .fin-stat-name { color: #64748b; font-weight: 500; }
+    .fin-stat-val { font-weight: 700; }
+    .val-positive { color: #10b981; }
+    .val-negative { color: #ef4444; }
+    .val-neutral { color: #334155; }
+    [data-theme="dark"] .val-neutral { color: #cbd5e1; }
+
+    .fin-progress-bar { height: 4px; width: 100%; background: #f1f5f9; border-radius: 10px; margin-top: 16px; overflow: hidden; }
+    .fin-progress-fill { height: 100%; border-radius: 10px; transition: width 0.5s; }
+    [data-theme="dark"] .fin-progress-bar { background: #334155; }
+</style>
+
+<div class="fin-grid">
+    <!-- Daily Report -->
+    <div class="fin-card" onclick="selectCard(this, 'daily')">
+        <div class="fin-card-header">
+            <div class="fin-card-label">Daily Report</div>
+            <div class="fin-card-title">Today – {{ today|date:"l, F j, Y" }}</div>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Income</span>
+            <span class="fin-stat-val val-positive">₹{{ daily.income|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Expenses</span>
+            <span class="fin-stat-val val-negative">₹{{ daily.expense|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:4px; padding-top:12px; border-top:1px solid #f1f5f9;">
+            <span class="fin-stat-name" style="font-weight:700; color:#0f172a;">Net Balance</span>
+            <span class="fin-stat-val {% if daily.balance >= 0 %}val-positive{% else %}val-negative{% endif %}">₹{{ daily.balance|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:auto; font-size:0.75rem;">
+            <span class="fin-stat-name">Transactions</span>
+            <span class="fin-stat-val val-neutral">{{ daily.count }}</span>
+        </div>
+        <div class="fin-progress-bar">
+            <div class="fin-progress-fill" style="width: {% if daily.income > 0 or daily.expense > 0 %}100{% else %}0{% endif %}%; background: #10b981;"></div>
+        </div>
+    </div>
+
+    <!-- Weekly Report -->
+    <div class="fin-card" onclick="selectCard(this, 'weekly')">
+        <div class="fin-card-header">
+            <div class="fin-card-label">Weekly Report</div>
+            <div class="fin-card-title">This Week</div>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Income</span>
+            <span class="fin-stat-val val-positive">₹{{ weekly.income|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Expenses</span>
+            <span class="fin-stat-val val-negative">₹{{ weekly.expense|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:4px; padding-top:12px; border-top:1px solid #f1f5f9;">
+            <span class="fin-stat-name" style="font-weight:700; color:#0f172a;">Net Balance</span>
+            <span class="fin-stat-val {% if weekly.balance >= 0 %}val-positive{% else %}val-negative{% endif %}">₹{{ weekly.balance|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:auto; font-size:0.75rem;">
+            <span class="fin-stat-name">Transactions</span>
+            <span class="fin-stat-val val-neutral">{{ weekly.count }}</span>
+        </div>
+        <div class="fin-progress-bar">
+            <div class="fin-progress-fill" style="width: {% if weekly.income > 0 or weekly.expense > 0 %}100{% else %}0{% endif %}%; background: #10b981;"></div>
+        </div>
+    </div>
+
+    <!-- Monthly Report -->
+    <div class="fin-card" onclick="selectCard(this, 'monthly')">
+        <div class="fin-card-header">
+            <div class="fin-card-label">Monthly Report</div>
+            <div class="fin-card-title">{{ today|date:"M Y" }}</div>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Income</span>
+            <span class="fin-stat-val val-positive">₹{{ monthly.income|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Expenses</span>
+            <span class="fin-stat-val val-negative">₹{{ monthly.expense|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:4px; padding-top:12px; border-top:1px solid #f1f5f9;">
+            <span class="fin-stat-name" style="font-weight:700; color:#0f172a;">Net Balance</span>
+            <span class="fin-stat-val {% if monthly.balance >= 0 %}val-positive{% else %}val-negative{% endif %}">₹{{ monthly.balance|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:auto; font-size:0.75rem;">
+            <span class="fin-stat-name">Transactions</span>
+            <span class="fin-stat-val val-neutral">{{ monthly.count }}</span>
+        </div>
+        <div class="fin-progress-bar">
+            <div class="fin-progress-fill" style="width: {% if monthly.income > 0 or monthly.expense > 0 %}100{% else %}0{% endif %}%; background: #10b981;"></div>
+        </div>
+    </div>
+
+    <!-- Quarterly Report -->
+    <div class="fin-card" onclick="selectCard(this, 'quarterly')">
+        <div class="fin-card-header">
+            <div class="fin-card-label">Quarterly Report</div>
+            <div class="fin-card-title">{{ q_label }}</div>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Income</span>
+            <span class="fin-stat-val val-positive">₹{{ quarterly.income|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Expenses</span>
+            <span class="fin-stat-val val-negative">₹{{ quarterly.expense|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:4px; padding-top:12px; border-top:1px solid #f1f5f9;">
+            <span class="fin-stat-name" style="font-weight:700; color:#0f172a;">Net Balance</span>
+            <span class="fin-stat-val {% if quarterly.balance >= 0 %}val-positive{% else %}val-negative{% endif %}">₹{{ quarterly.balance|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:auto; font-size:0.75rem;">
+            <span class="fin-stat-name">Transactions</span>
+            <span class="fin-stat-val val-neutral">{{ quarterly.count }}</span>
+        </div>
+        <div class="fin-progress-bar">
+            <div class="fin-progress-fill" style="width: {% if quarterly.income > 0 or quarterly.expense > 0 %}100{% else %}0{% endif %}%; background: #10b981;"></div>
+        </div>
+    </div>
+
+    <!-- Half-Yearly Report -->
+    <div class="fin-card" onclick="selectCard(this, 'half-yearly')">
+        <div class="fin-card-header">
+            <div class="fin-card-label">Half-Yearly Report</div>
+            <div class="fin-card-title">{{ h_label }}</div>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Income</span>
+            <span class="fin-stat-val val-positive">₹{{ half_yearly.income|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Expenses</span>
+            <span class="fin-stat-val val-negative">₹{{ half_yearly.expense|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:4px; padding-top:12px; border-top:1px solid #f1f5f9;">
+            <span class="fin-stat-name" style="font-weight:700; color:#0f172a;">Net Balance</span>
+            <span class="fin-stat-val {% if half_yearly.balance >= 0 %}val-positive{% else %}val-negative{% endif %}">₹{{ half_yearly.balance|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:auto; font-size:0.75rem;">
+            <span class="fin-stat-name">Transactions</span>
+            <span class="fin-stat-val val-neutral">{{ half_yearly.count }}</span>
+        </div>
+        <div class="fin-progress-bar">
+            <div class="fin-progress-fill" style="width: {% if half_yearly.income > 0 or half_yearly.expense > 0 %}100{% else %}0{% endif %}%; background: #10b981;"></div>
+        </div>
+    </div>
+
+    <!-- Annual Report -->
+    <div class="fin-card" onclick="selectCard(this, 'yearly')">
+        <div class="fin-card-header">
+            <div class="fin-card-label">Annual Report</div>
+            <div class="fin-card-title">Year {{ year }}</div>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Income</span>
+            <span class="fin-stat-val val-positive">₹{{ annual.income|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row">
+            <span class="fin-stat-name">Expenses</span>
+            <span class="fin-stat-val val-negative">₹{{ annual.expense|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:4px; padding-top:12px; border-top:1px solid #f1f5f9;">
+            <span class="fin-stat-name" style="font-weight:700; color:#0f172a;">Net Balance</span>
+            <span class="fin-stat-val {% if annual.balance >= 0 %}val-positive{% else %}val-negative{% endif %}">₹{{ annual.balance|floatformat:2 }}</span>
+        </div>
+        <div class="fin-stat-row" style="margin-top:auto; font-size:0.75rem;">
+            <span class="fin-stat-name">Transactions</span>
+            <span class="fin-stat-val val-neutral">{{ annual.count }}</span>
+        </div>
+        <div class="fin-progress-bar">
+            <div class="fin-progress-fill" style="width: {% if annual.income > 0 or annual.expense > 0 %}100{% else %}0{% endif %}%; background: #10b981;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -686,7 +686,6 @@
             calcNet();
         }
         // Persist role/level locally for this employee (used on next open)
-        const id = parseInt(document.getElementById('edit-id').value, 10);
         if (!isNaN(id)) {
             employeeLevels[id] = level;
             employeeRoleOverrides[id] = role;

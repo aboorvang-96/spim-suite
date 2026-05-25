@@ -53,6 +53,7 @@ def index(request):
         'recent_txns':      txns.select_related('category').order_by('-date','-created_at')[:8],
         'chart_data':       json.dumps(chart),
         'company':          CompanySettings.get_settings(admin_id),
+        'org_code':         user.admin_id if user.is_admin else None,
     })
 
 

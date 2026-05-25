@@ -1,0 +1,1632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Register</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            flex-wrap: wrap;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 15px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+            min-width: 150px;
+            text-align: center;
+        }
+
+        .tab-button:hover {
+            background: #e9ecef;
+        }
+
+        .tab-button.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #333;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 6px;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="time"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="date"]:focus,
+        input[type="time"]:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-info {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: #2563eb;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            font-size: 13px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+            color: #555;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-present {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-absent {
+            background: #fee2e2;
+            color: #7f1d1d;
+        }
+
+        .status-leave {
+            background: #fef3c7;
+            color: #78350f;
+        }
+
+        .status-halfday {
+            background: #dbeafe;
+            color: #0c2d6b;
+        }
+
+        .status-holiday {
+            background: #e9d5ff;
+            color: #581c87;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .filter-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .summary-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 4px;
+            border-left: 4px solid #667eea;
+        }
+
+        .summary-card h3 {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 8px;
+        }
+
+        .summary-card .value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .modal-footer {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #6ee7b7;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border: 1px solid #fca5a5;
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #0c2d6b;
+            border: 1px solid #93c5fd;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .tab-button {
+                min-width: 120px;
+                font-size: 12px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .content {
+                padding: 15px;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 8px;
+            }
+        }
+
+        /* Bulk attendance table cell inputs */
+        #bulkAttTable td {
+            vertical-align: middle;
+            padding: 8px 6px;
+        }
+        #bulkAttTable select,
+        #bulkAttTable input[type="time"],
+        #bulkAttTable textarea {
+            padding: 5px 7px;
+            font-size: 12px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            background: white;
+            font-family: inherit;
+        }
+        #bulkAttTable select:focus,
+        #bulkAttTable input[type="time"]:focus,
+        #bulkAttTable textarea:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(102,126,234,0.15);
+        }
+        #bulkAttTable tbody tr:hover {
+            background: #f0f4ff;
+        }
+        #bulkAttTable tbody tr td:first-child {
+            background: inherit;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Attendance Register</h1>
+            <p>Field Work Attendance Management System</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('employee')">Employee Master</button>
+            <button class="tab-button" onclick="switchTab('attendance')">Attendance</button>
+            <button class="tab-button" onclick="switchTab('summary')">Summary</button>
+            <button class="tab-button" onclick="switchTab('export')">Export & Import</button>
+        </div>
+
+        <div class="content">
+            <!-- Employee Master Tab -->
+            <div id="employee" class="tab-content active">
+                <div class="section-title">Employee Master</div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Employee ID</label>
+                        <input type="text" id="empId" placeholder="e.g., EMP001">
+                    </div>
+                    <div class="form-group">
+                        <label>Employee Name</label>
+                        <input type="text" id="empName" placeholder="Full Name">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Department</label>
+                        <input type="text" id="empDept" placeholder="e.g., Engineering">
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <input type="text" id="empRole" placeholder="e.g., Site Engineer">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Main Location</label>
+                        <select id="empMainLocation" onchange="updateSiteDropdown()">
+                            <option value="">-- Select Main Location --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Site</label>
+                        <select id="empSite">
+                            <option value="">-- Select Site --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Leave Balance</label>
+                    <input type="text" id="empLeave" placeholder="e.g., 20">
+                </div>
+
+                <div class="button-group">
+                    <button class="btn-primary" onclick="addEmployee()">Add Employee</button>
+                    <button class="btn-secondary" onclick="clearEmployeeForm()">Clear</button>
+                    <button class="btn-info" onclick="exportEmployees()">Export Employees JSON</button>
+                    <button class="btn-info" onclick="document.getElementById('importEmpFile').click()">Import Employees JSON</button>
+                    <input type="file" id="importEmpFile" style="display:none" accept=".json" onchange="importEmployees()">
+                </div>
+
+                <div id="empAlert"></div>
+
+                <div id="empGroupedDisplay" style="margin-top: 20px;"></div>
+            </div>
+
+            <!-- Attendance Entry Tab -->
+            <div id="attendance" class="tab-content">
+                <div class="section-title">Bulk Attendance Entry</div>
+
+                <div class="form-row" style="max-width: 800px;">
+                    <div class="form-group">
+                        <label>Main Location</label>
+                        <select id="attMainLocation" onchange="updateAttSiteDropdown()">
+                            <option value="">-- Select Main Location --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Site</label>
+                        <select id="attSite" onchange="loadBulkAttendanceTable()">
+                            <option value="">-- Select Site --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" id="attDate" onchange="loadBulkAttendanceTable()">
+                    </div>
+                </div>
+
+                <!-- Bulk Table Wrapper -->
+                <div id="bulkAttTableWrapper" style="display:none; margin-top: 20px;">
+                    <div style="display:flex; gap:12px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
+                        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; font-weight:600; color:#555;">
+                            <input type="checkbox" id="selectAllChk" onchange="toggleSelectAll(this)" style="width:auto; cursor:pointer;"> Select All
+                        </label>
+                        <button class="btn-secondary btn-small" onclick="clearAllSelections()">Clear All</button>
+                        <span id="selectedCount" style="font-size:12px; color:#667eea; font-weight:700;"></span>
+                    </div>
+
+                    <div class="table-container" style="max-height:520px; overflow-y:auto; border:1px solid #e9ecef; border-radius:4px;">
+                        <table id="bulkAttTable" style="min-width:1100px;">
+                            <thead style="position:sticky; top:0; z-index:10; background:#f8f9fa;">
+                                <tr>
+                                    <th style="width:40px; text-align:center;">✓</th>
+                                    <th style="width:90px;">Emp ID</th>
+                                    <th style="min-width:140px;">Employee Name</th>
+                                    <th style="width:120px;">Status</th>
+                                    <th style="width:100px;">In Time</th>
+                                    <th style="width:100px;">Out Time</th>
+                                    <th style="min-width:160px;">Working Site</th>
+                                    <th style="min-width:160px;">Remarks Reason</th>
+                                    <th style="min-width:160px;">Remarks Text</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bulkAttBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="button-group" style="margin-top:16px;">
+                        <button class="btn-primary" onclick="saveBulkAttendance()">💾 Save Checked Rows</button>
+                        <button class="btn-secondary" onclick="clearBulkAttendanceForm()">↺ Reset Table</button>
+                    </div>
+                </div>
+
+                <div id="attAlert" style="margin-top:12px;"></div>
+
+                <!-- ── Attendance Records (inline) ─────────────────────── -->
+                <div style="margin-top:32px; border-top:3px solid #667eea; padding-top:20px;">
+                    <div class="section-title" style="margin-bottom:14px;">Attendance Records</div>
+
+                    <div class="filter-section" style="margin-bottom:14px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Filter by Main Location</label>
+                                <input type="text" id="filterMainLocation" placeholder="e.g., Radhapuram" onkeyup="filterAttendance()">
+                            </div>
+                            <div class="form-group">
+                                <label>Filter by Site</label>
+                                <input type="text" id="filterSite" placeholder="e.g., Site A" onkeyup="filterAttendance()">
+                            </div>
+                            <div class="form-group">
+                                <label>Search by Employee ID</label>
+                                <input type="text" id="filterEmpId" placeholder="e.g., EMP001" onkeyup="filterAttendance()">
+                            </div>
+                            <div class="form-group">
+                                <label>Search by Employee Name</label>
+                                <input type="text" id="filterEmpName" placeholder="e.g., John Doe" onkeyup="filterAttendance()">
+                            </div>
+                            <div class="form-group">
+                                <label>Filter by Date</label>
+                                <input type="date" id="filterDate" onchange="filterAttendance()">
+                            </div>
+                        </div>
+                        <div class="button-group" style="margin-top:10px;">
+                            <button class="btn-secondary" onclick="clearFilters()">Clear Filters</button>
+                        </div>
+                    </div>
+
+                    <div class="table-container">
+                        <table id="attendanceTable">
+                            <thead>
+                                <tr>
+                                    <th>S.No</th>
+                                    <th>Main Location</th>
+                                    <th>Site</th>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Date</th>
+                                    <th>Working Site</th>
+                                    <th>Status</th>
+                                    <th>Hours</th>
+                                    <th>Remarks</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attTableBody"></tbody>
+                        </table>
+                        <div id="noAttendance" class="no-data">No attendance records found</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attendance Records Tab (removed — content merged into Attendance tab above) -->
+
+            <!-- Summary Tab -->
+            <div id="summary" class="tab-content">
+                <div class="section-title">Monthly Attendance Summary</div>
+
+                <div id="summaryContainer"></div>
+            </div>
+
+            <!-- Export & Import Tab -->
+            <div id="export" class="tab-content">
+                <div class="section-title">Export & Import Data</div>
+
+                <div style="margin-bottom: 30px;">
+                    <h3 style="font-size: 16px; color: #333; margin-bottom: 15px;">Attendance Export/Import</h3>
+                    <div class="button-group">
+                        <button class="btn-success" onclick="exportAttendanceJSON()">Export Attendance JSON</button>
+                        <button class="btn-success" onclick="exportAttendanceExcel()">Export Attendance Excel</button>
+                        <button class="btn-success" onclick="exportPDF()">Export as PDF</button>
+                        <button class="btn-info" onclick="document.getElementById('importAttFile').click()">Import Attendance JSON</button>
+                        <input type="file" id="importAttFile" style="display:none" accept=".json" onchange="importAttendance()">
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="font-size: 16px; color: #333; margin-bottom: 15px;">Employee Export/Import</h3>
+                    <div class="button-group">
+                        <button class="btn-success" onclick="exportEmployees()">Export Employees JSON</button>
+                        <button class="btn-info" onclick="document.getElementById('importEmpFile2').click()">Import Employees JSON</button>
+                        <input type="file" id="importEmpFile2" style="display:none" accept=".json" onchange="importEmployeesFromExport()">
+                    </div>
+                </div>
+
+                <div id="exportAlert" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Edit Attendance</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Main Location</label>
+                    <input type="text" id="editMainLocation" readonly style="background: #f0f0f0;">
+                </div>
+                <div class="form-group">
+                    <label>Site</label>
+                    <input type="text" id="editSite" readonly style="background: #f0f0f0;">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Employee</label>
+                    <input type="text" id="editEmployee" readonly style="background: #f0f0f0;">
+                </div>
+                <div class="form-group">
+                    <label>Working Site / Daily Location</label>
+                    <input type="text" id="editWorkingSite">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="editDate">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="editStatus">
+                        <option value="Present">Present</option>
+                        <option value="Absent">Absent</option>
+                        <option value="Leave">Leave</option>
+                        <option value="Half Day">Half Day</option>
+                        <option value="Holiday">Holiday</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>In Time</label>
+                    <input type="time" id="editInTime">
+                </div>
+                <div class="form-group">
+                    <label>Out Time</label>
+                    <input type="time" id="editOutTime">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Remarks Reason</label>
+                    <select id="editReason" onchange="updateEditRemarks()">
+                        <option value="">-- Select Reason --</option>
+                        <option value="Late due to site visit">Late due to site visit</option>
+                        <option value="Medical emergency">Medical emergency</option>
+                        <option value="Approved leave">Approved leave</option>
+                        <option value="Client visit">Client visit</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Remarks Text</label>
+                    <textarea id="editRemarks" placeholder="Additional remarks..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button class="btn-primary" onclick="updateAttendance()">Update Attendance</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const EMPLOYEE_KEY = 'employees';
+        const ATTENDANCE_KEY = 'attendance';
+        const LOCATIONS_KEY = 'locations';
+        const SITES_KEY = 'sites';
+        const WORKING_SITES_KEY = 'workingSites';
+        let editingIndex = null;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeLocationSiteDropdowns();
+            updateMainLocationDropdown();
+            updateAttMainLocationDropdown();
+            loadAndDisplayEmployees();
+            loadAttendance();
+            displayAttendance();
+            generateSummary();
+            setTodayDate();
+        });
+
+        // Tab switching
+        function switchTab(tabName) {
+            const contents = document.querySelectorAll('.tab-content');
+            const buttons = document.querySelectorAll('.tab-button');
+
+            contents.forEach(content => content.classList.remove('active'));
+            buttons.forEach(button => button.classList.remove('active'));
+
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+
+            if (tabName === 'summary')    generateSummary();
+            if (tabName === 'attendance') displayAttendance();
+        }
+
+        // Employee functions
+        function addEmployee() {
+            const id = document.getElementById('empId').value.trim();
+            const name = document.getElementById('empName').value.trim();
+            const dept = document.getElementById('empDept').value.trim();
+            const role = document.getElementById('empRole').value.trim();
+            const mainLocation = document.getElementById('empMainLocation').value.trim();
+            const site = document.getElementById('empSite').value.trim();
+            const leave = document.getElementById('empLeave').value.trim() || '0';
+
+            if (!id || !name || !dept || !role || !mainLocation || !site) {
+                showAlert('empAlert', 'Please fill all employee fields', 'error');
+                return;
+            }
+
+            const employees = JSON.parse(localStorage.getItem(EMPLOYEE_KEY) || '[]');
+            if (employees.some(e => e.id === id)) {
+                showAlert('empAlert', 'Employee ID already exists', 'error');
+                return;
+            }
+
+            employees.push({ id, name, dept, role, mainLocation, site, leave });
+            localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(employees));
+
+            showAlert('empAlert', 'Employee added successfully', 'success');
+            clearEmployeeForm();
+            loadAndDisplayEmployees();
+            updateAttMainLocationDropdown();
+        }
+
+        function deleteEmployee(id) {
+            if (!confirm('Are you sure?')) return;
+
+            let employees = JSON.parse(localStorage.getItem(EMPLOYEE_KEY) || '[]');
+            employees = employees.filter(e => e.id !== id);
+            localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(employees));
+
+            showAlert('empAlert', 'Employee deleted', 'success');
+            loadAndDisplayEmployees();
+        }
+
+        function loadEmployees() {
+            return JSON.parse(localStorage.getItem(EMPLOYEE_KEY) || '[]');
+        }
+
+        function loadAndDisplayEmployees() {
+            const employees = loadEmployees();
+            const groupedBySite = {};
+
+            employees.forEach(emp => {
+                if (!groupedBySite[emp.site]) {
+                    groupedBySite[emp.site] = [];
+                }
+                groupedBySite[emp.site].push(emp);
+            });
+
+            const display = document.getElementById('empGroupedDisplay');
+            if (Object.keys(groupedBySite).length === 0) {
+                display.innerHTML = '<div class="no-data">No employees added</div>';
+                return;
+            }
+
+            let html = '';
+            Object.keys(groupedBySite).sort().forEach(site => {
+                html += `<div style="margin-bottom: 25px;">
+                    <h3 style="font-size: 15px; color: #667eea; margin-bottom: 10px; font-weight: 700;">${site}</h3>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Department</th>
+                                    <th>Role</th>
+                                    <th>Leave Balance</th>
+                                    <th>Main Location</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+
+                groupedBySite[site].forEach(emp => {
+                    html += `<tr>
+                        <td>${emp.id}</td>
+                        <td>${emp.name}</td>
+                        <td>${emp.dept}</td>
+                        <td>${emp.role}</td>
+                        <td>${emp.leave}</td>
+                        <td>${emp.mainLocation}</td>
+                        <td><button class="btn-danger btn-small" onclick="deleteEmployee('${emp.id}')">Delete</button></td>
+                    </tr>`;
+                });
+
+                html += `</tbody>
+                        </table>
+                    </div>
+                </div>`;
+            });
+
+            display.innerHTML = html;
+        }
+
+        function initializeLocationSiteDropdowns() {
+            const employees = loadEmployees();
+            const locations = new Set();
+            const sites = new Set();
+
+            employees.forEach(emp => {
+                locations.add(emp.mainLocation);
+                sites.add(emp.site);
+            });
+
+            localStorage.setItem(LOCATIONS_KEY, JSON.stringify(Array.from(locations)));
+            localStorage.setItem(SITES_KEY, JSON.stringify(Array.from(sites)));
+        }
+
+        function updateMainLocationDropdown() {
+            const locations = JSON.parse(localStorage.getItem(LOCATIONS_KEY) || '[]');
+            const select = document.getElementById('empMainLocation');
+            select.innerHTML = '<option value="">-- Select Main Location --</option>';
+            locations.forEach(loc => {
+                select.innerHTML += `<option value="${loc}">${loc}</option>`;
+            });
+            select.innerHTML += '<option value="__add_new">+ Add New Location</option>';
+        }
+
+        function updateSiteDropdown() {
+            const mainLoc = document.getElementById('empMainLocation').value;
+            if (mainLoc === '__add_new') {
+                const newLoc = prompt('Enter new Main Location:');
+                if (newLoc) {
+                    const locations = JSON.parse(localStorage.getItem(LOCATIONS_KEY) || '[]');
+                    if (!locations.includes(newLoc)) {
+                        locations.push(newLoc);
+                        localStorage.setItem(LOCATIONS_KEY, JSON.stringify(locations));
+                    }
+                    updateMainLocationDropdown();
+                    document.getElementById('empMainLocation').value = newLoc;
+                    updateSiteDropdown();
+                } else {
+                    document.getElementById('empMainLocation').value = '';
+                }
+                return;
+            }
+
+            const sites = JSON.parse(localStorage.getItem(SITES_KEY) || '[]');
+            const siteFilteredByLoc = sites.filter(site => {
+                const emps = loadEmployees();
+                return emps.some(e => e.mainLocation === mainLoc && e.site === site);
+            });
+
+            const select = document.getElementById('empSite');
+            select.innerHTML = '<option value="">-- Select Site --</option>';
+            siteFilteredByLoc.forEach(site => {
+                select.innerHTML += `<option value="${site}">${site}</option>`;
+            });
+            select.innerHTML += '<option value="__add_new">+ Add New Site</option>';
+            
+            select.onchange = function() {
+                if (this.value === '__add_new') {
+                    const newSite = prompt('Enter new Site:');
+                    if (newSite) {
+                        const sites = JSON.parse(localStorage.getItem(SITES_KEY) || '[]');
+                        if (!sites.includes(newSite)) {
+                            sites.push(newSite);
+                            localStorage.setItem(SITES_KEY, JSON.stringify(sites));
+                        }
+                        updateSiteDropdown();
+                        document.getElementById('empSite').value = newSite;
+                    } else {
+                        document.getElementById('empSite').value = '';
+                    }
+                }
+            };
+        }
+
+        function clearEmployeeForm() {
+            document.getElementById('empId').value = '';
+            document.getElementById('empName').value = '';
+            document.getElementById('empDept').value = '';
+            document.getElementById('empRole').value = '';
+            document.getElementById('empMainLocation').value = '';
+            document.getElementById('empSite').value = '';
+            document.getElementById('empLeave').value = '';
+            document.getElementById('empAlert').innerHTML = '';
+        }
+
+        function exportEmployees() {
+            const employees = JSON.parse(localStorage.getItem(EMPLOYEE_KEY) || '[]');
+            const dataStr = JSON.stringify(employees, null, 2);
+            downloadJSON(dataStr, 'employees.json');
+        }
+
+        function importEmployees() {
+            const file = document.getElementById('importEmpFile').files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const employees = JSON.parse(e.target.result);
+                    localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(employees));
+                    initializeLocationSiteDropdowns();
+                    updateMainLocationDropdown();
+                    updateAttMainLocationDropdown();
+                    showAlert('empAlert', 'Employees imported successfully', 'success');
+                    loadAndDisplayEmployees();
+                } catch (error) {
+                    showAlert('empAlert', 'Invalid JSON file', 'error');
+                }
+            };
+            reader.readAsText(file);
+            document.getElementById('importEmpFile').value = '';
+        }
+
+        function importEmployeesFromExport() {
+            const file = document.getElementById('importEmpFile2').files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const employees = JSON.parse(e.target.result);
+                    localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(employees));
+                    initializeLocationSiteDropdowns();
+                    updateAttMainLocationDropdown();
+                    showAlert('exportAlert', 'Employees imported successfully', 'success');
+                } catch (error) {
+                    showAlert('exportAlert', 'Invalid JSON file', 'error');
+                }
+            };
+            reader.readAsText(file);
+            document.getElementById('importEmpFile2').value = '';
+        }
+
+        // Attendance functions
+        function setTodayDate() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('attDate').value = today;
+            document.getElementById('editDate').value = today;
+        }
+
+        function updateAttMainLocationDropdown() {
+            const locations = JSON.parse(localStorage.getItem(LOCATIONS_KEY) || '[]');
+            const select = document.getElementById('attMainLocation');
+            select.innerHTML = '<option value="">-- Select Main Location --</option>';
+            locations.forEach(loc => {
+                select.innerHTML += `<option value="${loc}">${loc}</option>`;
+            });
+        }
+
+        function updateAttSiteDropdown() {
+            const mainLoc = document.getElementById('attMainLocation').value;
+            if (!mainLoc) {
+                document.getElementById('attSite').innerHTML = '<option value="">-- Select Site --</option>';
+                document.getElementById('bulkAttTableWrapper').style.display = 'none';
+                return;
+            }
+
+            const employees = loadEmployees();
+            const sitesForLoc = [...new Set(
+                employees.filter(e => e.mainLocation === mainLoc).map(e => e.site)
+            )].sort();
+
+            const select = document.getElementById('attSite');
+            select.innerHTML = '<option value="">-- Select Site --</option>';
+            sitesForLoc.forEach(site => {
+                select.innerHTML += `<option value="${site}">${site}</option>`;
+            });
+            document.getElementById('bulkAttTableWrapper').style.display = 'none';
+        }
+
+        // ── Bulk Attendance Entry ──────────────────────────────────────────────
+
+        function loadWorkingSites() {
+            return JSON.parse(localStorage.getItem(WORKING_SITES_KEY) || '["Client Site","Temporary Field Site","Branch Visit"]');
+        }
+
+        function saveWorkingSiteToMaster(siteName) {
+            const sites = loadWorkingSites();
+            if (!sites.includes(siteName)) {
+                sites.push(siteName);
+                localStorage.setItem(WORKING_SITES_KEY, JSON.stringify(sites));
+            }
+        }
+
+        function buildWorkingSiteOptions(selectedVal) {
+            const sites = loadWorkingSites();
+            let opts = `<option value="">-- Select --</option>`;
+            sites.forEach(s => {
+                opts += `<option value="${s}" ${selectedVal === s ? 'selected' : ''}>${s}</option>`;
+            });
+            opts += `<option value="__add_new">+ Add New Site</option>`;
+            return opts;
+        }
+
+        function loadBulkAttendanceTable() {
+            const mainLoc = document.getElementById('attMainLocation').value;
+            const site    = document.getElementById('attSite').value;
+            const wrapper = document.getElementById('bulkAttTableWrapper');
+
+            if (!mainLoc || !site) {
+                wrapper.style.display = 'none';
+                return;
+            }
+
+            const employees = loadEmployees().filter(emp => emp.site === site);
+            if (employees.length === 0) {
+                wrapper.style.display = 'none';
+                showAlert('attAlert', 'No employees found for selected site.', 'info');
+                return;
+            }
+
+            const tbody = document.getElementById('bulkAttBody');
+            tbody.innerHTML = '';
+
+            employees.forEach((emp, idx) => {
+                const wsOpts = buildWorkingSiteOptions('');
+                const tr = document.createElement('tr');
+                tr.dataset.empId   = emp.id;
+                tr.dataset.empName = emp.name;
+                tr.innerHTML = `
+                    <td style="text-align:center;">
+                        <input type="checkbox" class="rowCheck" onchange="updateSelectedCount()" style="width:auto; cursor:pointer;">
+                    </td>
+                    <td style="font-weight:600; color:#667eea;">${emp.id}</td>
+                    <td>${emp.name}</td>
+                    <td>
+                        <select class="row-status" style="width:100%; min-width:100px;">
+                            <option value="Present" selected>Present</option>
+                            <option value="Absent">Absent</option>
+                            <option value="Leave">Leave</option>
+                            <option value="Half Day">Half Day</option>
+                            <option value="Holiday">Holiday</option>
+                        </select>
+                    </td>
+                    <td><input type="time" class="row-intime" style="width:100%; min-width:88px;"></td>
+                    <td><input type="time" class="row-outtime" style="width:100%; min-width:88px;"></td>
+                    <td>
+                        <select class="row-workingsite" style="width:100%; min-width:130px;" onchange="handleWorkingSiteChange(this)">
+                            ${wsOpts}
+                        </select>
+                        <input type="text" class="row-workingsite-new" placeholder="New site name..."
+                               style="display:none; width:100%; min-width:120px; margin-top:4px;"
+                               onblur="commitNewWorkingSite(this)"
+                               onkeydown="if(event.key==='Enter'){this.blur();}">
+                    </td>
+                    <td>
+                        <select class="row-reason" style="width:100%; min-width:140px;" onchange="autoFillRemarks(this)">
+                            <option value="">-- Select --</option>
+                            <option value="Late due to site visit">Late due to site visit</option>
+                            <option value="Medical emergency">Medical emergency</option>
+                            <option value="Approved leave">Approved leave</option>
+                            <option value="Client visit">Client visit</option>
+                        </select>
+                    </td>
+                    <td>
+                        <textarea class="row-remarks" style="width:100%; min-width:140px; height:50px; resize:vertical;" placeholder="Remarks..."></textarea>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            wrapper.style.display = 'block';
+            document.getElementById('selectAllChk').checked = false;
+            updateSelectedCount();
+        }
+
+        function handleWorkingSiteChange(selectEl) {
+            const td = selectEl.closest('td');
+            const newInput = td.querySelector('.row-workingsite-new');
+            if (selectEl.value === '__add_new') {
+                newInput.style.display = 'block';
+                newInput.value = '';
+                newInput.focus();
+            } else {
+                newInput.style.display = 'none';
+            }
+        }
+
+        function commitNewWorkingSite(inputEl) {
+            const val = inputEl.value.trim();
+            const td = inputEl.closest('td');
+            const sel = td.querySelector('.row-workingsite');
+            if (!val) {
+                sel.value = '';
+                inputEl.style.display = 'none';
+                return;
+            }
+            saveWorkingSiteToMaster(val);
+            // Rebuild all working-site dropdowns in the table to include the new site
+            document.querySelectorAll('#bulkAttBody .row-workingsite').forEach(s => {
+                const current = s.value === '__add_new' ? '' : s.value;
+                s.innerHTML = buildWorkingSiteOptions(current);
+            });
+            sel.value = val;
+            inputEl.style.display = 'none';
+        }
+
+        function autoFillRemarks(selectEl) {
+            const tr = selectEl.closest('tr');
+            const remarksEl = tr.querySelector('.row-remarks');
+            if (selectEl.value) {
+                remarksEl.value = selectEl.value;
+            }
+        }
+
+        function toggleSelectAll(masterChk) {
+            document.querySelectorAll('#bulkAttBody .rowCheck').forEach(chk => {
+                chk.checked = masterChk.checked;
+            });
+            updateSelectedCount();
+        }
+
+        function clearAllSelections() {
+            document.querySelectorAll('#bulkAttBody .rowCheck').forEach(chk => chk.checked = false);
+            document.getElementById('selectAllChk').checked = false;
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const total   = document.querySelectorAll('#bulkAttBody .rowCheck').length;
+            const checked = document.querySelectorAll('#bulkAttBody .rowCheck:checked').length;
+            document.getElementById('selectedCount').textContent = `${checked} / ${total} selected`;
+            // Sync master checkbox
+            const master = document.getElementById('selectAllChk');
+            master.indeterminate = checked > 0 && checked < total;
+            master.checked = total > 0 && checked === total;
+        }
+
+        function saveBulkAttendance() {
+            const mainLocation = document.getElementById('attMainLocation').value.trim();
+            const site         = document.getElementById('attSite').value.trim();
+            const date         = document.getElementById('attDate').value;
+
+            if (!mainLocation) { showAlert('attAlert', 'Please select Main Location', 'error'); return; }
+            if (!site)         { showAlert('attAlert', 'Please select Site', 'error'); return; }
+            if (!date)         { showAlert('attAlert', 'Please select a Date', 'error'); return; }
+
+            const rows = document.querySelectorAll('#bulkAttBody tr');
+            const checked = [...rows].filter(tr => tr.querySelector('.rowCheck').checked);
+
+            if (checked.length === 0) {
+                showAlert('attAlert', 'Please check at least one employee row to save.', 'error');
+                return;
+            }
+
+            let attendance = loadAttendance();
+            let savedCount = 0;
+
+            checked.forEach(tr => {
+                const empId      = tr.dataset.empId;
+                const empName    = tr.dataset.empName;
+                const status     = tr.querySelector('.row-status').value || 'Present';
+                const inTime     = tr.querySelector('.row-intime').value;
+                const outTime    = tr.querySelector('.row-outtime').value;
+                const wsSelect   = tr.querySelector('.row-workingsite');
+                const wsNewInput = tr.querySelector('.row-workingsite-new');
+                let workingSite  = wsSelect.value === '__add_new'
+                                    ? wsNewInput.value.trim()
+                                    : wsSelect.value;
+                const remarksReason = tr.querySelector('.row-reason').value;
+                const remarksText   = tr.querySelector('.row-remarks').value.trim();
+
+                if (workingSite && wsSelect.value === '__add_new') {
+                    saveWorkingSiteToMaster(workingSite);
+                }
+
+                let hours = 0;
+                if (inTime && outTime && status !== 'Absent' && status !== 'Leave' && status !== 'Holiday') {
+                    hours = calculateHours(inTime, outTime);
+                }
+
+                attendance.push({
+                    mainLocation,
+                    site,
+                    empId,
+                    empName,
+                    workingSite: workingSite || '',
+                    date,
+                    inTime:  inTime  || '',
+                    outTime: outTime || '',
+                    status,
+                    remarks: remarksText || remarksReason || '',
+                    remarksReason,
+                    remarksText,
+                    hours
+                });
+                savedCount++;
+            });
+
+            localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
+            showAlert('attAlert', `✅ ${savedCount} attendance record(s) saved successfully.`, 'success');
+            clearBulkAttendanceForm();
+            displayAttendance();
+            generateSummary();
+        }
+
+        function clearBulkAttendanceForm() {
+            document.getElementById('attMainLocation').value = '';
+            document.getElementById('attSite').innerHTML = '<option value="">-- Select Site --</option>';
+            setTodayDate();
+            document.getElementById('bulkAttTableWrapper').style.display = 'none';
+            document.getElementById('bulkAttBody').innerHTML = '';
+            document.getElementById('attAlert').innerHTML = '';
+        }
+
+        function calculateHours(inTime, outTime) {
+            const [inH, inM] = inTime.split(':').map(Number);
+            const [outH, outM] = outTime.split(':').map(Number);
+
+            const inTotalMin = inH * 60 + inM;
+            const outTotalMin = outH * 60 + outM;
+
+            let diffMin = outTotalMin - inTotalMin;
+            if (diffMin < 0) diffMin += 24 * 60;
+
+            return (diffMin / 60).toFixed(2);
+        }
+
+        function loadAttendance() {
+            return JSON.parse(localStorage.getItem(ATTENDANCE_KEY) || '[]');
+        }
+
+        function displayAttendance(dataToDisplay = null) {
+            const allData = loadAttendance();
+            const data = dataToDisplay || allData;
+            const tbody = document.getElementById('attTableBody');
+            const noData = document.getElementById('noAttendance');
+
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                noData.style.display = 'block';
+                return;
+            }
+
+            noData.style.display = 'none';
+            data.forEach((att, displayIndex) => {
+                // Find real index in full array for edit/delete to work correctly when filtered
+                const realIndex = allData.findIndex((a, i) =>
+                    a.empId === att.empId && a.date === att.date && a.site === att.site &&
+                    a.status === att.status && a.inTime === att.inTime
+                );
+                const statusBadge = `<span class="status-badge status-${att.status.toLowerCase().replace(' ', '')}">${att.status}</span>`;
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${displayIndex + 1}</td>
+                        <td>${att.mainLocation}</td>
+                        <td>${att.site}</td>
+                        <td>${att.empId}</td>
+                        <td>${att.empName}</td>
+                        <td>${att.date}</td>
+                        <td>${att.workingSite || '-'}</td>
+                        <td>${statusBadge}</td>
+                        <td>${att.hours || '-'}</td>
+                        <td>${att.remarks || '-'}</td>
+                        <td>
+                            <button class="btn-info btn-small" onclick="editAttendance(${realIndex})">Edit</button>
+                            <button class="btn-danger btn-small" onclick="deleteAttendance(${realIndex})">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function filterAttendance() {
+            const mainLocation = document.getElementById('filterMainLocation').value.toLowerCase();
+            const site = document.getElementById('filterSite').value.toLowerCase();
+            const empId = document.getElementById('filterEmpId').value.toLowerCase();
+            const empName = document.getElementById('filterEmpName').value.toLowerCase();
+            const date = document.getElementById('filterDate').value;
+
+            let data = loadAttendance();
+
+            data = data.filter(att => {
+                const matchLocation = !mainLocation || att.mainLocation.toLowerCase().includes(mainLocation);
+                const matchSite = !site || att.site.toLowerCase().includes(site);
+                const matchId = !empId || att.empId.toLowerCase().includes(empId);
+                const matchName = !empName || att.empName.toLowerCase().includes(empName);
+                const matchDate = !date || att.date === date;
+                return matchLocation && matchSite && matchId && matchName && matchDate;
+            });
+
+            displayAttendance(data);
+        }
+
+        function clearFilters() {
+            document.getElementById('filterMainLocation').value = '';
+            document.getElementById('filterSite').value = '';
+            document.getElementById('filterEmpId').value = '';
+            document.getElementById('filterEmpName').value = '';
+            document.getElementById('filterDate').value = '';
+            displayAttendance();
+        }
+
+        function editAttendance(index) {
+            const att = loadAttendance()[index];
+            if (!att) return;
+            editingIndex = index;
+            document.getElementById('editMainLocation').value = att.mainLocation;
+            document.getElementById('editSite').value = att.site;
+            document.getElementById('editEmployee').value = `${att.empId} - ${att.empName}`;
+            document.getElementById('editWorkingSite').value = att.workingSite || '';
+            document.getElementById('editDate').value = att.date;
+            document.getElementById('editStatus').value = att.status || 'Present';
+            document.getElementById('editInTime').value = att.inTime || '';
+            document.getElementById('editOutTime').value = att.outTime || '';
+            document.getElementById('editRemarks').value = att.remarks || '';
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        function updateEditRemarks() {
+            const reason = document.getElementById('editReason').value;
+            if (reason) {
+                document.getElementById('editRemarks').value = reason;
+            }
+        }
+
+        function updateAttendance() {
+            const date = document.getElementById('editDate').value;
+            const workingSite = document.getElementById('editWorkingSite').value.trim();
+            const status = document.getElementById('editStatus').value || 'Present';
+            const remarks = document.getElementById('editRemarks').value.trim();
+            const inTime = document.getElementById('editInTime').value;
+            const outTime = document.getElementById('editOutTime').value;
+
+            if (!date) {
+                alert('Please select a date');
+                return;
+            }
+
+            if (!workingSite) {
+                alert('Please enter Working Site / Daily Location');
+                return;
+            }
+
+            let hours = 0;
+            if (inTime && outTime && status !== 'Absent' && status !== 'Leave' && status !== 'Holiday') {
+                hours = calculateHours(inTime, outTime);
+            }
+
+            let attendance = loadAttendance();
+            attendance[editingIndex] = {
+                ...attendance[editingIndex],
+                workingSite,
+                date,
+                inTime: inTime || '',
+                outTime: outTime || '',
+                status: status || 'Present',
+                remarks: remarks,
+                hours: hours
+            };
+
+            localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
+            closeEditModal();
+            displayAttendance();
+            alert('Attendance updated successfully');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('active');
+            editingIndex = null;
+        }
+
+        function deleteAttendance(index) {
+            if (!confirm('Are you sure?')) return;
+
+            let attendance = loadAttendance();
+            attendance.splice(index, 1);
+            localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
+
+            displayAttendance();
+            alert('Attendance deleted');
+        }
+
+        // (clearAttendanceForm replaced by clearBulkAttendanceForm above)
+
+        // Summary functions
+        function generateSummary() {
+            const employees = loadEmployees();
+            const attendance = loadAttendance();
+            const container = document.getElementById('summaryContainer');
+
+            if (employees.length === 0) {
+                container.innerHTML = '<div class="no-data">No employees to summarize</div>';
+                return;
+            }
+
+            let html = '';
+            employees.forEach(emp => {
+                const empAttendance = attendance.filter(a => a.empId === emp.id);
+                const summary = {
+                    present: empAttendance.filter(a => a.status === 'Present').length,
+                    absent: empAttendance.filter(a => a.status === 'Absent').length,
+                    leave: empAttendance.filter(a => a.status === 'Leave').length,
+                    halfDay: empAttendance.filter(a => a.status === 'Half Day').length,
+                    holiday: empAttendance.filter(a => a.status === 'Holiday').length
+                };
+
+                html += `
+                    <div style="margin-bottom: 30px; padding: 15px; background: #f8f9fa; border-radius: 4px;">
+                        <h3 style="font-size: 16px; color: #333; margin-bottom: 15px;">${emp.id} - ${emp.name} (${emp.site})</h3>
+                        <div class="summary-grid">
+                            <div class="summary-card">
+                                <h3>Present</h3>
+                                <div class="value" style="color: #10b981;">${summary.present}</div>
+                            </div>
+                            <div class="summary-card">
+                                <h3>Absent</h3>
+                                <div class="value" style="color: #ef4444;">${summary.absent}</div>
+                            </div>
+                            <div class="summary-card">
+                                <h3>Leave</h3>
+                                <div class="value" style="color: #f59e0b;">${summary.leave}</div>
+                            </div>
+                            <div class="summary-card">
+                                <h3>Half Day</h3>
+                                <div class="value" style="color: #3b82f6;">${summary.halfDay}</div>
+                            </div>
+                            <div class="summary-card">
+                                <h3>Holiday</h3>
+                                <div class="value" style="color: #a855f7;">${summary.holiday}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html || '<div class="no-data">No attendance data</div>';
+        }
+
+        // Export functions
+        function exportAttendanceJSON() {
+            const attendance = loadAttendance();
+            const dataStr = JSON.stringify(attendance, null, 2);
+            downloadJSON(dataStr, 'attendance.json');
+        }
+
+        function exportAttendanceExcel() {
+            const attendance = loadAttendance();
+            if (attendance.length === 0) {
+                alert('No attendance records to export');
+                return;
+            }
+
+            const dateGroups = {};
+            attendance.forEach(rec => {
+                if (!dateGroups[rec.date]) dateGroups[rec.date] = [];
+                dateGroups[rec.date].push(rec);
+            });
+
+            const workbook = XLSX.utils.book_new();
+            Object.keys(dateGroups).sort().forEach(date => {
+                const data = dateGroups[date].map(rec => ({
+                    'ID': rec.empId,
+                    'Name': rec.empName,
+                    'Main Location': rec.mainLocation,
+                    'Site': rec.site,
+                    'Working Site': rec.workingSite || '-',
+                    'In-Time': rec.inTime || '-',
+                    'Out-Time': rec.outTime || '-',
+                    'Status': rec.status,
+                    'Hours': rec.hours || '-',
+                    'Remarks': rec.remarks || '-'
+                }));
+
+                const worksheet = XLSX.utils.json_to_sheet(data);
+                XLSX.utils.book_append_sheet(workbook, worksheet, date);
+            });
+
+            XLSX.writeFile(workbook, `attendance_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+
+        function exportPDF() {
+            const filterDate = document.getElementById('filterDate').value;
+            let attendance = loadAttendance();
+
+            if (filterDate) {
+                attendance = attendance.filter(a => a.date === filterDate);
+            }
+
+            if (attendance.length === 0) {
+                alert('No records to export');
+                return;
+            }
+
+            const table = document.getElementById('attendanceTable');
+            const opt = {
+                margin: 10,
+                filename: `attendance_${new Date().toISOString().split('T')[0]}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
+            };
+
+            html2pdf().set(opt).from(table).save();
+        }
+
+        function importAttendance() {
+            const file = document.getElementById('importAttFile').files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const attendance = JSON.parse(e.target.result);
+                    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
+                    showAlert('exportAlert', 'Attendance imported successfully', 'success');
+                    displayAttendance();
+                } catch (error) {
+                    showAlert('exportAlert', 'Invalid JSON file', 'error');
+                }
+            };
+            reader.readAsText(file);
+            document.getElementById('importAttFile').value = '';
+        }
+
+        // Utility functions
+        function downloadJSON(dataStr, filename) {
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function showAlert(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            const className = type === 'success' ? 'alert-success' : type === 'info' ? 'alert-info' : 'alert-error';
+            element.innerHTML = `<div class="alert ${className}">${message}</div>`;
+            setTimeout(() => {
+                element.innerHTML = '';
+            }, 4000);
+        }
+    </script>
+</body>
+</html>

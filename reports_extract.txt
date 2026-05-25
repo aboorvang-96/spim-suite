@@ -1,0 +1,65 @@
+function renderReports() {
+  const all = Store.getTransactions();
+  const periods = ['daily','weekly','monthly','quarterly','half-yearly','yearly'];
+  const grid = $('reports-grid');
+
+  grid.innerHTML = periods.map(p => {
+    const { start, end } = getPeriodRange2(p);
+    const filtered  = all.filter(t => {
+      const dt = new Date(t.date + 'T00:00:00');
+      return dt >= start && dt <= end;
+    });
+    const income  = filtered.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const expense = filtered.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    const balance = income - expense;
+    const ratio   = income ? Math.min(100, Math.round((balance / income) * 100)) : 0;
+    const labels  = { 'daily':'Daily','weekly':'Weekly','monthly':'Monthly','quarterly':'Quarterly','half-yearly':'Half-Yearly','yearly':'Annual' };
+
+    return `<div class="report-card">
+      <div>
+        <div class="report-card-label">${labels[p]} Report</div>
+        <div class="report-card-period">${periodLabel2(p)}</div>
+      </div>
+      <div class="report-stats">
+        <div class="report-stat-row">
+          <span class="report-stat-name">Income</span>
+          <span class="amount-positive">${fmt(income)}</span>
+        </div>
+        <div class="report-stat-row">
+          <span class="report-stat-name">Expenses</span>
+          <span class="amount-negative">${fmt(expense)}</span>
+        </div>
+        <div class="report-stat-row">
+          <span class="report-stat-name">Net Balance</span>
+          <span class="${balance >= 0 ? 'amount-positive' : 'amount-negative'}" style="font-weight:700">${fmt(balance)}</span>
+        </div>
+        <div class="report-stat-row">
+          <span class="report-stat-name">Transactions</span>
+          <span style="font-weight:600;color:#334155">${filtered.length}</span>
+        </div>
+      </div>
+      <div class="report-balance-bar">
+        <div class="report-balance-fill" style="width:${Math.max(0, ratio)}%;background:${balance >= 0 ? '#16a34a' : '#dc2626'}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function getPeriodRange2(p) {
+  // Same as getPeriodRange but ignoring State (for reports view)
+  const s = State;
+  const savedPeriod = s.period;
+  s.period = p;
+  const r = getPeriodRange(p);
+  s.period = savedPeriod;
+  return r;
+}
+
+function periodLabel2(p) {
+  const savedPeriod = State.period;
+  State.period = p;
+  const lbl = periodLabel(p);
+  State.period = savedPeriod;
+  return lbl;
+}
+

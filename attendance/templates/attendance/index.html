@@ -1,0 +1,1427 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Attendance Register{% endblock %}
+{% block active_attendance %}active{% endblock %}
+
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+/* ── Layout ── */
+.att-wrap { width: 100%; }
+
+
+.tabs-nav {
+    display: flex;
+    border-bottom: 2px solid #e9ecef;
+    margin-bottom: 1rem;
+    background: #fff;
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+}
+.tab-link {
+    flex: 1; text-align: center;
+    padding: 0.65rem 1rem;
+    font-weight: 600; font-size: 0.84rem;
+    color: #666; cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s; background: transparent;
+}
+.tab-link:hover { color: #333; background: #f8f9fa; }
+.tab-link.active {
+    color: #fff;
+    background: #2563eb;
+    border-bottom-color: #2563eb;
+}
+
+.att-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+}
+.att-card-title {
+    font-size: 0.92rem; font-weight: 700; color: #1e293b;
+    margin: 0 0 0.8rem; padding-bottom: 0.45rem;
+    border-bottom: 2px solid #2563eb;
+}
+
+/* ── Top controls ── */
+.top-controls {
+    display: flex; gap: 0.75rem; flex-wrap: wrap;
+    align-items: flex-end; margin-bottom: 0.85rem;
+}
+.top-controls .fg { flex: 0 0 220px; }
+.top-controls .fg label {
+    display: block; font-size: 0.68rem; font-weight: 600;
+    color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.04em; margin-bottom: 0.25rem;
+}
+
+/* ── Toolbar ── */
+.bulk-toolbar {
+    display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;
+    padding: 0.45rem 0.75rem;
+    background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 6px; margin-bottom: 0.5rem;
+}
+.bulk-toolbar label {
+    font-size: 0.77rem; font-weight: 600; color: #475569;
+    display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; cursor: pointer;
+}
+
+/* ── Attendance table ── */
+.att-table-wrap { border: 1px solid #e2e8f0; border-radius: 6px; overflow: auto; max-height: 540px; }
+.att-table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 0.8rem; }
+.att-table thead { background: #f8fafc; position: sticky; top: 0; z-index: 5; }
+.att-table th {
+    padding: 0.5rem 0.6rem; text-align: left;
+    font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.03em; color: #64748b;
+    border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+}
+.att-table td {
+    padding: 0.45rem 0.6rem; color: #475569;
+    border-bottom: 1px solid #f1f5f9; vertical-align: middle;
+}
+.att-table tbody tr:hover td { background: #f4f7ff; }
+.att-table .form-select, .att-table .form-input, .att-table textarea {
+    font-size: 0.75rem; padding: 0.3rem 0.4rem;
+    width: 100%; min-width: 88px;
+}
+.att-table textarea { height: 30px; min-height: 30px; resize: vertical; }
+
+/* ── Emp ID / Name cell ── */
+.emp-chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-weight: 600; font-size: 0.8rem; color: #4f46e5;
+    cursor: pointer; white-space: nowrap;
+    padding: 0.2rem 0.45rem;
+    border-radius: 5px; border: 1px solid transparent;
+    transition: all 0.15s;
+}
+.emp-chip:hover {
+    background: #eef2ff; border-color: #c7d2fe;
+    text-decoration: underline;
+}
+.emp-chip svg { flex-shrink: 0; }
+
+/* ── Status badges ── */
+.sb {
+    display: inline-block; padding: 0.15rem 0.5rem;
+    border-radius: 10px; font-size: 0.68rem; font-weight: 700;
+}
+.sb-present   { background: #d1fae5; color: #065f46; }
+.sb-absent    { background: #fee2e2; color: #7f1d1d; }
+.sb-leave     { background: #fef3c7; color: #78350f; }
+.sb-halfday   { background: #dbeafe; color: #0c2d6b; }
+.sb-holiday   { background: #e9d5ff; color: #581c87; }
+.sb-weeklyoff { background: #e2e8f0; color: #1e293b; }
+
+/* ── Summary table ── */
+.sum-filters {
+    display: flex; gap: 0.65rem; flex-wrap: wrap;
+    align-items: flex-end; margin-bottom: 0.85rem;
+}
+.sum-filters .fg { flex: 0 0 180px; }
+.sum-filters .fg label {
+    display: block; font-size: 0.68rem; font-weight: 600;
+    color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.04em; margin-bottom: 0.25rem;
+}
+
+/* ── Employee Detail Drawer ── */
+.emp-drawer-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(15,23,42,0.45); z-index: 900;
+    animation: fadeIn 0.2s ease;
+}
+.emp-drawer-overlay.open { display: block; }
+.emp-drawer {
+    position: fixed; top: 0; right: -760px; bottom: 0;
+    width: min(760px, 100vw);
+    background: #fff; z-index: 901;
+    display: flex; flex-direction: column;
+    box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+    transition: right 0.3s cubic-bezier(0.4,0,0.2,1);
+    overflow: hidden;
+}
+.emp-drawer.open { right: 0; }
+
+.drawer-header {
+    padding: 1rem 1.25rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+}
+.drawer-header h2 { font-size: 1.05rem; font-weight: 700; margin: 0; }
+.drawer-header .sub { font-size: 0.78rem; opacity: 0.88; }
+.drawer-close {
+    background: rgba(255,255,255,0.2); border: none;
+    color: #fff; border-radius: 6px; cursor: pointer;
+    padding: 0.35rem 0.55rem; font-size: 1rem; line-height: 1;
+    transition: background 0.15s;
+}
+.drawer-close:hover { background: rgba(255,255,255,0.35); }
+
+.drawer-cycle-bar {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.65rem 1.25rem;
+    background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+}
+.drawer-cycle-bar label { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.drawer-body {
+    flex: 1; overflow-y: auto; padding: 1rem 1.25rem;
+}
+
+/* Summary KPIs */
+.emp-kpi-row {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem;
+    margin-bottom: 1rem;
+}
+.emp-kpi {
+    background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 7px; padding: 0.55rem 0.6rem; text-align: center;
+}
+.emp-kpi .val { font-size: 1.3rem; font-weight: 800; color: #1e293b; line-height: 1; }
+.emp-kpi .lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; margin-top: 0.2rem; }
+.kpi-present .val { color: #059669; }
+.kpi-leave   .val { color: #d97706; }
+.kpi-holiday .val { color: #7c3aed; }
+.kpi-weeklyoff .val { color: #475569; }
+.kpi-halfday .val { color: #2563eb; }
+
+/* Calendar */
+.cal-section { margin-bottom: 1rem; }
+.cal-section h4 { font-size: 0.8rem; font-weight: 700; color: #1e293b; margin: 0 0 0.6rem; }
+.cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+}
+.cal-hdr {
+    text-align: center; font-size: 0.62rem; font-weight: 700;
+    color: #94a3b8; text-transform: uppercase; padding: 0.2rem 0;
+}
+.cal-day {
+    border-radius: 5px; padding: 0.3rem 0.25rem;
+    text-align: center; min-height: 62px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px;
+    font-size: 0.72rem; border: 1px solid transparent;
+}
+.cal-day .dn { font-weight: 700; font-size: 0.8rem; line-height: 1; }
+.cal-day .ds { font-size: 0.58rem; margin-top: 2px; font-weight: 600; line-height: 1.2; }
+.cal-day .dc { font-size: 0.57rem; font-weight: 700; margin-top: 2px; opacity: 0.85; line-height: 1; white-space: nowrap; }
+.cal-empty { background: transparent; border-color: transparent; min-height: 62px; }
+.cal-present  { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+.cal-leave    { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+.cal-holiday  { background: #e9d5ff; border-color: #c4b5fd; color: #5b21b6; }
+.cal-weeklyoff{ background: #e2e8f0; border-color: #cbd5e1; color: #334155; }
+.cal-halfday  { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+.cal-none     { background: #f8fafc; border-color: #e2e8f0; color: #94a3b8; }
+.cal-today    { box-shadow: 0 0 0 2px #667eea; }
+
+.cal-total {
+    margin-top: 0.6rem; text-align: right;
+    font-size: 0.8rem; font-weight: 700; color: #059669;
+    padding: 0.4rem 0.5rem;
+    background: #f0fdf4; border: 1px solid #bbf7d0;
+    border-radius: 6px;
+}
+
+/* Download dropdown in drawer */
+.dl-wrap { position: relative; }
+.dl-btn {
+    background: rgba(255,255,255,0.2); border: none;
+    color: #fff; border-radius: 6px; cursor: pointer;
+    padding: 0.35rem 0.65rem; font-size: 0.78rem; font-weight: 600; line-height: 1;
+    transition: background 0.15s; display: flex; align-items: center; gap: 0.3rem;
+}
+.dl-btn:hover { background: rgba(255,255,255,0.35); }
+.dl-menu {
+    display: none; position: absolute; right: 0; top: calc(100% + 4px);
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 7px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); min-width: 160px; z-index: 920; overflow: hidden;
+}
+.dl-menu.open { display: block; }
+.dl-menu button {
+    width: 100%; background: none; border: none; padding: 0.55rem 0.85rem;
+    text-align: left; font-size: 0.8rem; font-weight: 600; color: #334155; cursor: pointer;
+    display: flex; align-items: center; gap: 0.5rem; transition: background 0.1s;
+}
+.dl-menu button:hover { background: #f4f7ff; color: #4f46e5; }
+
+/* Date-drilldown modal */
+.dd-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(15,23,42,0.5); z-index: 950;
+}
+.dd-overlay.open { display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.dd-modal {
+    background: #fff; border-radius: 10px; width: 100%; max-width: 760px;
+    max-height: 85vh; display: flex; flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.dd-modal-header {
+    padding: 0.9rem 1.1rem; background: linear-gradient(135deg,#667eea,#764ba2);
+    color: #fff; border-radius: 10px 10px 0 0;
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.dd-modal-header h3 { font-size: 0.95rem; font-weight: 700; margin: 0; }
+.dd-modal-body { flex: 1; overflow-y: auto; padding: 1rem 1.1rem; }
+.dd-group-title {
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: #64748b; margin: 0.75rem 0 0.35rem;
+}
+.dd-group-title:first-child { margin-top: 0; }
+
+/* Clickable date in summary */
+.sum-date-link {
+    cursor: pointer; color: #4f46e5; font-weight: 700;
+    text-decoration: underline; text-underline-offset: 2px;
+}
+.sum-date-link:hover { color: #3730a3; }
+
+/* Alerts */
+.alert-badge { padding: 0.6rem 0.85rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; }
+.alert-success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+.alert-error   { background: #fee2e2; color: #7f1d1d; border: 1px solid #fca5a5; }
+.alert-info    { background: #dbeafe; color: #0c2d6b; border: 1px solid #93c5fd; }
+
+/* Edit modal */
+.modal-overlay { display: none; }
+.modal-overlay.active { display: flex; }
+
+.no-data { text-align: center; padding: 2rem; color: #94a3b8; font-size: 0.83rem; }
+.hidden { display: none !important; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+@media (max-width: 640px) {
+    .emp-kpi-row { grid-template-columns: repeat(3, 1fr); }
+    .top-controls .fg { flex: 1 1 160px; }
+}
+</style>
+{% endblock %}
+
+{% block header_title %}Attendance Register{% endblock %}
+{% block header_actions %}{% endblock %}
+
+{% block content %}
+<div class="att-wrap">
+
+    <div class="tabs-nav">
+        <div class="tab-link active" onclick="switchTab('attendance', this)">Attendance</div>
+        <div class="tab-link" onclick="switchTab('summary', this)">Summary</div>
+    </div>
+
+    <!-- ═══════════ Attendance Tab ═══════════ -->
+    <div id="tab-attendance" class="tab-content">
+        <div class="att-card">
+            <h3 class="att-card-title">Bulk Attendance Entry</h3>
+
+            <div class="top-controls">
+                <div class="fg">
+                    <label for="attEmployee">Select Employee</label>
+                    <select id="attEmployee" class="form-select w-full" onchange="loadBulkAttendanceTable()">
+                        <option value="">-- All Employees (Full List) --</option>
+                    </select>
+                </div>
+                <div class="fg">
+                    <label for="attLocSite">Location / Site</label>
+                    <select id="attLocSite" class="form-select w-full" onchange="loadBulkAttendanceTable()">
+                        <option value="">-- All Locations/Sites --</option>
+                    </select>
+                </div>
+                <div class="fg">
+                    <label for="attDate">Date</label>
+                    <input type="date" id="attDate" class="form-input w-full" onchange="syncRowDates()">
+                </div>
+            </div>
+
+            <div id="bulkAttTableWrapper">
+                <div class="bulk-toolbar">
+                    <label>
+                        <input type="checkbox" id="selectAllChk" onchange="toggleSelectAll(this)"> Select All
+                    </label>
+                    <span id="selectedCount" class="badge badge-info">0 / 0 selected</span>
+                    <div style="flex:1"></div>
+                    <button type="button" id="markPresentBtn" class="btn btn-secondary btn-sm" onclick="markSelectedPresent()" disabled style="opacity:0.45; cursor:not-allowed;">Mark Present</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearAllSelections()">Clear Selection</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="saveBulkAttendance()">Save Selected</button>
+                </div>
+
+                <div class="att-table-wrap">
+                    <table class="att-table" id="bulkAttTable">
+                        <thead>
+                            <tr>
+                                <th style="width:36px; text-align:center;">
+                                    <input type="checkbox" id="headerCheck" onchange="toggleSelectAll(this)" aria-label="Select all">
+                                </th>
+                                <th style="min-width:180px;">Emp ID / Name</th>
+                                <th style="min-width:170px;">Location / Site</th>
+                                <th style="min-width:160px;">Working Site</th>
+                                <th style="width:135px;">Date</th>
+                                <th style="width:128px;">Status</th>
+                                <th>Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulkAttBody"></tbody>
+                    </table>
+                    <div id="noEmployees" class="no-data hidden">No employees found. Please add employees in the Employees module first.</div>
+                </div>
+            </div>
+
+            <div id="attAlert" class="mt-3"></div>
+        </div>
+    </div>
+
+    <!-- ═══════════ Summary Tab ═══════════ -->
+    <div id="tab-summary" class="tab-content hidden">
+        <div class="att-card">
+            <h3 class="att-card-title">Daily Attendance Summary</h3>
+
+            <div class="sum-filters">
+                <div class="fg">
+                    <label for="sumFromDate">From Date</label>
+                    <input type="date" id="sumFromDate" class="form-input w-full" onchange="generateSummary()">
+                </div>
+                <div class="fg">
+                    <label for="sumToDate">To Date</label>
+                    <input type="date" id="sumToDate" class="form-input w-full" onchange="generateSummary()">
+                </div>
+                <div class="fg">
+                    <label for="sumEmpId">Employee ID</label>
+                    <input type="text" id="sumEmpId" class="form-input w-full" placeholder="e.g. SPIM001" oninput="generateSummary()">
+                </div>
+                <div class="fg">
+                    <label for="sumEmpName">Employee Name</label>
+                    <input type="text" id="sumEmpName" class="form-input w-full" placeholder="Search name…" oninput="generateSummary()">
+                </div>
+                <div style="display:flex; align-items:flex-end;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearSummaryFilters()">Clear</button>
+                </div>
+            </div>
+
+            <div class="att-table-wrap">
+                <table class="att-table" id="summaryTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Present</th>
+                            <th>Absent</th>
+                            <th>Leave</th>
+                            <th>Holiday</th>
+                            <th>Weekly Off</th>
+                            <th>Half Day</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryBody"></tbody>
+                </table>
+                <div id="noSummary" class="no-data hidden">No attendance data found for the selected range</div>
+            </div>
+        </div>
+    </div>
+
+
+</div><!-- /.att-wrap -->
+
+<!-- ═══════════ Employee Detail Drawer ═══════════ -->
+<div id="empDrawerOverlay" class="emp-drawer-overlay" onclick="closeEmpDrawer()"></div>
+<div id="empDrawer" class="emp-drawer">
+    <div class="drawer-header">
+        <div>
+            <h2 id="drawerEmpName">Employee Detail</h2>
+            <div class="sub" id="drawerEmpMeta"></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+            <div class="dl-wrap">
+                <button class="dl-btn" onclick="toggleDlMenu()" aria-label="Download">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Export
+                </button>
+                <div id="dlMenu" class="dl-menu">
+                    <button onclick="exportDrawerPDF();toggleDlMenu()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Export PDF
+                    </button>
+                    <button onclick="exportDrawerExcel();toggleDlMenu()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Export Excel (.xlsx)
+                    </button>
+                </div>
+            </div>
+            <button class="drawer-close" onclick="closeEmpDrawer()" aria-label="Close">&#x2715;</button>
+        </div>
+    </div>
+
+    <div class="drawer-cycle-bar">
+        <label>Attendance Cycle (26 → 25):</label>
+        <select id="drawerCycleSelect" class="form-select" style="max-width:230px; font-size:0.8rem;" onchange="renderDrawerContent()"></select>
+    </div>
+
+    <div class="drawer-body">
+        <!-- KPI Row -->
+        <div class="emp-kpi-row" id="drawerKpis"></div>
+
+        <!-- Calendar -->
+        <div class="cal-section">
+            <h4>Monthly Calendar</h4>
+            <div class="cal-grid" id="drawerCal"></div>
+            <div id="drawerCalTotal" class="cal-total hidden"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════ Edit Modal ═══════════ -->
+<div id="editModal" class="modal-overlay fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[1000] items-center justify-center">
+    <div class="att-card" style="width:100%; max-width:520px; margin:1rem; z-index:1001;">
+        <h3 class="att-card-title">Edit Attendance Record</h3>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <div class="form-group">
+                <label class="text-xs font-semibold text-slate-600">Employee</label>
+                <input type="text" id="editEmployee" class="form-input w-full bg-slate-50" readonly>
+            </div>
+            <div class="form-group">
+                <label class="text-xs font-semibold text-slate-600">Working Site</label>
+                <input type="text" id="editWorkingSite" class="form-input w-full">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <div class="form-group">
+                <label class="text-xs font-semibold text-slate-600">Date</label>
+                <input type="date" id="editDate" class="form-input w-full">
+            </div>
+            <div class="form-group">
+                <label class="text-xs font-semibold text-slate-600">Status</label>
+                <select id="editStatus" class="form-select w-full">
+                    <option value="Present">Present</option>
+                    <option value="Leave">Leave</option>
+                    <option value="Holiday">Holiday</option>
+                    <option value="Weekly Off">Weekly Off</option>
+                    <option value="Half Day">Half Day</option>
+                    <option value="No Week Off">No Week Off</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group mb-3">
+            <label class="text-xs font-semibold text-slate-600">Remarks</label>
+            <textarea id="editRemarks" class="form-input w-full" rows="2" placeholder="Additional details..."></textarea>
+        </div>
+        <div class="flex justify-end gap-2">
+            <button class="btn btn-secondary btn-sm" onclick="closeEditModal()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="updateAttendance()">Update</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════ Date Drilldown Modal ═══════════ -->
+<div id="ddOverlay" class="dd-overlay" onclick="closeDateDetail()">
+    <div class="dd-modal" onclick="event.stopPropagation()">
+        <div class="dd-modal-header">
+            <h3 id="ddTitle">Attendance Detail</h3>
+            <button class="drawer-close" onclick="closeDateDetail()" aria-label="Close">&#x2715;</button>
+        </div>
+        <div class="dd-modal-body" id="ddBody"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ═══════════════════════════════════════════════
+   CONSTANTS & STATE
+═══════════════════════════════════════════════ */
+const EMPLOYEE_KEY    = 'employees';
+const ATTENDANCE_KEY  = 'attendance';
+const LOCATIONS_KEY   = 'locations';
+const SITES_KEY       = 'sites';
+const WORKING_SITES_KEY = 'workingSites';
+const STATUS_OPTIONS  = ['Present', 'Leave', 'Holiday', 'Weekly Off', 'Half Day', 'No Week Off'];
+const DAY_NAMES       = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTH_NAMES     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+let editingIndex  = null;
+let drawerEmpId   = null;
+let drawerEmpData = null;
+
+/* ═══════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════ */
+/* ─── CSRF helper (reads the cookie Django sets) ─── */
+function getCsrfToken() {
+    var match = document.cookie.match(/csrftoken=([^;]+)/);
+    return match ? match[1] : '';
+}
+
+/* ─── Map DB status back to UI display strings ─── */
+var DB_STATUS_DISPLAY = {
+    'present':  'Present',
+    'absent':   'Absent',
+    'half_day': 'Half Day',
+    'leave':    'Leave'
+};
+
+/* ─── Sync a list of {empId, date, status} records to the backend ─── */
+function syncRecordsToServer(records) {
+    if (!records || !records.length) return;
+    fetch('/attendance/save/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(records)
+    }).catch(function() {});
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const raw = '{{ employees_json|safe }}';
+    try {
+        const parsed = JSON.parse(raw || '[]');
+        if (Array.isArray(parsed) && parsed.length > 0)
+            localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(parsed));
+    } catch (e) {}
+
+    syncCentralLocationSites();
+    updateEmployeeDropdown();
+    updateLocSiteDropdown();
+    setTodayDate();
+
+    /* ── Load shared DB records so all linked admins share visibility ── */
+    (function loadFromServer() {
+        var today = todayStr();
+        var firstOfMonth = today.slice(0, 7) + '-01';
+        fetch('/attendance/load/?date_from=' + firstOfMonth, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            /* DB is authoritative for the loaded date range.
+               Drop all local records from firstOfMonth onwards, then
+               repopulate from DB — ensures every linked admin in the same
+               organisation sees the same attendance data on page load. */
+            var existing = loadAttendance();
+            existing = existing.filter(function(r) { return r.date < firstOfMonth; });
+            (data.records || []).forEach(function(r) {
+                var hrs = r.status === 'Present' ? '8.00' : (r.status === 'Half Day' ? '4.00' : '0.00');
+                existing.push({
+                    empId: r.empId, empName: r.empName || '',
+                    mainLocation: '', site: '', workingSite: '',
+                    date: r.date, status: r.status, remarks: '', hours: hrs, baseSalary: 0
+                });
+            });
+            localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(existing));
+            loadBulkAttendanceTable();
+        })
+        .catch(function() { loadBulkAttendanceTable(); });
+    })();
+});
+
+/* ═══════════════════════════════════════════════
+   TAB SWITCHING
+═══════════════════════════════════════════════ */
+function switchTab(tabName, el) {
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    document.querySelectorAll('.tab-link').forEach(l => l.classList.remove('active'));
+    document.getElementById('tab-' + tabName).classList.remove('hidden');
+    el.classList.add('active');
+    if (tabName === 'summary') generateSummary();
+}
+
+/* ═══════════════════════════════════════════════
+   DATA HELPERS
+═══════════════════════════════════════════════ */
+function setTodayDate() {
+    const today = todayStr();
+    const d = document.getElementById('attDate');
+    if (d) d.value = today;
+}
+
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+function loadEmployees() {
+    return JSON.parse(localStorage.getItem(EMPLOYEE_KEY) || '[]');
+}
+function loadAttendance() {
+    return JSON.parse(localStorage.getItem(ATTENDANCE_KEY) || '[]');
+}
+
+/* ═══════════════════════════════════════════════
+   CENTRALIZED LOCATION / SITE
+═══════════════════════════════════════════════ */
+function syncCentralLocationSites() {
+    const employees = loadEmployees();
+    const locSet  = new Set(JSON.parse(localStorage.getItem(LOCATIONS_KEY) || '[]'));
+    const siteSet = new Set(JSON.parse(localStorage.getItem(SITES_KEY) || '[]'));
+    employees.forEach(e => {
+        if (e.mainLocation) locSet.add(e.mainLocation);
+        if (e.site) siteSet.add(e.site);
+    });
+    localStorage.setItem(LOCATIONS_KEY, JSON.stringify([...locSet].filter(Boolean)));
+    localStorage.setItem(SITES_KEY,     JSON.stringify([...siteSet].filter(Boolean)));
+}
+function getCentralLocations() { return JSON.parse(localStorage.getItem(LOCATIONS_KEY) || '[]'); }
+function getCentralSites()     { return JSON.parse(localStorage.getItem(SITES_KEY) || '[]'); }
+function addCentralLocation(v) {
+    const a = getCentralLocations();
+    if (v && !a.includes(v)) { a.push(v); localStorage.setItem(LOCATIONS_KEY, JSON.stringify(a)); }
+}
+function addCentralSite(v) {
+    const a = getCentralSites();
+    if (v && !a.includes(v)) { a.push(v); localStorage.setItem(SITES_KEY, JSON.stringify(a)); }
+}
+function loadWorkingSites() {
+    return JSON.parse(localStorage.getItem(WORKING_SITES_KEY) || '["Client Site","Temporary Field Site","Branch Visit"]');
+}
+function addWorkingSite(v) {
+    const a = loadWorkingSites();
+    if (v && !a.includes(v)) { a.push(v); localStorage.setItem(WORKING_SITES_KEY, JSON.stringify(a)); }
+}
+
+/* ═══════════════════════════════════════════════
+   DROPDOWN BUILDERS
+═══════════════════════════════════════════════ */
+function buildLocationSiteOptions(selLoc, selSite) {
+    const employees = loadEmployees();
+    const pairs = new Set();
+    employees.forEach(e => {
+        if (e.mainLocation || e.site) pairs.add((e.mainLocation||'') + '|' + (e.site||''));
+    });
+    getCentralLocations().forEach(l => pairs.add(l + '|'));
+    getCentralSites().forEach(s => pairs.add('|' + s));
+
+    let opts = '<option value="">-- Select --</option>';
+    [...pairs].sort().forEach(p => {
+        const [loc, site] = p.split('|');
+        const label = (loc && site) ? loc + ' / ' + site : (loc || site);
+        const isSel = (loc === (selLoc||'') && site === (selSite||''));
+        opts += `<option value="${p}" ${isSel ? 'selected' : ''}>${label}</option>`;
+    });
+    opts += '<option value="__add_new">+ Add New Location/Site</option>';
+    return opts;
+}
+
+function buildWorkingSiteOptions(selVal) {
+    const sites = loadWorkingSites();
+    let opts = '<option value="">-- Select --</option>';
+    sites.forEach(s => opts += `<option value="${s}" ${selVal===s?'selected':''}>${s}</option>`);
+    opts += '<option value="__add_new">+ Add New Site</option>';
+    return opts;
+}
+
+function buildStatusOptions(selVal) {
+    const opts = STATUS_OPTIONS.map(s => `<option value="${s}" ${selVal===s?'selected':''}>${s}</option>`).join('');
+    return `<option value="">-- Select Status --</option>` + opts;
+}
+
+function updateEmployeeDropdown() {
+    const emps = loadEmployees();
+    const sel = document.getElementById('attEmployee');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- All Employees (Full List) --</option>';
+    emps.forEach(e => sel.innerHTML += `<option value="${e.id}">${e.id} / ${e.name}</option>`);
+}
+
+function updateLocSiteDropdown() {
+    const sel = document.getElementById('attLocSite');
+    if (!sel) return;
+    const employees = loadEmployees();
+    const pairs = new Set();
+    employees.forEach(e => {
+        if (e.mainLocation || e.site)
+            pairs.add((e.mainLocation || '') + '|' + (e.site || ''));
+    });
+    let html = '<option value="">-- All Locations/Sites --</option>';
+    [...pairs].sort().forEach(p => {
+        const [loc, site] = p.split('|');
+        const label = (loc && site) ? loc + ' / ' + site : (loc || site);
+        html += `<option value="${p}">${label}</option>`;
+    });
+    sel.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════
+   DEFAULT STATUS LOGIC (Task 4)
+   Sunday → Holiday, others → Present
+═══════════════════════════════════════════════ */
+function defaultStatusForDate(dateStr) {
+    if (!dateStr) return 'Present';
+    const day = new Date(dateStr + 'T00:00:00').getDay();
+    return day === 0 ? 'Holiday' : 'Present';
+}
+
+/* ═══════════════════════════════════════════════
+   BULK TABLE (Tasks 1, 4)
+═══════════════════════════════════════════════ */
+function loadBulkAttendanceTable() {
+    const empId        = document.getElementById('attEmployee').value;
+    const locSiteVal   = document.getElementById('attLocSite') ? document.getElementById('attLocSite').value : '';
+    const allEmployees = loadEmployees();
+    let targetEmps     = empId ? allEmployees.filter(e => String(e.id) === String(empId)) : allEmployees;
+    if (locSiteVal) {
+        const [filterLoc, filterSite] = locSiteVal.split('|');
+        targetEmps = targetEmps.filter(e =>
+            (!filterLoc  || (e.mainLocation || '') === filterLoc) &&
+            (!filterSite || (e.site         || '') === filterSite)
+        );
+    }
+    const tbody       = document.getElementById('bulkAttBody');
+    const noEmp       = document.getElementById('noEmployees');
+
+    tbody.innerHTML = '';
+    if (targetEmps.length === 0) {
+        noEmp.classList.remove('hidden');
+        updateSelectedCount();
+        return;
+    }
+    noEmp.classList.add('hidden');
+
+    const date = document.getElementById('attDate').value || todayStr();
+
+    targetEmps.forEach(emp => {
+        const tr = document.createElement('tr');
+        tr.dataset.empId   = emp.id;
+        tr.dataset.empName = emp.name;
+        tr.dataset.baseSalary = emp.baseSalary || 0;
+        tr.innerHTML = `
+            <td style="text-align:center;">
+                <input type="checkbox" class="rowCheck" onchange="updateSelectedCount()" aria-label="Select">
+            </td>
+            <td>
+                <span class="emp-chip" onclick="openEmpDrawer('${escAttr(emp.id)}','${escAttr(emp.name)}',${emp.baseSalary||0})">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+                    ${escHtml(emp.id)} / ${escHtml(emp.name)}
+                </span>
+            </td>
+            <td>
+                <select class="row-locsite form-select" onchange="handleLocSiteChange(this)">
+                    ${buildLocationSiteOptions(emp.mainLocation, emp.site)}
+                </select>
+            </td>
+            <td>
+                <select class="row-workingsite form-select" onchange="handleWorkingSiteChange(this)">
+                    ${buildWorkingSiteOptions('')}
+                </select>
+            </td>
+            <td>
+                <input type="date" class="row-date form-input" value="${date}">
+            </td>
+            <td>
+                <select class="row-status form-select">
+                    ${buildStatusOptions('')}
+                </select>
+            </td>
+            <td>
+                <textarea class="row-remarks form-input" placeholder="Remarks..."></textarea>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    updateSelectedCount();
+}
+
+function syncRowDates() {
+    const date = document.getElementById('attDate').value;
+    if (!date) return;
+    document.querySelectorAll('#bulkAttBody .row-date').forEach(inp => { inp.value = date; });
+}
+
+/* ═══════════════════════════════════════════════
+   LOCATION / WORKING SITE CHANGE HANDLERS
+═══════════════════════════════════════════════ */
+function handleLocSiteChange(sel) {
+    if (sel.value !== '__add_new') return;
+    const loc = prompt('Enter Main Location:');
+    if (!loc) { sel.value = ''; return; }
+    const site = prompt('Enter Site for ' + loc + ':');
+    if (!site) { sel.value = ''; return; }
+    addCentralLocation(loc.trim());
+    addCentralSite(site.trim());
+    const newVal = loc.trim() + '|' + site.trim();
+    document.querySelectorAll('#bulkAttBody .row-locsite').forEach(s => {
+        const cur = s.value === '__add_new' ? '' : s.value;
+        const [cl, cs] = (cur || '|').split('|');
+        s.innerHTML = buildLocationSiteOptions(cl, cs);
+    });
+    sel.value = newVal;
+}
+
+function handleWorkingSiteChange(sel) {
+    if (sel.value !== '__add_new') return;
+    const val = prompt('Enter new Working Site:');
+    if (!val) { sel.value = ''; return; }
+    addWorkingSite(val.trim());
+    document.querySelectorAll('#bulkAttBody .row-workingsite').forEach(s => {
+        const cur = s.value === '__add_new' ? '' : s.value;
+        s.innerHTML = buildWorkingSiteOptions(cur);
+    });
+    sel.value = val.trim();
+}
+
+/* ═══════════════════════════════════════════════
+   SELECT ALL / COUNT
+═══════════════════════════════════════════════ */
+function toggleSelectAll(masterChk) {
+    const chk = masterChk.checked;
+    document.querySelectorAll('#bulkAttBody .rowCheck').forEach(c => c.checked = chk);
+    ['selectAllChk','headerCheck'].forEach(id => {
+        const e = document.getElementById(id); if (e) e.checked = chk;
+    });
+    updateSelectedCount();
+}
+
+function clearAllSelections() {
+    document.querySelectorAll('#bulkAttBody .rowCheck').forEach(c => c.checked = false);
+    ['selectAllChk','headerCheck'].forEach(id => {
+        const e = document.getElementById(id); if (e) { e.checked = false; e.indeterminate = false; }
+    });
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const total   = document.querySelectorAll('#bulkAttBody .rowCheck').length;
+    const checked = document.querySelectorAll('#bulkAttBody .rowCheck:checked').length;
+    const badge   = document.getElementById('selectedCount');
+    if (badge) badge.textContent = checked + ' / ' + total + ' selected';
+    ['selectAllChk','headerCheck'].forEach(id => {
+        const e = document.getElementById(id);
+        if (!e) return;
+        e.checked       = (total > 0 && checked === total);
+        e.indeterminate = (checked > 0 && checked < total);
+    });
+    const mpBtn = document.getElementById('markPresentBtn');
+    if (mpBtn) {
+        mpBtn.disabled = (checked === 0);
+        mpBtn.style.opacity = checked > 0 ? '1' : '0.45';
+        mpBtn.style.cursor  = checked > 0 ? 'pointer' : 'not-allowed';
+    }
+}
+
+function markSelectedPresent() {
+    const rows = [...document.querySelectorAll('#bulkAttBody tr')]
+        .filter(tr => tr.querySelector('.rowCheck') && tr.querySelector('.rowCheck').checked);
+    rows.forEach(tr => { tr.querySelector('.row-status').value = 'Present'; });
+}
+
+/* ═══════════════════════════════════════════════
+   SAVE BULK
+═══════════════════════════════════════════════ */
+function calculateHours(status) {
+    if (status === 'Present')  return '8.00';
+    if (status === 'Half Day') return '4.00';
+    return '0.00';
+}
+
+function saveBulkAttendance() {
+    const rows = [...document.querySelectorAll('#bulkAttBody tr')].filter(tr => tr.querySelector('.rowCheck').checked);
+    if (rows.length === 0) { showAlert('attAlert', 'No rows selected to save', 'error'); return; }
+
+    let attendance = loadAttendance();
+    let saved = 0;
+
+    rows.forEach(tr => {
+        const locSiteVal = tr.querySelector('.row-locsite').value;
+        const [mainLocation, site] = (locSiteVal && locSiteVal !== '__add_new') ? locSiteVal.split('|') : ['',''];
+        const ws     = tr.querySelector('.row-workingsite').value;
+        const date   = tr.querySelector('.row-date').value;
+        const status = tr.querySelector('.row-status').value;
+        const remarks = tr.querySelector('.row-remarks').value.trim();
+
+        if (!date || !status) return;
+
+        attendance.push({
+            empId:        tr.dataset.empId,
+            empName:      tr.dataset.empName,
+            baseSalary:   parseFloat(tr.dataset.baseSalary) || 0,
+            mainLocation: mainLocation || '',
+            site:         site || '',
+            workingSite:  ws === '__add_new' ? '' : ws,
+            date, status, remarks,
+            hours: calculateHours(status)
+        });
+        saved++;
+    });
+
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
+
+    /* Sync newly saved records to DB so other linked admins can see them */
+    var serverRecords = [];
+    rows.forEach(tr => {
+        var d = tr.querySelector('.row-date').value;
+        var s = tr.querySelector('.row-status').value;
+        if (d && s) serverRecords.push({ empId: tr.dataset.empId, date: d, status: s });
+    });
+    syncRecordsToServer(serverRecords);
+
+    showAlert('attAlert', 'Saved ' + saved + ' record(s) successfully', 'success');
+    clearAllSelections();
+}
+
+/* ═══════════════════════════════════════════════
+   EDIT / DELETE
+═══════════════════════════════════════════════ */
+function editAttendance(idx) {
+    editingIndex = idx;
+    const att = loadAttendance()[idx];
+    document.getElementById('editEmployee').value   = att.empId + ' / ' + att.empName;
+    document.getElementById('editWorkingSite').value = att.workingSite || '';
+    document.getElementById('editDate').value        = att.date;
+    document.getElementById('editStatus').value      = STATUS_OPTIONS.includes(att.status) ? att.status : 'Present';
+    document.getElementById('editRemarks').value     = att.remarks || '';
+    document.getElementById('editModal').classList.add('active');
+}
+
+function closeEditModal() { document.getElementById('editModal').classList.remove('active'); }
+
+function updateAttendance() {
+    let att = loadAttendance();
+    const status = document.getElementById('editStatus').value;
+    att[editingIndex] = {
+        ...att[editingIndex],
+        workingSite: document.getElementById('editWorkingSite').value,
+        date:        document.getElementById('editDate').value,
+        status, remarks: document.getElementById('editRemarks').value,
+        hours: calculateHours(status)
+    };
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(att));
+    /* Sync edit to DB */
+    var updated = att[editingIndex];
+    if (updated) syncRecordsToServer([{ empId: updated.empId, date: updated.date, status: updated.status }]);
+    closeEditModal();
+}
+
+function deleteAttendance(idx) {
+    if (!confirm('Delete this record?')) return;
+    let att = loadAttendance();
+    var toDelete = att[idx];
+    att.splice(idx, 1);
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(att));
+    /* Sync deletion to DB */
+    if (toDelete) {
+        fetch('/attendance/delete/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ empId: toDelete.empId, date: toDelete.date })
+        }).catch(function() {});
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   SUMMARY (Task 6) — Daily table: Date | Present | Absent | Leave | Holiday | Half Day
+═══════════════════════════════════════════════ */
+function generateSummary() {
+    const from    = document.getElementById('sumFromDate').value;
+    const to      = document.getElementById('sumToDate').value;
+    const empId   = (document.getElementById('sumEmpId')   ? document.getElementById('sumEmpId').value.trim()   : '').toLowerCase();
+    const empName = (document.getElementById('sumEmpName') ? document.getElementById('sumEmpName').value.trim() : '').toLowerCase();
+    let records   = loadAttendance();
+
+    if (from)    records = records.filter(r => r.date >= from);
+    if (to)      records = records.filter(r => r.date <= to);
+    if (empId)   records = records.filter(r => (r.empId   || '').toLowerCase().includes(empId));
+    if (empName) records = records.filter(r => (r.empName || '').toLowerCase().includes(empName));
+
+    const tbody  = document.getElementById('summaryBody');
+    const noData = document.getElementById('noSummary');
+    tbody.innerHTML = '';
+
+    if (records.length === 0) {
+        noData.classList.remove('hidden');
+        return;
+    }
+    noData.classList.add('hidden');
+
+    const byDate = {};
+    records.forEach(r => {
+        if (!byDate[r.date]) byDate[r.date] = { Present:0, Absent:0, Leave:0, Holiday:0, 'Weekly Off':0, 'Half Day':0 };
+        const s = r.status || 'Present';
+        if (byDate[r.date][s] !== undefined) byDate[r.date][s]++;
+        else byDate[r.date][s] = 1;
+    });
+
+    const dates = Object.keys(byDate).sort();
+    dates.forEach(d => {
+        const v   = byDate[d];
+        const fmt = d.split('-').reverse().join('/');
+        const tr  = document.createElement('tr');
+        tr.innerHTML = `
+            <td><span class="sum-date-link" onclick="openDateDetail('${d}')">${fmt}</span></td>
+            <td><span class="sb sb-present">${v.Present||0}</span></td>
+            <td><span class="sb sb-absent">${v.Absent||0}</span></td>
+            <td><span class="sb sb-leave">${v.Leave||0}</span></td>
+            <td><span class="sb sb-holiday">${v.Holiday||0}</span></td>
+            <td><span class="sb sb-weeklyoff">${v['Weekly Off']||0}</span></td>
+            <td><span class="sb sb-halfday">${v['Half Day']||0}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function clearSummaryFilters() {
+    document.getElementById('sumFromDate').value = '';
+    document.getElementById('sumToDate').value   = '';
+    const ei = document.getElementById('sumEmpId');   if (ei)   ei.value = '';
+    const en = document.getElementById('sumEmpName'); if (en)   en.value = '';
+    generateSummary();
+}
+
+/* ═══════════════════════════════════════════════
+   EMPLOYEE DETAIL DRAWER (Task 2, 3, Calendar)
+═══════════════════════════════════════════════ */
+function openEmpDrawer(empId, empName, baseSalary) {
+    drawerEmpId   = empId;
+    drawerEmpData = { empId, empName, baseSalary: parseFloat(baseSalary) || 0 };
+
+    document.getElementById('drawerEmpName').textContent = empId + ' / ' + empName;
+    document.getElementById('drawerEmpMeta').textContent =
+        'Base Salary: ₹' + (drawerEmpData.baseSalary).toLocaleString('en-IN');
+
+    buildCycleOptions();
+    renderDrawerContent();
+
+    document.getElementById('empDrawerOverlay').classList.add('open');
+    document.getElementById('empDrawer').classList.add('open');
+    document.getElementById('dlMenu').classList.remove('open');
+}
+
+function closeEmpDrawer() {
+    document.getElementById('empDrawerOverlay').classList.remove('open');
+    document.getElementById('empDrawer').classList.remove('open');
+    drawerEmpId   = null;
+    drawerEmpData = null;
+}
+
+function perDay(monthlySalary, cycleDays) {
+    const divisor = (cycleDays && cycleDays > 0) ? cycleDays : 30;
+    return monthlySalary > 0 ? monthlySalary / divisor : 0;
+}
+
+function dailyEarning(status, baseSalary, cycleDays) {
+    const pd = perDay(baseSalary, cycleDays);
+    if (status === 'Present')    return pd;
+    if (status === 'Half Day')   return pd / 2;
+    if (status === 'Holiday')    return pd;
+    if (status === 'Weekly Off') return pd;
+    // Leave = 0 (unpaid)
+    return 0;
+}
+
+/* Build 26→25 cycle list covering last 12 months */
+function getCycles() {
+    const cycles = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+        // Cycle: from 26th of (now.month - i - 1) to 25th of (now.month - i)
+        const end   = new Date(now.getFullYear(), now.getMonth() - i, 25);
+        const start = new Date(now.getFullYear(), now.getMonth() - i - 1, 26);
+        cycles.push({
+            label: `${start.getDate()} ${MONTH_NAMES[start.getMonth()]} ${start.getFullYear()} → ${end.getDate()} ${MONTH_NAMES[end.getMonth()]} ${end.getFullYear()}`,
+            start: dateToStr(start),
+            end:   dateToStr(end)
+        });
+    }
+    return cycles;
+}
+
+function dateToStr(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+}
+function pad2(n) { return n < 10 ? '0'+n : String(n); }
+
+function buildCycleOptions() {
+    const sel    = document.getElementById('drawerCycleSelect');
+    const cycles = getCycles();
+    sel.innerHTML = '';
+    cycles.forEach((c, i) => {
+        sel.innerHTML += `<option value="${i}">${c.label}</option>`;
+    });
+}
+
+function renderDrawerContent() {
+    if (!drawerEmpData) return;
+    const sel    = document.getElementById('drawerCycleSelect');
+    const cycIdx = parseInt(sel.value) || 0;
+    const cycles = getCycles();
+    const cycle  = cycles[cycIdx];
+    if (!cycle) return;
+
+    const { empId, empName, baseSalary } = drawerEmpData;
+    const records  = loadAttendance().filter(r => r.empId === empId && r.date >= cycle.start && r.date <= cycle.end);
+    const recMap   = {};
+    records.forEach(r => recMap[r.date] = r);
+
+    // ── KPIs ──
+    const kpiCounts = { Present:0, Leave:0, Holiday:0, 'Weekly Off':0, 'Half Day':0 };
+    records.forEach(r => { if (kpiCounts[r.status] !== undefined) kpiCounts[r.status]++; });
+
+    document.getElementById('drawerKpis').innerHTML = `
+        <div class="emp-kpi kpi-present"><div class="val">${kpiCounts.Present}</div><div class="lbl">Present</div></div>
+        <div class="emp-kpi kpi-leave"><div class="val">${kpiCounts.Leave}</div><div class="lbl">Leave</div></div>
+        <div class="emp-kpi kpi-holiday"><div class="val">${kpiCounts.Holiday}</div><div class="lbl">Holiday</div></div>
+        <div class="emp-kpi kpi-weeklyoff"><div class="val">${kpiCounts['Weekly Off']}</div><div class="lbl">Weekly Off</div></div>
+        <div class="emp-kpi kpi-halfday"><div class="val">${kpiCounts['Half Day']}</div><div class="lbl">Half Day</div></div>
+    `;
+
+    // ── Calendar (with status + salary inside each cell) ──
+    const calEl    = document.getElementById('drawerCal');
+    const totalEl  = document.getElementById('drawerCalTotal');
+    const today    = todayStr();
+    const start    = new Date(cycle.start + 'T00:00:00');
+    const end      = new Date(cycle.end   + 'T00:00:00');
+
+    // Actual days in this 26→25 cycle (e.g. 30 for a typical month)
+    const cycleDays = Math.round((end - start) / 86400000) + 1;
+
+    // Update header meta with cycle-accurate per-day figure
+    if (baseSalary > 0) {
+        const pd = baseSalary / cycleDays;
+        document.getElementById('drawerEmpMeta').textContent =
+            'Base Salary: ₹' + baseSalary.toLocaleString('en-IN') +
+            ' | Per Day (÷' + cycleDays + '): ₹' + pd.toLocaleString('en-IN', {maximumFractionDigits: 2});
+    }
+
+    let calHtml = DAY_NAMES.map(d => `<div class="cal-hdr">${d}</div>`).join('');
+
+    const firstDow = start.getDay();
+    for (let b = 0; b < firstDow; b++) calHtml += '<div class="cal-day cal-empty"></div>';
+
+    let totalEarned = 0;
+    let cur = new Date(start);
+    while (cur <= end) {
+        const ds      = dateToStr(cur);
+        const dow     = cur.getDay();
+        const isToday = (ds === today);
+        const rec     = recMap[ds];
+
+        let cls, statusLbl;
+        if (rec) {
+            const slug = rec.status.toLowerCase().replace(/\s+/g, '');
+            cls       = 'cal-' + slug;
+            statusLbl = rec.status === 'Weekly Off' ? 'W/Off' : rec.status;
+            // Salary only on saved records
+            const earned = dailyEarning(rec.status, baseSalary, cycleDays);
+            totalEarned += earned;
+            const salaryLine = baseSalary > 0
+                ? '₹' + earned.toLocaleString('en-IN', {maximumFractionDigits: 0})
+                : '';
+            calHtml += `<div class="cal-day ${cls}${isToday ? ' cal-today' : ''}">
+                <div class="dn">${cur.getDate()}</div>
+                <div class="ds">${statusLbl}</div>
+                ${salaryLine ? `<div class="dc">${salaryLine}</div>` : ''}
+            </div>`;
+        } else {
+            cls       = dow === 0 ? 'cal-holiday' : 'cal-none';
+            statusLbl = dow === 0 ? 'Holiday' : '-';
+            calHtml += `<div class="cal-day ${cls}${isToday ? ' cal-today' : ''}">
+                <div class="dn">${cur.getDate()}</div>
+                <div class="ds">${statusLbl}</div>
+            </div>`;
+        }
+        cur.setDate(cur.getDate() + 1);
+    }
+    calEl.innerHTML = calHtml;
+
+    if (baseSalary > 0 && totalEarned > 0) {
+        totalEl.textContent = 'Cycle Total Earned: ₹' +
+            totalEarned.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        totalEl.classList.remove('hidden');
+    } else {
+        totalEl.classList.add('hidden');
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   ALERTS
+═══════════════════════════════════════════════ */
+function showAlert(id, msg, type) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cls = type === 'success' ? 'alert-success' : (type === 'error' ? 'alert-error' : 'alert-info');
+    el.innerHTML = `<div class="alert-badge ${cls}">${msg}</div>`;
+    setTimeout(() => el.innerHTML = '', 4000);
+}
+
+/* ═══════════════════════════════════════════════
+   EXPORT / IMPORT
+═══════════════════════════════════════════════ */
+function exportAttendanceJSON() {
+    const data = localStorage.getItem(ATTENDANCE_KEY) || '[]';
+    const blob = new Blob([data], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = 'attendance_backup_' + todayStr() + '.json';
+    a.click();
+}
+
+function exportPDF() {
+    const el = document.getElementById('summaryTable');
+    if (window.html2pdf) html2pdf().from(el).save('attendance_report_' + todayStr() + '.pdf');
+}
+
+function importAttendance() {
+    const file = document.getElementById('importAttFile').files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!Array.isArray(data)) throw new Error('Not an array');
+            localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(data));
+            showAlert('exportAlert', 'Records imported successfully', 'success');
+        } catch (err) {
+            showAlert('exportAlert', 'Invalid JSON file', 'error');
+        }
+    };
+    reader.readAsText(file);
+    document.getElementById('importAttFile').value = '';
+}
+
+/* ═══════════════════════════════════════════════
+   DATE DRILLDOWN MODAL
+═══════════════════════════════════════════════ */
+function openDateDetail(dateStr) {
+    const fmt = dateStr.split('-').reverse().join('/');
+    document.getElementById('ddTitle').textContent = 'Attendance — ' + fmt;
+
+    const records = loadAttendance().filter(r => r.date === dateStr);
+    const body    = document.getElementById('ddBody');
+
+    if (records.length === 0) {
+        body.innerHTML = '<div class="no-data">No attendance records saved for this date.</div>';
+        document.getElementById('ddOverlay').classList.add('open');
+        return;
+    }
+
+    const groups = { Present: [], 'Half Day': [], Leave: [], Holiday: [], 'Weekly Off': [], Other: [] };
+    records.forEach(r => {
+        const g = groups[r.status] !== undefined ? r.status : 'Other';
+        groups[g].push(r);
+    });
+
+    const slugMap = { Present:'present', 'Half Day':'halfday', Leave:'leave', Holiday:'holiday', 'Weekly Off':'weeklyoff', Other:'absent' };
+
+    let html = '';
+    Object.entries(groups).forEach(([grp, rows]) => {
+        if (rows.length === 0) return;
+        html += `<div class="dd-group-title"><span class="sb sb-${slugMap[grp]}">${grp}</span> — ${rows.length} employee${rows.length>1?'s':''}</div>`;
+        html += `<table class="att-table" style="min-width:0; margin-bottom:0.5rem;">
+            <thead><tr>
+                <th>Emp ID</th><th>Name</th><th>Location / Site</th>
+                <th>Working Site</th><th>Remarks</th>
+            </tr></thead><tbody>`;
+        rows.forEach(r => {
+            const locSite = [r.mainLocation, r.site].filter(Boolean).join(' / ') || '-';
+            html += `<tr>
+                <td style="font-weight:700;color:#4f46e5;">${escHtml(r.empId||'-')}</td>
+                <td>${escHtml(r.empName||'-')}</td>
+                <td>${escHtml(locSite)}</td>
+                <td>${escHtml(r.workingSite||'-')}</td>
+                <td style="color:#64748b;font-size:0.73rem;">${escHtml(r.remarks||'-')}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+    });
+
+    body.innerHTML = html;
+    document.getElementById('ddOverlay').classList.add('open');
+}
+
+function closeDateDetail() {
+    document.getElementById('ddOverlay').classList.remove('open');
+}
+
+/* ═══════════════════════════════════════════════
+   DRAWER EXPORT DROPDOWN
+═══════════════════════════════════════════════ */
+function toggleDlMenu() {
+    document.getElementById('dlMenu').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+    const wrap = document.querySelector('.dl-wrap');
+    if (wrap && !wrap.contains(e.target)) {
+        document.getElementById('dlMenu').classList.remove('open');
+    }
+});
+
+function exportDrawerPDF() {
+    if (!drawerEmpData || !window.html2pdf) return;
+    const el = document.getElementById('empDrawer');
+    html2pdf().set({
+        margin: 0.4, filename: drawerEmpData.empId + '_attendance.pdf',
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+    }).from(el).save();
+}
+
+function exportDrawerExcel() {
+    if (!drawerEmpData || !window.XLSX) return;
+    const { empId, empName, baseSalary } = drawerEmpData;
+
+    const sel    = document.getElementById('drawerCycleSelect');
+    const cycIdx = parseInt(sel.value) || 0;
+    const cycles = getCycles();
+    const cycle  = cycles[cycIdx];
+    if (!cycle) return;
+
+    const start    = new Date(cycle.start + 'T00:00:00');
+    const end      = new Date(cycle.end   + 'T00:00:00');
+    const cycleDays = Math.round((end - start) / 86400000) + 1;
+    const pd        = baseSalary > 0 ? baseSalary / cycleDays : 0;
+
+    const records = loadAttendance().filter(r =>
+        r.empId === empId && r.date >= cycle.start && r.date <= cycle.end
+    );
+    const recMap = {};
+    records.forEach(r => recMap[r.date] = r);
+
+    // Build rows for every day in cycle
+    const rows = [['Employee ID', 'Employee Name', 'Date', 'Day', 'Status', 'Remarks', 'Salary Earned (₹)']];
+    let totalEarned = 0;
+    let cur = new Date(start);
+    while (cur <= end) {
+        const ds  = dateToStr(cur);
+        const rec = recMap[ds];
+        const dow = DAY_NAMES[cur.getDay()];
+        const status  = rec ? rec.status : (cur.getDay() === 0 ? 'Holiday' : '-');
+        const remarks = rec ? (rec.remarks || '') : '';
+        const earned  = rec ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
+        totalEarned  += earned;
+        rows.push([empId, empName, ds, dow, status, remarks, earned > 0 ? earned.toFixed(2) : '']);
+        cur.setDate(cur.getDate() + 1);
+    }
+    rows.push([]);
+    rows.push(['', '', '', '', '', 'Cycle Total Earned:', totalEarned.toFixed(2)]);
+    rows.push(['', '', '', '', '', 'Base Salary:', baseSalary]);
+    rows.push(['', '', '', '', '', 'Cycle:', cycle.label]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [14,20,12,8,12,24,18].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+    XLSX.writeFile(wb, empId + '_attendance_' + cycle.start + '.xlsx');
+}
+
+/* ═══════════════════════════════════════════════
+   UTILITY
+═══════════════════════════════════════════════ */
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+    return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

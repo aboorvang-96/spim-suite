@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Business Dashboard{% endblock %}
+{% block active_dash %}active{% endblock %}
+{% block header_title %}Good afternoon, {{ request.user.full_name|default:request.user.username }}{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'dashboard:settings' %}" class="btn btn-secondary" style="margin-right: 12px; height: 42px;">
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+    Settings
+</a>
+<a href="{% url 'finance:list' %}" class="btn btn-primary" style="height: 42px;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Add Transaction
+</a>
+{% endblock %}
+
+{% block top_filters %}
+<div class="card mb-6">
+    <div class="card-body p-4" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; background: var(--slate-100); padding: 4px; border-radius: 12px; gap: 4px;">
+            <a href="?period=daily" class="btn {% if current_period == 'daily' %}btn-primary{% else %}btn-secondary{% endif %}" style="padding: 0.5rem 1rem; font-size: 0.75rem; border: none;">Daily</a>
+            <a href="?period=weekly" class="btn {% if current_period == 'weekly' %}btn-primary{% else %}btn-secondary{% endif %}" style="padding: 0.5rem 1rem; font-size: 0.75rem; border: none;">Weekly</a>
+            <a href="?period=monthly" class="btn {% if current_period == 'monthly' or not current_period %}btn-primary{% else %}btn-secondary{% endif %}" style="padding: 0.5rem 1rem; font-size: 0.75rem; border: none;">Monthly</a>
+            <a href="?period=yearly" class="btn {% if current_period == 'yearly' %}btn-primary{% else %}btn-secondary{% endif %}" style="padding: 0.5rem 1rem; font-size: 0.75rem; border: none;">Yearly</a>
+        </div>
+
+        <form method="GET" style="margin:0; display: flex; align-items: center; gap: 12px;">
+            <input type="hidden" name="period" value="{{ current_period }}">
+            <label for="branch-selector" class="kpi-label" style="margin-bottom:0; font-size:0.7rem;">Business Unit</label>
+            <select id="branch-selector" name="branch" class="form-select" onchange="this.form.submit()" style="width: 240px; height: 42px;">
+                <option value="">All Business Units</option>
+                {% for branch in branches %}
+                <option value="{{ branch.id }}" {% if current_branch == branch.id|stringformat:"s" %}selected{% endif %}>{{ branch.name }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="stats-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem;">
+    <div class="card stat-card" style="border-left: 4px solid var(--primary);">
+        <div class="card-body">
+            <span style="font-size: 0.7rem; font-weight: 700; color: var(--slate-500); text-transform: uppercase; letter-spacing: 0.05em;">Financial Balance</span>
+            <div style="font-size: 1.75rem; font-weight: 800; color: var(--slate-900); margin: 0.5rem 0;" class="{% if balance >= 0 %}amount-positive{% else %}amount-negative{% endif %}">₹{{ balance|floatformat:2 }}</div>
+            <span class="badge" style="background: var(--slate-100); color: var(--slate-600);">{{ period_label }}</span>
+        </div>
+    </div>
+    
+    <div class="card stat-card" style="border-left: 4px solid var(--success);">
+        <div class="card-body">
+            <span style="font-size: 0.7rem; font-weight: 700; color: var(--slate-500); text-transform: uppercase; letter-spacing: 0.05em;">Total Inflow</span>
+            <div style="font-size: 1.75rem; font-weight: 800; color: var(--success); margin: 0.5rem 0;">₹{{ total_income|floatformat:2 }}</div>
+            <span style="font-size: 0.75rem; color: var(--slate-400);">{{ period_label }} Revenue</span>
+        </div>
+    </div>
+
+    <div class="card stat-card" style="border-left: 4px solid var(--error);">
+        <div class="card-body">
+            <span style="font-size: 0.7rem; font-weight: 700; color: var(--slate-500); text-transform: uppercase; letter-spacing: 0.05em;">Total Outflow</span>
+            <div style="font-size: 1.75rem; font-weight: 800; color: var(--error); margin: 0.5rem 0;">₹{{ total_expense|floatformat:2 }}</div>
+            <span style="font-size: 0.75rem; color: var(--slate-400);">{{ period_label }} Burn</span>
+        </div>
+    </div>
+
+    <div class="card stat-card" style="border-left: 4px solid var(--info);">
+        <div class="card-body">
+            <span style="font-size: 0.7rem; font-weight: 700; color: var(--slate-500); text-transform: uppercase; letter-spacing: 0.05em;">Operational Load</span>
+            <div style="font-size: 1.75rem; font-weight: 800; color: var(--slate-900); margin: 0.5rem 0;">{{ active_projects }}</div>
+            <span class="badge" style="background: var(--info-bg); color: var(--info);">Active Projects</span>
+        </div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Fiscal Performance</h3>
+            <span class="badge" style="background: var(--slate-100); color: var(--slate-600);">{{ period_label }}</span>
+        </div>
+        <div class="card-body">
+            <div style="height: 320px; width: 100%;">
+                <canvas id="chart-main"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Expense Allocation</h3>
+        </div>
+        <div class="card-body">
+            <div style="height: 220px; width: 100%; margin-bottom: 1.5rem;">
+                <canvas id="chart-donut"></canvas>
+            </div>
+            <div id="donut-legend" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header" style="border-bottom: 1px solid var(--slate-100);">
+        <h3 class="card-title">Recent Intelligence</h3>
+        <span class="badge badge-info">{{ recent_txns|length }} entries</span>
+    </div>
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 150px;">DATE</th>
+                    <th>DESCRIPTION</th>
+                    <th>CATEGORY</th>
+                    <th>FLOW</th>
+                    <th style="text-align: right;">VALUE</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for txn in recent_txns %}
+                <tr>
+                    <td style="color: var(--slate-500); font-weight: 500;">{{ txn.date|date:"d M Y" }}</td>
+                    <td style="font-weight: 700; color: var(--slate-900);">{{ txn.description }}</td>
+                    <td>
+                        <span class="badge" style="background: {{ txn.category.color|default:'#f1f5f9' }}15; color: {{ txn.category.color|default:'#64748b' }}; border: 1px solid {{ txn.category.color|default:'#64748b' }}30;">
+                            {{ txn.category.name|default:'Uncategorized' }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge {% if txn.type == 'income' %}badge-success{% else %}badge-error{% endif %}" style="text-transform: uppercase; font-size: 0.6rem; letter-spacing: 0.05em;">
+                            {{ txn.type }}
+                        </span>
+                    </td>
+                    <td style="text-align: right; font-weight: 800;" class="{% if txn.type == 'income' %}amount-positive{% else %}amount-negative{% endif %}">
+                        {% if txn.type == 'income' %}+{% else %}-{% endif %}₹{{ txn.amount|floatformat:2 }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 5rem; color: var(--slate-400);">
+                        No transactional data found for the selected period.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    Chart.defaults.font.family = "'Outfit', sans-serif";
+    Chart.defaults.color = '#64748b';
+    
+    // MAIN PERFORMANCE CHART
+    const chartData = JSON.parse('{{ chart_data|safe }}');
+    const ctxMain = document.getElementById('chart-main').getContext('2d');
+    
+    new Chart(ctxMain, {
+        type: 'bar',
+        data: {
+            labels: chartData.map(d => d.month),
+            datasets: [
+                {
+                    label: 'Income',
+                    data: chartData.map(d => d.income),
+                    backgroundColor: '#10b981',
+                    borderRadius: 8,
+                    barThickness: 20
+                },
+                {
+                    label: 'Expense',
+                    data: chartData.map(d => d.expense),
+                    backgroundColor: '#f43f5e',
+                    borderRadius: 8,
+                    barThickness: 20
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', align: 'end', labels: { boxWidth: 8, usePointStyle: true, font: { weight: 600 } } },
+            },
+            scales: {
+                x: { grid: { display: false }, border: { display: false } },
+                y: { 
+                    grid: { color: '#f1f5f9', strokeDashArray: [4, 4] },
+                    border: { display: false },
+                    ticks: { callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v) }
+                }
+            }
+        }
+    });
+
+    // ALLOCATION CHART
+    const catData = JSON.parse('{{ category_data|safe }}');
+    const ctxDonut = document.getElementById('chart-donut').getContext('2d');
+    const total = catData.reduce((a, b) => a + b.amount, 0);
+
+    new Chart(ctxDonut, {
+        type: 'doughnut',
+        data: { 
+            labels: catData.map(c => c.name),
+            datasets: [{ 
+                data: catData.map(c => c.amount), 
+                backgroundColor: catData.map(c => c.color || '#e2e8f0'),
+                borderWidth: 0,
+                hoverOffset: 10
+            }] 
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            cutout: '80%',
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // Custom Legend
+    const legend = document.getElementById('donut-legend');
+    if (catData.length === 0) {
+        legend.innerHTML = '<p style="text-align: center; color: var(--slate-400); font-size: 0.8rem;">No allocation data</p>';
+    } else {
+        legend.innerHTML = catData.map(c => {
+            const pct = total ? ((c.amount / total) * 100).toFixed(1) : 0;
+            return `<div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: ${c.color || '#e2e8f0'}"></span>
+                    <span style="color: var(--slate-600); font-weight: 500;">${c.name}</span>
+                </div>
+                <span style="font-weight: 700; color: var(--slate-900);">${pct}%</span>
+            </div>`;
+        }).join('');
+    }
+</script>
+{% endblock %}
+

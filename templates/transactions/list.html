@@ -1,0 +1,490 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}All Transactions{% endblock %}
+{% block active_transactions %}active{% endblock %}
+
+{% block page_title %}Transactions{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
+        <label for="global-branch-select" class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-0">Branch</label>
+        <select id="global-branch-select" class="form-input h-9 w-40 text-sm" onchange="updateBranchFilter(this.value)">
+            <option value="all">All Branches</option>
+            {% for b in branches %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button class="btn btn-primary h-9 flex items-center gap-2" onclick="openTxModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Transaction
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+    <!-- Period Filters & Search -->
+    <div class="space-y-4">
+        <div class="card p-4">
+            <div class="flex justify-between items-center flex-wrap gap-4">
+                <div class="flex gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                    <button class="period-tab btn btn-sm btn-outline border-none" data-period="daily" onclick="setPeriod('daily', this)">Daily</button>
+                    <button class="period-tab btn btn-sm btn-outline border-none" data-period="weekly" onclick="setPeriod('weekly', this)">Weekly</button>
+                    <button class="period-tab btn btn-sm btn-navy border-none rounded-6" data-period="monthly" onclick="setPeriod('monthly', this)">Monthly</button>
+                    <button class="period-tab btn btn-sm btn-outline border-none" data-period="quarterly" onclick="setPeriod('quarterly', this)">Quarterly</button>
+                    <button class="period-tab btn btn-sm btn-outline border-none" data-period="half-yearly" onclick="setPeriod('half-yearly', this)">Half-Yearly</button>
+                    <button class="period-tab btn btn-sm btn-outline border-none" data-period="yearly" onclick="setPeriod('yearly', this)">Yearly</button>
+                    <button class="period-tab btn btn-sm btn-outline border-none" data-period="custom" onclick="setPeriod('custom', this)">Custom</button>
+                </div>
+
+                <div class="flex items-center gap-3 flex-wrap">
+                    <div id="custom-date-group" class="hidden items-center gap-2">
+                        <input type="date" id="cf-start" class="form-input h-[34px] w-32 text-sm">
+                        <span class="text-slate-400 font-medium text-sm">to</span>
+                        <input type="date" id="cf-end" class="form-input h-[34px] w-32 text-sm">
+                        <button class="btn btn-outline h-[34px] px-3 text-sm" onclick="applyCustomDates()">Apply</button>
+                    </div>
+                    
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium text-slate-500">Min $</span>
+                            <input type="number" id="cf-min" class="form-input h-[34px] w-20 text-sm px-2" placeholder="0" onchange="updateAmountFilter()">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium text-slate-500">Max $</span>
+                            <input type="number" id="cf-max" class="form-input h-[34px] w-24 text-sm px-2" placeholder="999999" onchange="updateAmountFilter()">
+                        </div>
+                    </div>
+
+                    <select id="cf-category" class="form-input h-[34px] w-40 text-sm px-2" onchange="updateCategoryFilter(this.value)">
+                        <option value="all">All Categories</option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}">{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <button class="btn btn-outline h-[34px] w-[34px] p-0 flex items-center justify-center shrink-0 text-slate-500 hover:text-slate-700 hover:bg-slate-50" title="Reset Filters" onclick="resetFilters()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 1 0 2.13-5.88L21 8"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-3">
+            <div class="relative w-full">
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" id="txn-search" class="form-input w-full pl-11 h-12 text-base border-none shadow-none focus:ring-0" placeholder="Search all business records...">
+            </div>
+        </div>
+
+        <!-- Results Table -->
+        <div class="card p-0 overflow-hidden">
+            <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                    <h3 class="font-bold text-slate-800">All Transactions</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Complete business ledger history</p>
+                </div>
+                <div class="badge badge-neutral py-2 px-4" id="results-count">0</div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="data-table w-full text-left">
+                    <thead>
+                        <tr>
+                            <th class="w-32 uppercase text-xs text-slate-500 tracking-wider">DATE</th>
+                            <th class="uppercase text-xs text-slate-500 tracking-wider">DESCRIPTION</th>
+                            <th class="uppercase text-xs text-slate-500 tracking-wider">CATEGORY</th>
+                            <th class="w-24 uppercase text-xs text-slate-500 tracking-wider">TYPE</th>
+                            <th class="w-40 text-right uppercase text-xs text-slate-500 tracking-wider">AMOUNT</th>
+                            <th class="w-24 text-right"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="txn-tbody">
+                        <!-- Dynamic -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="results-empty" class="hidden text-center py-20 text-slate-400">
+                <svg width="64" height="64" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1" class="mb-4 mx-auto text-slate-200"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <p class="font-bold text-slate-800">No transactions found</p>
+                <p class="text-sm mt-1">Try adjusting your filters or search query.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Transaction Modal -->
+<div class="modal-overlay hidden z-high" id="tx-modal-overlay">
+    <div class="modal w-[580px]">
+        <div class="modal-header">
+            <h3 class="modal-title" id="tx-modal-title">Add Transaction</h3>
+            <button class="modal-close" onclick="closeTxModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        
+        <form id="tx-form" class="modal-form" onsubmit="event.preventDefault(); saveTransaction();">
+            <div class="form-row-2">
+                <div class="field-group">
+                    <label class="field-label">Date *</label>
+                    <input type="date" id="txf-date" class="field-input" required>
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Type *</label>
+                    <select id="txf-type" class="field-input" required>
+                        <option value="expense">Expense</option>
+                        <option value="income">Income</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Description *</label>
+                <input type="text" id="txf-desc" class="field-input" placeholder="e.g. Office supplies or Client payment" required>
+            </div>
+
+            <div class="form-row-2">
+                <div class="field-group">
+                    <label class="field-label">Amount (₹) *</label>
+                    <input type="number" id="txf-amount" class="field-input" placeholder="0.00" step="0.01" required>
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Category *</label>
+                    <select id="txf-category" class="field-input" required>
+                        <option value="">Select Category</option>
+                        {% for c in categories %}
+                        <option value="{{ c.id }}">{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Branch</label>
+                <select id="txf-branch" class="field-input">
+                    <option value="">No Branch</option>
+                    {% for b in branches %}
+                    <option value="{{ b.id }}">{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Note (optional)</label>
+                <textarea id="txf-note" class="field-input h-20 pt-2.5" placeholder="Additional context about this transaction..."></textarea>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="ghost-btn h-[38px] px-6" onclick="closeTxModal()">Cancel</button>
+                <button type="submit" class="primary-btn h-[38px] px-6 font-bold" id="tx-btn-save">Save Transaction</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    /* Utility classes for layout */
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .flex-wrap { flex-wrap: wrap; }
+    .gap-2 { gap: 8px; }
+    .gap-4 { gap: 16px; }
+    .w-40 { width: 160px; }
+    .h-8 { height: 32px; }
+    .h-20 { height: 80px; }
+    .px-4 { padding-left: 16px; padding-right: 16px; }
+    .px-6 { padding-left: 24px; padding-right: 24px; }
+    .pt-2\.5 { padding-top: 10px; }
+    .w-\[580px\] { width: 580px; }
+    .h-\[38px\] { height: 38px; }
+    
+    .text-danger { color: #ef4444 !important; }
+    
+    .amount-positive { color: var(--success) !important; }
+    .amount-negative { color: var(--danger) !important; }
+    
+    .cat-chip {
+        display: inline-flex;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        border: 1px solid transparent;
+    }
+    
+    .relative { position: relative; }
+    .z-high { z-index: 99999; }
+    
+    .type-badge {
+        display: inline-flex;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 800;
+    }
+    .badge-income { background: var(--success-soft); color: var(--success); }
+    .badge-expense { background: var(--danger-soft); color: var(--danger); }
+
+    .modal-overlay {
+        position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+        display: flex; align-items: center; justify-content: center; padding: 20px;
+        animation: fadeIn 0.15s ease;
+    }
+    .modal {
+        background: #fff; border-radius: 12px; box-shadow: 0 20px 40px -12px rgba(0,0,0,0.15);
+        border: 1px solid #e2e8f0; max-width: 100%; max-height: 90vh; overflow: visible;
+        animation: slideUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .modal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 20px 24px 16px; border-bottom: 1px solid #f1f5f9;
+    }
+    .modal-title { font-size: 1.1rem; font-weight: 700; color: #1e2d45; margin: 0; }
+    
+    .modal-form { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+    .field-group { display: flex; flex-direction: column; gap: 8px; }
+    .field-label { font-size: 0.8rem; font-weight: 600; color: var(--gray-600); }
+    .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    
+    .field-input {
+        width: 100%; height: 40px; padding: 0 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+        font-size: 0.9rem; color: #1e293b; transition: 0.2s; outline: none; background: #fcfcfc;
+    }
+    .field-input:focus { border-color: var(--blue-600); box-shadow: 0 0 0 3px rgba(37,99,235,0.08); background: #fff; }
+    
+    .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    .hidden { display: none !important; }
+</style>
+
+<script>
+    let transactions = JSON.parse('{{ transactions_json|escapejs }}');
+    let State = {
+        period: 'monthly',
+        customStart: null,
+        customEnd: null,
+        amountMin: 0,
+        amountMax: 999999,
+        categoryFilter: 'all',
+        branchFilter: 'all',
+        searchQuery: '',
+        editingId: null
+    };
+
+    function fmt(val) {
+        return '₹' + parseFloat(val).toLocaleString('en-IN', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    }
+
+    function fmtDate(iso) {
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    function openTxModal(id = null) {
+        State.editingId = id;
+        const modal = document.getElementById('tx-modal-overlay');
+        const title = document.getElementById('tx-modal-title');
+        const form  = document.getElementById('tx-form');
+        
+        if (id) {
+            const t = transactions.find(x => x.id == id);
+            if (!t) return;
+            title.textContent = 'Edit Transaction';
+            document.getElementById('txf-date').value = t.date;
+            document.getElementById('txf-type').value = t.type;
+            document.getElementById('txf-desc').value = t.desc;
+            document.getElementById('txf-amount').value = t.amount;
+            document.getElementById('txf-category').value = t.catId || "";
+            document.getElementById('txf-branch').value = t.branchId || "";
+            document.getElementById('txf-note').value = t.vendor || "";
+        } else {
+            title.textContent = 'Add Transaction';
+            form.reset();
+            document.getElementById('txf-date').value = new Date().toISOString().split('T')[0];
+        }
+        modal.classList.remove('hidden');
+    }
+
+    function closeTxModal() {
+        document.getElementById('tx-modal-overlay').classList.add('hidden');
+        State.editingId = null;
+    }
+
+    async function saveTransaction() {
+        const payload = {
+            id: State.editingId,
+            date: document.getElementById('txf-date').value,
+            type: document.getElementById('txf-type').value,
+            desc: document.getElementById('txf-desc').value.trim(),
+            amount: document.getElementById('txf-amount').value,
+            catId: document.getElementById('txf-category').value,
+            branchId: document.getElementById('txf-branch').value,
+            vendor: document.getElementById('txf-note').value.trim()
+        };
+
+        try {
+            const res = await fetch("{% url 'expenses:save_ajax' %}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) window.location.reload();
+            else alert(data.error);
+        } catch (e) { console.error(e); }
+    }
+
+    async function deleteTx(id) {
+        if (!confirm('Are you sure you want to delete this transaction?')) return;
+        try {
+            const res = await fetch(`/expenses/${id}/delete/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+            });
+            window.location.reload();
+        } catch (e) { console.error(e); }
+    }
+
+    function setPeriod(p, btn) {
+        State.period = p;
+        document.querySelectorAll('.period-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('custom-date-group').classList.toggle('hidden', p !== 'custom');
+        renderTransactions();
+    }
+
+    function applyCustomDates() {
+        State.customStart = document.getElementById('cf-start').value;
+        State.customEnd = document.getElementById('cf-end').value;
+        renderTransactions();
+    }
+
+    function updateAmountFilter() {
+        State.amountMin = parseFloat(document.getElementById('cf-min').value) || 0;
+        State.amountMax = parseFloat(document.getElementById('cf-max').value) || 999999;
+        renderTransactions();
+    }
+
+    function updateCategoryFilter(id) {
+        State.categoryFilter = id;
+        renderTransactions();
+    }
+
+    function updateBranchFilter(id) {
+        State.branchFilter = id;
+        renderTransactions();
+    }
+
+    function resetFilters() {
+        State = {
+            period: 'monthly', customStart: null, customEnd: null, amountMin: 0, amountMax: 999999, categoryFilter: 'all', branchFilter: 'all', searchQuery: '', editingId: null
+        };
+        document.getElementById('cf-min').value = '';
+        document.getElementById('cf-max').value = '';
+        document.getElementById('cf-category').value = 'all';
+        document.getElementById('global-branch-select').value = 'all';
+        document.getElementById('txn-search').value = '';
+        document.querySelectorAll('.period-tab').forEach(b => b.classList.remove('active'));
+        document.querySelector('[data-period="monthly"]').classList.add('active');
+        document.getElementById('custom-date-group').classList.add('hidden');
+        renderTransactions();
+    }
+
+    document.getElementById('txn-search').addEventListener('input', (e) => {
+        State.searchQuery = e.target.value.toLowerCase().trim();
+        renderTransactions();
+    });
+
+    function renderTransactions() {
+        const tbody = document.getElementById('txn-tbody');
+        const empty = document.getElementById('results-empty');
+        const count = document.getElementById('results-count');
+        
+        let filtered = transactions;
+
+        const now = new Date();
+        if (State.period !== 'all') {
+            filtered = filtered.filter(t => {
+                const td = new Date(t.date);
+                if (State.period === 'daily') return td.toDateString() === new Date().toDateString();
+                if (State.period === 'weekly') {
+                    const lastWeek = new Date(); lastWeek.setDate(now.getDate() - 7);
+                    return td >= lastWeek;
+                }
+                if (State.period === 'monthly') return td.getMonth() === new Date().getMonth() && td.getFullYear() === new Date().getFullYear();
+                if (State.period === 'quarterly') {
+                    const last3Months = new Date(); last3Months.setMonth(now.getMonth() - 3);
+                    return td >= last3Months;
+                }
+                if (State.period === 'yearly') return td.getFullYear() === new Date().getFullYear();
+                if (State.period === 'custom' && State.customStart && State.customEnd) {
+                    return t.date >= State.customStart && t.date <= State.customEnd;
+                }
+                return true;
+            });
+        }
+
+        if (State.branchFilter !== 'all') filtered = filtered.filter(t => t.branchId == State.branchFilter);
+        if (State.categoryFilter !== 'all') filtered = filtered.filter(t => t.catId == State.categoryFilter);
+        filtered = filtered.filter(t => t.amount >= State.amountMin && t.amount <= State.amountMax);
+
+        if (State.searchQuery) {
+            filtered = filtered.filter(t => 
+                t.desc.toLowerCase().includes(State.searchQuery) ||
+                t.vendor.toLowerCase().includes(State.searchQuery) ||
+                t.ref.toLowerCase().includes(State.searchQuery)
+            );
+        }
+
+        count.textContent = filtered.length;
+        if (filtered.length === 0) {
+            tbody.innerHTML = '';
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        empty.classList.add('hidden');
+        tbody.innerHTML = filtered.map(t => `
+            <tr>
+                <td class="font-semibold text-slate-700">${fmtDate(t.date)}</td>
+                <td>
+                    <div class="font-semibold text-slate-800 text-sm">${t.desc}</div>
+                    <div class="text-xs text-slate-400 mt-0.5">${t.branchName} • ${t.mode}</div>
+                </td>
+                <td>
+                    <span class="cat-chip" style="color:${t.catColor}; background:${t.catColor}15; border-color:${t.catColor}30">
+                        ${t.catName}
+                    </span>
+                </td>
+                <td>
+                    <span class="type-badge badge-${t.type}">${t.type.toUpperCase()}</span>
+                </td>
+                <td class="text-right ${t.type === 'income' ? 'amount-positive' : 'amount-negative'}">
+                    ${t.type === 'income' ? '+' : '-'}${fmt(t.amount)}
+                </td>
+                <td class="text-right">
+                    <div class="flex justify-end gap-2">
+                        <button class="delete-row-btn" onclick="openTxModal(${t.id})" title="Edit">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        </button>
+                        <button class="delete-row-btn text-danger" onclick="deleteTx(${t.id})" title="Delete">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    document.addEventListener('DOMContentLoaded', renderTransactions);
+</script>
+{% endblock %}
