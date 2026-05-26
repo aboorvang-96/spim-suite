@@ -9,3 +9,16 @@ node_modules/
 .env
 .env.*
 *.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.env
+db.sqlite3
+media/
+staticfiles/
+node_modules/
+.claude/
+runtime.txt
