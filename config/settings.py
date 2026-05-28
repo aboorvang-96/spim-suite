@@ -4,14 +4,22 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# -------------------------------------------------------------------
+# SECURITY
+# -------------------------------------------------------------------
+
 SECRET_KEY = config(
     'SECRET_KEY',
-    default='django-insecure-spim-suite-production-key'
+    default='django-production-secret-key-spim-suite'
 )
 
 DEBUG = config('DEBUG', cast=bool, default=False)
 
 ALLOWED_HOSTS = ['*']
+
+# -------------------------------------------------------------------
+# INSTALLED APPS
+# -------------------------------------------------------------------
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -43,6 +51,10 @@ INSTALLED_APPS = [
     'corsheaders',
 ]
 
+# -------------------------------------------------------------------
+# MIDDLEWARE
+# -------------------------------------------------------------------
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
 
@@ -61,7 +73,7 @@ MIDDLEWARE = [
 ]
 
 # -------------------------------------------------------------------
-# CORS SETTINGS
+# CORS
 # -------------------------------------------------------------------
 
 CORS_ALLOWED_ORIGINS = [
@@ -72,10 +84,11 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = False
+
 CORS_URLS_REGEX = r'^/api/.*$'
 
 # -------------------------------------------------------------------
-# DJANGO CORE SETTINGS
+# URLS & AUTH
 # -------------------------------------------------------------------
 
 ROOT_URLCONF = 'config.urls'
@@ -113,8 +126,8 @@ TEMPLATES = [
 # -------------------------------------------------------------------
 
 DATABASES = {
-    'default': dj_database_url.config(
-        default=config('DATABASE_URL')
+    'default': dj_database_url.parse(
+        config('DATABASE_URL')
     )
 }
 
@@ -127,7 +140,6 @@ LANGUAGE_CODE = 'en-in'
 TIME_ZONE = 'Asia/Kolkata'
 
 USE_I18N = True
-
 USE_TZ = True
 
 # -------------------------------------------------------------------
@@ -144,7 +156,7 @@ CURRENCY_CODE = 'INR'
 STATIC_URL = '/static/'
 
 STATICFILES_DIRS = [
-    BASE_DIR / 'static',
+    BASE_DIR / 'static'
 ]
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -160,7 +172,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # -------------------------------------------------------------------
-# DEFAULT PRIMARY KEY
+# DEFAULT AUTO FIELD
 # -------------------------------------------------------------------
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
