@@ -1,12 +1,16 @@
 from pathlib import Path
 from decouple import config
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 SECRET_KEY = config(
     'SECRET_KEY',
     default='django-insecure-spim-suite-production-key'
 )
-DEBUG      = config('DEBUG', cast=bool, default=True)
+
+DEBUG = config('DEBUG', cast=bool, default=False)
+
 ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
@@ -16,7 +20,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Project Apps
     'accounts',
     'dashboard',
@@ -34,15 +38,20 @@ INSTALLED_APPS = [
     'material_stock',
     'api',
 
+    # Third Party Apps
     'widget_tweaks',
     'corsheaders',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    # CorsMiddleware must come before CommonMiddleware so the Access-Control
-    # headers are attached to all responses, including 4xx/5xx.
+
+    # WhiteNoise
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+
+    # CORS
     'corsheaders.middleware.CorsMiddleware',
+
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -51,65 +60,107 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# ---------------------------------------------------------------------------
-# CORS — only required for the SPIM Lite mobile/web client. Other endpoints
-# remain same-origin and unaffected.
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# CORS SETTINGS
+# -------------------------------------------------------------------
+
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:8081',
     'http://127.0.0.1:8081',
-    # Expo dev tools sometimes uses 19006 (web) — include for safety.
     'http://localhost:19006',
     'http://127.0.0.1:19006',
 ]
-# Allow credentials only if you later switch to cookie-session auth; the
-# mobile API uses bearer tokens so this stays False.
+
 CORS_ALLOW_CREDENTIALS = False
-# Scope CORS to the /api/ namespace so other URLs are not affected.
 CORS_URLS_REGEX = r'^/api/.*$'
 
-ROOT_URLCONF    = 'config.urls'
+# -------------------------------------------------------------------
+# DJANGO CORE SETTINGS
+# -------------------------------------------------------------------
+
+ROOT_URLCONF = 'config.urls'
+
 WSGI_APPLICATION = 'config.wsgi.application'
+
 AUTH_USER_MODEL = 'accounts.User'
-LOGIN_URL       = '/auth/login/'
-LOGIN_REDIRECT_URL  = '/dashboard/'
+
+LOGIN_URL = '/auth/login/'
+LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/auth/login/'
 
-TEMPLATES = [{
-    'BACKEND': 'django.template.backends.django.DjangoTemplates',
-    'DIRS': [BASE_DIR / 'templates'],
-    'APP_DIRS': True,
-    'OPTIONS': {'context_processors': [
-        'django.template.context_processors.debug',
-        'django.template.context_processors.request',
-        'django.contrib.auth.context_processors.auth',
-        'django.contrib.messages.context_processors.messages',
-    ]},
-}]
+# -------------------------------------------------------------------
+# TEMPLATES
+# -------------------------------------------------------------------
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [BASE_DIR / 'templates'],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
+# -------------------------------------------------------------------
+# DATABASE
+# -------------------------------------------------------------------
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('PGDATABASE'),
-        'USER': config('PGUSER'),
-        'PASSWORD': config('PGPASSWORD'),
-        'HOST': config('PGHOST'),
-        'PORT': config('PGPORT'),
-    }
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL')
+    )
 }
 
-LANGUAGE_CODE = 'en-in'
-TIME_ZONE     = 'Asia/Kolkata'
-USE_I18N = True
-USE_TZ   = True
+# -------------------------------------------------------------------
+# INTERNATIONALIZATION
+# -------------------------------------------------------------------
 
-# Currency Settings for India
+LANGUAGE_CODE = 'en-in'
+
+TIME_ZONE = 'Asia/Kolkata'
+
+USE_I18N = True
+
+USE_TZ = True
+
+# -------------------------------------------------------------------
+# CURRENCY SETTINGS
+# -------------------------------------------------------------------
+
 CURRENCY_SYMBOL = '₹'
 CURRENCY_CODE = 'INR'
 
-STATIC_URL       = '/static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT      = BASE_DIR / 'staticfiles'
-MEDIA_URL        = '/media/'
-MEDIA_ROOT       = BASE_DIR / 'media'
+# -------------------------------------------------------------------
+# STATIC FILES
+# -------------------------------------------------------------------
+
+STATIC_URL = '/static/'
+
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# -------------------------------------------------------------------
+# MEDIA FILES
+# -------------------------------------------------------------------
+
+MEDIA_URL = '/media/'
+
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# -------------------------------------------------------------------
+# DEFAULT PRIMARY KEY
+# -------------------------------------------------------------------
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
