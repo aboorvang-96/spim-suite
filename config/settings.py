@@ -2,6 +2,8 @@ from pathlib import Path
 from decouple import config
 import dj_database_url
 import os
+import sys
+print("ALL ENV KEYS:", list(os.environ.keys()), file=sys.stderr, flush=True)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
