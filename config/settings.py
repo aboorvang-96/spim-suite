@@ -2,7 +2,10 @@ from pathlib import Path
 from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = config('SECRET_KEY')
+SECRET_KEY = config(
+    'SECRET_KEY',
+    default='django-insecure-spim-suite-production-key'
+)
 DEBUG      = config('DEBUG', cast=bool, default=True)
 ALLOWED_HOSTS = ['*']
 
