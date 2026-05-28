@@ -18,6 +18,10 @@ DEBUG = config('DEBUG', cast=bool, default=False)
 
 ALLOWED_HOSTS = ['*']
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://spim-suite-production.up.railway.app',
+]
+
 # -------------------------------------------------------------------
 # INSTALLED APPS
 # -------------------------------------------------------------------
