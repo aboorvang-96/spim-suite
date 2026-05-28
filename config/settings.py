@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'api',
 
     # Third Party Apps
+    'whitenoise.runserver_nostatic',  # ← ADDED: whitenoise static files
     'widget_tweaks',
     'corsheaders',
 ]
@@ -81,6 +82,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:8081',
     'http://localhost:19006',
     'http://127.0.0.1:19006',
+    'https://spim-suite.railway.app',  # ← ADDED: your Railway domain
 ]
 
 CORS_ALLOW_CREDENTIALS = False
@@ -122,12 +124,14 @@ TEMPLATES = [
 ]
 
 # -------------------------------------------------------------------
-# DATABASE
+# DATABASE  ← FIXED: added SSL required for Supabase
 # -------------------------------------------------------------------
 
 DATABASES = {
     'default': dj_database_url.parse(
-        config('DATABASE_URL')
+        config('DATABASE_URL'),
+        conn_max_age=600,
+        ssl_require=True,   # ← REQUIRED for Supabase
     )
 }
 
