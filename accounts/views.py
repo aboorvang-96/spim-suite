@@ -4,7 +4,7 @@ from django.contrib import messages
 from .forms import LoginForm, RegisterForm
 
 def is_admin_user(user):
-    return user.is_authenticated and getattr(user, 'role', 'user') == 'admin'
+    return user.is_authenticated and getattr(user, 'role', 'user') in ('admin', 'super_admin')
 
 def get_admin_id(user):
     """Return the user's admin_id, falling back to a user-unique sentinel when

@@ -706,8 +706,26 @@
     return Number.MAX_SAFE_INTEGER;
   }
 
-  /* ── Persistence ── */
+  /* ── Persistence ──
+     Backend is the source of truth (per-tenant Postgres via
+     /material-stock/api/state/). localStorage is kept as a write-through
+     cache so the UI still renders instantly on refresh while the backend
+     fetch is in flight, and so an offline tab degrades gracefully.
+
+     Save semantics: fire-and-forget POST of the whole {sites, items,
+     entries} payload. Matches the existing JS "save the whole array"
+     pattern; tenant isolation is enforced server-side by admin_id.
+  */
+  const STOCK_STATE_URL = '/material-stock/api/state/';
+
+  function _getCsrfToken() {
+    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
   function loadSavedData() {
+    // Synchronous localStorage read = instant UI bootstrap. Backend fetch
+    // (below in run()) replaces this with the authoritative copy.
     try {
       savedEntries      = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
       masterSites       = JSON.parse(localStorage.getItem(SITES_KEY))   || [];
@@ -715,11 +733,58 @@
       adjustmentHistory = JSON.parse(localStorage.getItem(ADJ_KEY))     || [];
     } catch (e) { console.error("Load failed", e); }
   }
-  function persistSavedEntries() { localStorage.setItem(STORAGE_KEY, JSON.stringify(savedEntries)); }
+
+  async function loadFromBackend() {
+    try {
+      const resp = await fetch(STOCK_STATE_URL, { credentials: 'same-origin' });
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      if (!data || !data.success) return false;
+      savedEntries = Array.isArray(data.entries) ? data.entries : [];
+      masterSites  = Array.isArray(data.sites)   ? data.sites   : [];
+      masterStock  = Array.isArray(data.items)   ? data.items   : [];
+      // Cache so the next page load is instant.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(savedEntries));
+      localStorage.setItem(SITES_KEY,   JSON.stringify(masterSites));
+      localStorage.setItem(MASTER_KEY,  JSON.stringify(masterStock));
+      return true;
+    } catch (e) {
+      console.warn('Stock backend unreachable, using local cache.', e);
+      return false;
+    }
+  }
+
+  function _pushFullState() {
+    // Fire-and-forget — UI proceeds without waiting on the round trip.
+    try {
+      fetch(STOCK_STATE_URL, {
+        method:      'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken':  _getCsrfToken(),
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({
+          sites:   masterSites,
+          items:   masterStock,
+          entries: savedEntries,
+        }),
+      }).catch(e => console.warn('Stock backend save failed', e));
+    } catch (e) {
+      console.warn('Stock backend save threw', e);
+    }
+  }
+
+  function persistSavedEntries() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedEntries));
+    _pushFullState();
+  }
   function persistMasterData() {
     localStorage.setItem(SITES_KEY,  JSON.stringify(masterSites));
     localStorage.setItem(MASTER_KEY, JSON.stringify(masterStock));
     localStorage.setItem(ADJ_KEY,    JSON.stringify(adjustmentHistory));
+    _pushFullState();
   }
 
   /* ── Global Location Integration ── */
@@ -1392,8 +1457,14 @@
   }
 
   /* ── Bootstrap ── */
-  function run() {
-    if (!localStorage.getItem(STORAGE_KEY) && !localStorage.getItem(MASTER_KEY)) {
+  async function run() {
+    // Try the backend first so a fresh device/session immediately sees
+    // this tenant's data without waiting for a seed. Falls back to the
+    // local cache (and finally to the seed defaults) if the backend is
+    // unreachable AND the cache is empty.
+    const backendOk = await loadFromBackend();
+
+    if (!backendOk && !localStorage.getItem(STORAGE_KEY) && !localStorage.getItem(MASTER_KEY)) {
       const defaultSites = [
         { id: "gloc-giga-hq", name: "Giga HQ" },
         { id: "gloc-mega-site-alpha", name: "Mega Site Alpha" },
@@ -1473,7 +1544,16 @@
       localStorage.setItem(MASTER_KEY, JSON.stringify(defaultStock));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultEntries));
     }
-    loadSavedData();
+    if (!backendOk) {
+      // Backend was offline — pull from the local cache instead.
+      loadSavedData();
+    }
+    // Seed defaults / locally-cached state into the backend so other
+    // devices / refreshes pick it up. No-op when state already exists
+    // upstream (server upsert keyed by client_id).
+    if (!backendOk && (savedEntries.length || masterSites.length || masterStock.length)) {
+      _pushFullState();
+    }
     draftRows = [createDraftRow({ selected: true })];
     elements.todayDisplay.textContent = "Today: " + formatTodayDisplay();
     attachEvents();

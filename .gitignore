@@ -22,3 +22,32 @@ staticfiles/
 node_modules/
 .claude/
 runtime.txt
+
+```gitignore
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+
+# Environment
+.env
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# SQLite
+db.sqlite3
+
+# Static
+staticfiles/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+```

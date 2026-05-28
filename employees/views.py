@@ -606,7 +606,31 @@ def salary_dashboard(request):
             advance = float(salary_record.advance_pay if salary_record else 0)
             ded = float(salary_record.total_deduction if salary_record else 0)
             pf_amount = float(salary_record.pf_employee_snapshot if salary_record else 0)
-            net = float(salary_record.net_pay) if salary_record else (gross_base + ot - advance - ded)
+            # Always compute the attendance-prorated payable base so the Edit
+            # Salary modal can render the same value as the dashboard list
+            # (single source of truth — same helper the Save handler uses).
+            # The compute is per (employee, month, base), so it's also valid
+            # when a salary_record already exists.
+            ae_month = (
+                target_date
+                or (salary_record.month if salary_record else timezone.now().date().replace(day=1))
+            )
+            try:
+                attendance_earnings = float(_compute_attendance_earnings(
+                    e, ae_month, gross_base,
+                ))
+            except Exception as exc:
+                # Defensive: never let a per-row compute kill the whole
+                # dashboard. Surface in logs and fall back to gross_base.
+                print(f'[salary_dashboard] attendance compute failed for emp {e.pk}: {exc}')
+                attendance_earnings = gross_base
+
+            if salary_record:
+                net = float(salary_record.net_pay)
+            else:
+                # No payslip generated yet for the selected month: derive net
+                # from the live attendance_earnings already computed above.
+                net = attendance_earnings + ot - advance - ded
 
             if salary_record:
                 processed_count += 1
@@ -638,6 +662,10 @@ def salary_dashboard(request):
                 'deduction': ded,
                 'pf_amount': pf_amount,
                 'net_payable': net,
+                # Server-computed payable base from AttendanceRecord rows for
+                # the row's month — Edit Salary modal reads this instead of
+                # its localStorage fallback so it always matches the page.
+                'attendance_earnings': attendance_earnings,
                 'overtime': ot,
                 'food_allowance': food_allowance,
                 'food_usage': food_usage,
@@ -774,12 +802,17 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
     holiday_days      = non_sunday.filter(status='holiday').count()
     half_days         = non_sunday.filter(status='half_day').count()
     no_week_off_days  = non_sunday.filter(status='no_week_off').count()
-    # leave, absent, week_off → not directly added to numerator
-    # (week_off is implicit, derived from EarnedWeekOff below)
+    # Explicitly-marked week_off rows count as paid days (matches the mobile
+    # rule in attendanceStore.getPresentCount: Present + Week Off = paid).
+    explicit_week_off_days = non_sunday.filter(status='week_off').count()
 
     # ---- Earned-week-off validation (Rules 3 & 4) ----
+    # Credit is the LARGER of explicit admin marks and auto-earned rest days
+    # (floor(present/6)), so the two models combine without double-counting.
+    # `no_week_off` markings still subtract from the final credit.
     earned_week_offs = present_days // 6
-    valid_week_off   = max(0, earned_week_offs - no_week_off_days)
+    credited_week_offs = max(earned_week_offs, explicit_week_off_days)
+    valid_week_off   = max(0, credited_week_offs - no_week_off_days)
 
     # ---- RawPaidDays (Step 7) ----
     raw_paid_days = (

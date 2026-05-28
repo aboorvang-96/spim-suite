@@ -16,11 +16,15 @@ class UserManager(BaseUserManager):
         return self.create_user(email, username, password, **extra)
 
 class User(AbstractBaseUser, PermissionsMixin):
-    ROLES = (('admin', 'Admin'), ('user', 'User'))
+    ROLES = (
+        ('super_admin', 'Super Admin'),
+        ('admin', 'Admin'),
+        ('user', 'User'),
+    )
     email       = models.EmailField(unique=True)
     username    = models.CharField(max_length=60, unique=True)
     full_name   = models.CharField(max_length=120, blank=True)
-    role        = models.CharField(max_length=10, choices=ROLES, default='user')
+    role        = models.CharField(max_length=20, choices=ROLES, default='user')
     avatar      = models.ImageField(upload_to='avatars/', blank=True, null=True)
     is_active   = models.BooleanField(default=True)
     is_staff    = models.BooleanField(default=False)
@@ -42,11 +46,15 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_admin(self):
-        return self.role == 'admin'
+        """Has admin permission scope (Super Admin or linked Admin)."""
+        return self.role in ('admin', 'super_admin')
 
     @property
     def is_super_admin(self):
-        """Super Admin = admin user that owns the org (no parent). Same permission scope as a linked Admin."""
+        """Super Admin owns the org (no parent). New rows store role='super_admin';
+        legacy rows still detected via role='admin' + no parent + admin_id set."""
+        if self.role == 'super_admin':
+            return True
         return self.role == 'admin' and self.parent_admin_id is None and bool(self.admin_id)
 
     @property

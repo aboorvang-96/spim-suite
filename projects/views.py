@@ -11,6 +11,37 @@ from branches.models import LocationSite
 from datetime import date as date_type
 import json
 
+# Statuses that allow an employee's machine work to surface in reports.
+# Matches the mobile rule in SPIM Lite (dashboard / machines / attendance
+# screens): present + half_day are working; everything else hides machine
+# display without deleting the underlying worklog row.
+_WORKING_ATTENDANCE_STATUSES = ('present', 'half_day')
+
+
+def _attendance_qualified_emps(emps, on_date):
+    """
+    Filter `emps` (iterable of Employee) to those whose AttendanceRecord
+    for `on_date` is in {'present', 'half_day'}, OR who have no attendance
+    record for that date at all (permissive default — matches mobile).
+
+    Single batched query per call, so cost stays O(1) per worklog row.
+    Returns a list in the original order.
+    """
+    from attendance.models import AttendanceRecord  # deferred: circular safety
+    emp_list = list(emps)
+    if not emp_list:
+        return emp_list
+    att_map = dict(
+        AttendanceRecord.objects
+        .filter(employee_id__in=[e.pk for e in emp_list], date=on_date)
+        .values_list('employee_id', 'status')
+    )
+    return [
+        e for e in emp_list
+        if att_map.get(e.pk) is None
+        or att_map[e.pk] in _WORKING_ATTENDANCE_STATUSES
+    ]
+
 # ─── Tenant-scoping helpers (Project / Task) ────────────────────────────────
 # Project and Task both have an admin_id column on the DB (added by
 # migration 0002). Admins see every project/task in their own org;
@@ -159,8 +190,19 @@ def _work_log_json(request, admin_id):
 
     entries = []
     for idx, log in enumerate(qs, start=1):
-        emp_ids   = [e.pk for e in log.employees.all()]
-        emp_names = [e.name for e in log.employees.all()]
+        # Single prefetch-cache traversal so emp_ids / emp_names / tmp stay
+        # in lock-step:
+        #   - emp_ids / emp_names: every linked employee (admin needs to see
+        #     the full crew for edit/unlink even if some were absent).
+        #   - tmp: attendance-qualified count only (Phase 3 — matches the
+        #     Work Summary tab and the user-facing TMP rule: present /
+        #     half_day count; absent / leave / holiday / week_off / no_week_off
+        #     do not). _attendance_qualified_emps is the single source of
+        #     truth for this filter.
+        emps           = list(log.employees.all())
+        emp_ids        = [e.pk for e in emps]
+        emp_names      = [e.name for e in emps]
+        qualified_emps = _attendance_qualified_emps(emps, log.date)
         entries.append({
             'sl':            idx,
             'id':            log.pk,
@@ -170,7 +212,7 @@ def _work_log_json(request, admin_id):
             'location_name': log.location.name if log.location else '—',
             'site':          log.site or '',
             'work_details':  log.work_details or '',
-            'tmp':           log.tmp,
+            'tmp':           len(qualified_emps),
             'remarks':       log.remarks or '',
             'employee_ids':  emp_ids,
             'employee_names': emp_names,
@@ -218,15 +260,23 @@ def _work_summary_json(request, admin_id):
     rows = []
     total_tmp = 0
     for idx, log in enumerate(qs, start=1):
-        total_tmp += log.tmp
-        emp_names = ', '.join(e.name for e in log.employees.all()) or '—'
+        # TMP = actual linked-employee count for this row, not the legacy
+        # stored `tmp` integer (which mobile inserts default to 0).
+        # Uses the prefetch_related cache — no extra query per row.
+        # Then drop any employee whose attendance for this date is not
+        # 'present' / 'half_day' so reports reflect the same business
+        # rule the mobile UI uses for the Today's Machine card.
+        emps = _attendance_qualified_emps(log.employees.all(), log.date)
+        emp_count = len(emps)
+        total_tmp += emp_count
+        emp_names = ', '.join(e.name for e in emps) or '—'
         rows.append({
             'sl':            idx,
             'date':          log.date.strftime('%d-%m-%Y'),
             'location_name': log.location.name if log.location else '—',
             'site':          log.site or '—',
             'work_details':  log.work_details or '—',
-            'tmp':           log.tmp,
+            'tmp':           emp_count,
             'employees':     emp_names,
             'remarks':       log.remarks or '—',
         })
@@ -449,7 +499,9 @@ def machine_monthly_report(request):
     if site_flt:
         qs = qs.filter(site__icontains=site_flt)
 
-    # day (1–31) → {emp_id_set, tmp, work_details, site}
+    # day (1–31) → {emp_id_set, work_details, site}
+    # TMP is derived from len(emp_ids) at output time below — the stored
+    # `tmp` column is mobile-inserted as 0 and no longer reliable.
     day_map = {}
     # ordered dict: emp_id → emp_name  (insertion order = first appearance)
     emp_registry = {}
@@ -459,14 +511,16 @@ def machine_monthly_report(request):
         if d not in day_map:
             day_map[d] = {
                 'emp_ids':     set(),
-                'tmp':         log.tmp,
                 'work_details': log.work_details or '',
                 'site':        log.site or '',
             }
-        day_map[d]['emp_ids'].update(e.pk for e in log.employees.all())
-        day_map[d]['tmp']         = log.tmp
+        # Same attendance-aware gate as _work_summary_json: only count
+        # employees whose attendance for that date is present/half_day
+        # (or absent — i.e. no record yet — permissive default).
+        qualified = _attendance_qualified_emps(log.employees.all(), log.date)
+        day_map[d]['emp_ids'].update(e.pk for e in qualified)
         day_map[d]['work_details']= log.work_details or day_map[d]['work_details']
-        for e in log.employees.all():
+        for e in qualified:
             if e.pk not in emp_registry:
                 emp_registry[e.pk] = e.name
 
@@ -482,9 +536,10 @@ def machine_monthly_report(request):
         ]
         emp_rows.append({'sl': sl, 'emp_id': eid, 'name': ename, 'cells': cells})
 
-    # TMP totals row (one value per day)
+    # TMP totals row (one value per day) — derived from the unique linked
+    # employee count for that day so it stays in sync with employee_names.
     tmp_row = [
-        day_map[d]['tmp'] if d in day_map else ''
+        len(day_map[d]['emp_ids']) if d in day_map else ''
         for d in range(1, days_in_month + 1)
     ]
 
@@ -545,8 +600,11 @@ def _build_work_summary_matrix(admin_id, year, month, location, site_flt):
         d = log.date.day
         if d not in day_map:
             day_map[d] = {'emp_ids': set(), 'site': log.site or ''}
-        day_map[d]['emp_ids'].update(e.pk for e in log.employees.all())
-        for e in log.employees.all():
+        # Mirror the attendance gate used by the JSON summary endpoints so
+        # XLSX / PDF exports show the same employee set as the screen view.
+        qualified = _attendance_qualified_emps(log.employees.all(), log.date)
+        day_map[d]['emp_ids'].update(e.pk for e in qualified)
+        for e in qualified:
             if e.pk not in emp_registry:
                 emp_registry[e.pk] = (e.employee_id or '', e.name)
 

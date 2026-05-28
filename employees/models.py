@@ -63,6 +63,11 @@ class Employee(models.Model):
     fixed_allowance  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     joining_date     = models.DateField(blank=True, null=True)
     status           = models.CharField(max_length=15, choices=STATUS, default='active')
+    # Supabase Auth uuid. Populated automatically by the post_save signal in
+    # employees/signals.py when mobile_app_password is set/changed. Can also
+    # be bulk-populated via `python manage.py seed_supabase_auth`. NULL until
+    # the first mobile_app_password is saved on this employee.
+    auth_user_id     = models.UUIDField(null=True, blank=True, unique=True, db_index=True)
     admin_id         = models.CharField(max_length=20, db_index=True, default='PENDING')
     job_role         = models.ForeignKey(JobRole, on_delete=models.SET_NULL, null=True, blank=True, related_name='employees')
     created_by       = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='employees_created')

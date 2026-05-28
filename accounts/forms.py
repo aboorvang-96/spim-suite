@@ -91,10 +91,12 @@ class RegisterForm(forms.ModelForm):
             if not org_code:
                 self.add_error('org_code', "Organization code is required to register as Admin.")
             else:
-                # Super Admin = admin role + admin_id set + no parent_admin
+                # Super Admin = owns the org (no parent + admin_id set).
+                # Accept both new ('super_admin') and legacy ('admin') stored
+                # role values so existing org codes keep working.
                 super_admin = User.objects.filter(
                     admin_id=org_code,
-                    role='admin',
+                    role__in=('super_admin', 'admin'),
                     parent_admin__isnull=True,
                 ).first()
                 if not super_admin:
@@ -106,15 +108,18 @@ class RegisterForm(forms.ModelForm):
     def save(self, commit=True):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data['password'])
-        # Both Super Admin and linked Admin share the same role/permission scope.
-        user.role = 'admin'
         account_type = self.cleaned_data.get('account_type')
         if account_type == 'super_admin':
+            # Super Admin: store role explicitly so the persisted value is
+            # the source of truth (Django row + Supabase row both show
+            # 'super_admin'). Permission scope still resolves via is_admin.
+            user.role = 'super_admin'
             user.admin_id = _generate_admin_id()
             user.parent_admin = None
         else:
             super_admin = getattr(self, '_linked_super_admin', None)
             # clean() guarantees super_admin exists when account_type == 'admin'
+            user.role = 'admin'
             user.admin_id = super_admin.admin_id
             user.parent_admin = super_admin
         if commit:

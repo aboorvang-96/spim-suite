@@ -706,6 +706,14 @@
         const s = salaryData.find(x => x.id === recId);
         if (!s) return 0;
 
+        // Prefer the server-computed attendance_earnings value (single source
+        // of truth — same _compute_attendance_earnings helper the dashboard
+        // list and the Save handler use). Falls through to the legacy
+        // localStorage path only if the server didn't include one.
+        if (typeof s.attendance_earnings === 'number' && s.attendance_earnings > 0) {
+            return s.attendance_earnings;
+        }
+
         // Match the empId used in attendance localStorage
         const empId = (s.employee_id && String(s.employee_id).trim())
                       ? String(s.employee_id).trim()

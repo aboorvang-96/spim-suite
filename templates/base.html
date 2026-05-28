@@ -101,7 +101,7 @@
                     <div class="user-avatar">{{ request.user.initials|default:"TA" }}</div>
                     <div class="user-details">
                         <div class="user-name">{{ request.user.full_name|default:"Test Admin" }}</div>
-                        <div class="user-badge">ADMIN</div>
+                        <div class="user-badge">{% if request.user.is_super_admin %}SUPER ADMIN{% else %}ADMIN{% endif %}</div>
                     </div>
                 </div>
                 <a href="{% url 'accounts:logout' %}" class="logout-btn">

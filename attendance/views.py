@@ -121,7 +121,12 @@ def load_attendance(request):
         'half_day':     'Half Day',
         'leave':        'Leave',
         'holiday':      'Holiday',
-        'week_off':     'Week Off',
+        # The attendance summary template (templates/attendance/index.html)
+        # buckets by 'Weekly Off' (see byDate / kpiCounts / groups / slugMap).
+        # Returning 'Week Off' here makes the bucket lookup fall through to
+        # the else branch and the rendered cell always reads 0. Emit the
+        # label the template expects so summaries/charts/KPIs aggregate.
+        'week_off':     'Weekly Off',
         'no_week_off':  'No Week Off',
     }
 

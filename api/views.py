@@ -474,11 +474,14 @@ def mobile_worklogs(request):
 
             Single source of truth: writes the existing `projects.WorkLog`
             row (same one the admin reads in the Suite). Upsert keyed on
-            (admin_id, date, location, site) so multiple employees on the
-            same machine merge into one row — the employee is added to the
-            M2M `employees` set, TMP is set to max(existing, posted) so no
-            double counting when several employees punch in for the same
-            machine. created_by stays NULL (mobile-originated row).
+            (admin_id, date, location) — the same 3-tuple used by the admin
+            `work_log_upsert` endpoint in projects/views.py. `site` is now
+            merged data (last-write-wins on non-empty value), not part of
+            identity, so two employees on the same machine/date with
+            different stored sites still collapse into one WorkLog row.
+            The employee is added to the M2M `employees` set, TMP grows
+            via max(existing, posted) so multiple punches do not double
+            count. created_by stays NULL (mobile-originated row).
     """
     emp = request.employee
 
@@ -515,26 +518,37 @@ def mobile_worklogs(request):
 
         site_val = (emp.site or '').strip()
 
+        # Identity is (admin_id, date, location) — matches projects.work_log_upsert.
+        # site is merged into defaults / overwritten on collision when non-empty.
         wl, created = WorkLog.objects.get_or_create(
             admin_id=emp.admin_id,
             date=d,
             location=machine,
-            site=site_val,
             defaults={
+                'site':         site_val,
                 'work_details': status_val,
                 'remarks':      remarks_val,
                 'tmp':          tmp_int,
             },
         )
         if not created:
-            # Merge — last-write-wins on status/remarks but TMP grows.
-            if status_val:
+            # Merge — non-empty values overwrite existing, TMP grows.
+            dirty = []
+            if site_val and site_val != (wl.site or ''):
+                wl.site = site_val
+                dirty.append('site')
+            if status_val and status_val != (wl.work_details or ''):
                 wl.work_details = status_val
-            if remarks_val:
+                dirty.append('work_details')
+            if remarks_val and remarks_val != (wl.remarks or ''):
                 wl.remarks = remarks_val
+                dirty.append('remarks')
             if tmp_int > (wl.tmp or 0):
                 wl.tmp = tmp_int
-            wl.save(update_fields=['work_details', 'remarks', 'tmp', 'updated_at'])
+                dirty.append('tmp')
+            if dirty:
+                dirty.append('updated_at')
+                wl.save(update_fields=dirty)
         wl.employees.add(emp)
 
         return JsonResponse({
