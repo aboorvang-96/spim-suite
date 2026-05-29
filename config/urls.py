@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.http import HttpResponse
 from django.shortcuts import redirect
+from django.views.generic import TemplateView
 
 def silent_204(request, *args, **kwargs):
     return HttpResponse(status=204)
@@ -26,6 +27,8 @@ urlpatterns = [
     path('categories/',   include('categories.urls',   namespace='categories')),
     path('material-stock/', include('material_stock.urls', namespace='material_stock')),
     path('api/',          include('api.urls',          namespace='api')),
+
+    path('offline/', TemplateView.as_view(template_name='pwa/offline.html'), name='offline'),
 
     path('favicon.ico', silent_204),
     path('.well-known/appspecific/com.chrome.devtools.json', silent_204),

@@ -1,0 +1,133 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline — SPIM Suite</title>
+    <meta name="theme-color" content="#1a2f5e">
+    <link rel="manifest" href="{% static 'pwa/manifest.json' %}">
+    <link rel="apple-touch-icon" href="{% static 'pwa/icons/icon-192.png' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --navy: #1a2f5e;
+            --navy-deep: #0a1628;
+            --gold: #c9a84c;
+            --gold-soft: rgba(201, 168, 76, 0.15);
+            --white: #ffffff;
+            --muted: rgba(255, 255, 255, 0.7);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse at top, var(--navy) 0%, var(--navy-deep) 70%),
+                var(--navy-deep);
+            color: var(--white);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+            overflow: hidden;
+        }
+        .offline-card {
+            max-width: 480px;
+            width: 100%;
+            padding: 48px 32px;
+            border: 1px solid var(--gold-soft);
+            border-radius: 24px;
+            background: rgba(10, 22, 40, 0.6);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+        .offline-logo {
+            width: 96px;
+            height: 96px;
+            margin: 0 auto 24px;
+            display: block;
+            border-radius: 20px;
+            background: var(--gold-soft);
+            padding: 12px;
+        }
+        .offline-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--gold);
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+        }
+        .offline-sub {
+            font-size: 15px;
+            color: var(--muted);
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+        .offline-brand {
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            letter-spacing: 4px;
+            color: var(--gold);
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .offline-tag {
+            font-size: 11px;
+            color: var(--muted);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+        }
+        .retry-btn {
+            display: inline-block;
+            padding: 12px 28px;
+            background: var(--gold);
+            color: var(--navy-deep);
+            text-decoration: none;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .retry-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(201, 168, 76, 0.4);
+        }
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ef4444;
+            margin-right: 8px;
+            animation: pulse 1.6s ease-in-out infinite;
+            vertical-align: middle;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-card">
+        <img src="{% static 'img/Logo.png' %}" alt="SPIM Suite" class="offline-logo">
+        <div class="offline-brand">SPIM</div>
+        <div class="offline-tag">Suite</div>
+        <h1 class="offline-title"><span class="dot"></span>You're Offline</h1>
+        <p class="offline-sub">
+            No internet connection right now. Check your network and try again — your data is safe and waiting.
+        </p>
+        <button class="retry-btn" onclick="window.location.reload()">Retry Connection</button>
+    </div>
+</body>
+</html>
