@@ -685,6 +685,163 @@ def mobile_logout(request):
 
 
 # ---------------------------------------------------------------------------
+# Salary cycle summary (26th prev month -> 25th current month)
+# ---------------------------------------------------------------------------
+
+@mobile_auth_required
+@require_http_methods(['GET'])
+def mobile_salary(request):
+    """
+    Current salary cycle summary for the authenticated employee.
+
+    Cycle window: 26th of previous month -> 25th of current month, anchored
+    to today. The SalaryUpdate row whose `month` matches the cycle-end's
+    year+month is used (SPIM Suite convention). If no row exists yet, all
+    monetary fields default to '0.00' so SPIM Lite can render the cycle
+    without a separate empty state.
+
+    Notes:
+      * `hra` is not tracked on SalaryUpdate today; surfaced as '0.00' to
+        keep the response shape stable. Update only the one line below if a
+        column is added later.
+      * `allowances` = extra_allowance + ot_allowance + food_allowance
+        (the three additive components SalaryUpdate already stores).
+      * `deductions` = total_deduction (kept as a single rolled-up figure
+        to match how the Suite UI shows it).
+    """
+    emp   = request.employee
+    today = date.today()
+
+    # Cycle window
+    if today.day >= 26:
+        cycle_start = today.replace(day=26)
+        if today.month == 12:
+            cycle_end = date(today.year + 1, 1, 25)
+        else:
+            cycle_end = date(today.year, today.month + 1, 25)
+    else:
+        if today.month == 1:
+            cycle_start = date(today.year - 1, 12, 26)
+        else:
+            cycle_start = date(today.year, today.month - 1, 26)
+        cycle_end = today.replace(day=25)
+
+    sal = SalaryUpdate.objects.filter(
+        employee=emp,
+        month__year=cycle_end.year,
+        month__month=cycle_end.month,
+    ).first()
+
+    # Attendance counts inside the cycle window (drives present/absent days).
+    att_qs = AttendanceRecord.objects.filter(
+        employee=emp,
+        date__gte=cycle_start,
+        date__lte=cycle_end,
+    )
+    present_days = att_qs.filter(status='present').count()
+    absent_days  = att_qs.filter(status='absent').count()
+
+    if sal:
+        basic_salary = str(sal.basic_salary)
+        hra          = '0.00'  # not modelled on SalaryUpdate
+        allowances   = str(sal.extra_allowance + sal.ot_allowance + sal.food_allowance)
+        deductions   = str(sal.total_deduction)
+        net_salary   = str(sal.net_pay)
+    else:
+        basic_salary = '0.00'
+        hra          = '0.00'
+        allowances   = '0.00'
+        deductions   = '0.00'
+        net_salary   = '0.00'
+
+    return JsonResponse({
+        'success': True,
+        'salary': {
+            'basic_salary': basic_salary,
+            'hra':          hra,
+            'allowances':   allowances,
+            'deductions':   deductions,
+            'net_salary':   net_salary,
+            'present_days': present_days,
+            'absent_days':  absent_days,
+            'cycle_start':  str(cycle_start),
+            'cycle_end':    str(cycle_end),
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# Dashboard summary (lightweight; for SPIM Lite home tab)
+# ---------------------------------------------------------------------------
+
+@mobile_auth_required
+@require_http_methods(['GET'])
+def mobile_dashboard(request):
+    """
+    Focused dashboard payload for the authenticated employee. Mirrors fields
+    already surfaced by `mobile_profile` so SPIM Lite's home tab can render
+    in a single round-trip instead of pulling the full profile snapshot.
+
+    Fields:
+      * employee identity (name, designation, department)
+      * today_attendance_status  -> AttendanceRecord.status for today, or None
+      * current_month_present_days / current_month_absent_days
+      * latest_net_salary  -> most recent SalaryUpdate.net_pay (or '0.00')
+      * company.name / company.logo_url  -> dashboard.CompanySettings
+    """
+    emp   = request.employee
+    today = date.today()
+
+    # Today's attendance (None if not yet marked)
+    todays_rec   = AttendanceRecord.objects.filter(employee=emp, date=today).first()
+    today_status = todays_rec.status if todays_rec else None
+
+    # Calendar-month counts (same scope as mobile_profile's attendance_summary)
+    month_qs = AttendanceRecord.objects.filter(
+        employee=emp, date__year=today.year, date__month=today.month,
+    )
+    present_days = month_qs.filter(status='present').count()
+    absent_days  = month_qs.filter(status='absent').count()
+
+    # Latest payslip net pay
+    latest            = SalaryUpdate.objects.filter(employee=emp).order_by('-month').first()
+    latest_net_salary = str(latest.net_pay) if latest else '0.00'
+
+    # Company block — deferred import (matches mobile_profile's pattern).
+    company_name = ''
+    company_logo = ''
+    try:
+        from dashboard.models import CompanySettings  # deferred to avoid cycles
+        cs = CompanySettings.get_settings(emp.admin_id)
+        if cs:
+            company_name = cs.name or ''
+            try:
+                if cs.logo and hasattr(cs.logo, 'url'):
+                    company_logo = request.build_absolute_uri(cs.logo.url)
+            except Exception:
+                company_logo = ''
+    except Exception:
+        pass
+
+    return JsonResponse({
+        'success': True,
+        'dashboard': {
+            'name':                       emp.name,
+            'designation':                emp.designation,
+            'department':                 emp.department,
+            'today_attendance_status':    today_status,
+            'current_month_present_days': present_days,
+            'current_month_absent_days':  absent_days,
+            'latest_net_salary':          latest_net_salary,
+            'company': {
+                'name':     company_name,
+                'logo_url': company_logo,
+            },
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
 # Legacy stub endpoints (kept for backward-compatibility; not wired into urls
 # unless the consumer app exists). Imports are deferred so this module always
 # loads cleanly even when optional apps are absent.

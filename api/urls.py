@@ -21,4 +21,6 @@ urlpatterns = [
     path('mobile/worklogs/',                 views.mobile_worklogs,          name='mobile_worklogs'),
     path('mobile/machines/',                 views.mobile_machines,          name='mobile_machines'),
     path('mobile/bank-details/',             views.mobile_bank_details,      name='mobile_bank_details'),
+    path('mobile/salary/',                   views.mobile_salary,            name='mobile_salary'),
+    path('mobile/dashboard/',                views.mobile_dashboard,         name='mobile_dashboard'),
 ]
