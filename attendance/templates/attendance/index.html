@@ -1122,10 +1122,10 @@ function dailyEarning(status, baseSalary, cycleDays) {
 function getCycles() {
     const cycles = [];
     const now = new Date();
+    const offset = (now.getDate() >= 26) ? 1 : 0;
     for (let i = 0; i < 12; i++) {
-        // Cycle: from 26th of (now.month - i - 1) to 25th of (now.month - i)
-        const end   = new Date(now.getFullYear(), now.getMonth() - i, 25);
-        const start = new Date(now.getFullYear(), now.getMonth() - i - 1, 26);
+        const end   = new Date(now.getFullYear(), now.getMonth() - i + offset,     25);
+        const start = new Date(now.getFullYear(), now.getMonth() - i + offset - 1, 26);
         cycles.push({
             label: `${start.getDate()} ${MONTH_NAMES[start.getMonth()]} ${start.getFullYear()} → ${end.getDate()} ${MONTH_NAMES[end.getMonth()]} ${end.getFullYear()}`,
             start: dateToStr(start),
