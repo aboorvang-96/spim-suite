@@ -18,10 +18,15 @@ DEBUG = config('DEBUG', cast=bool, default=False)
 
 ALLOWED_HOSTS = ['*']
 
+# Required when DEBUG=False
 CSRF_TRUSTED_ORIGINS = [
     'https://spim-suite-production.up.railway.app',
 ]
 
+# Security settings for production
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
 # -------------------------------------------------------------------
 # INSTALLED APPS
 # -------------------------------------------------------------------
