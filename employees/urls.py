@@ -17,6 +17,7 @@ urlpatterns = [
     path('export/json/', views.export_json_employees, name='export_json'),
     path('import/excel/', views.import_excel_employees, name='import_excel'),
     path('import/json/', views.import_json_employees, name='import_json'),
+    path('api/', views.employee_list_json, name='api_list'),
     path('payslip/<int:pk>/', views.generate_payslip, name='generate_payslip'),
 
     # Compatibility aliases — templates reference older wizard-style names.

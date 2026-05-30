@@ -582,20 +582,10 @@ function syncRecordsToServer(records) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    const raw = '{{ employees_json|safe }}';
-    try {
-        const parsed = JSON.parse(raw || '[]');
-        if (Array.isArray(parsed) && parsed.length > 0)
-            localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(parsed));
-    } catch (e) {}
-
-    syncCentralLocationSites();
-    updateEmployeeDropdown();
-    updateLocSiteDropdown();
     setTodayDate();
 
     /* ── Load shared DB records so all linked admins share visibility ── */
-    (function loadFromServer() {
+    function loadFromServer() {
         var today = todayStr();
         var firstOfMonth = today.slice(0, 7) + '-01';
         fetch('/attendance/load/?date_from=' + firstOfMonth, {
@@ -621,7 +611,33 @@ document.addEventListener('DOMContentLoaded', function () {
             loadBulkAttendanceTable();
         })
         .catch(function() { loadBulkAttendanceTable(); });
-    })();
+    }
+
+    /* ── Always fetch fresh employee list (cache-busting timestamp) ────────
+       The ?t= parameter prevents the browser's HTTP cache from serving
+       a stale HTML page that embeds old salary figures. Employee data is
+       guaranteed fresh before the table and dropdowns are first rendered. */
+    function initAfterEmployees() {
+        syncCentralLocationSites();
+        updateEmployeeDropdown();
+        updateLocSiteDropdown();
+        loadFromServer();
+    }
+
+    fetch('/employees/api/?t=' + Date.now(), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var parsed = data.employees || [];
+        if (parsed.length > 0)
+            localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(parsed));
+        initAfterEmployees();
+    })
+    .catch(function() {
+        // Network failed — fall back to whatever is already in localStorage
+        initAfterEmployees();
+    });
 });
 
 /* ═══════════════════════════════════════════════
@@ -1103,6 +1119,19 @@ function closeEmpDrawer() {
     drawerEmpData = null;
 }
 
+/* Count Mon-Sat days in [start, end] — Sundays are excluded from the
+   per-day salary divisor so employees are not under-paid for a month
+   that happens to have more Sundays than another. */
+function workingDays(start, end) {
+    let count = 0;
+    const cur = new Date(start);
+    while (cur <= end) {
+        if (cur.getDay() !== 0) count++;   // 0 = Sunday
+        cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+}
+
 function perDay(monthlySalary, cycleDays) {
     const divisor = (cycleDays && cycleDays > 0) ? cycleDays : 30;
     return monthlySalary > 0 ? monthlySalary / divisor : 0;
@@ -1112,7 +1141,7 @@ function dailyEarning(status, baseSalary, cycleDays) {
     const pd = perDay(baseSalary, cycleDays);
     if (status === 'Present')    return pd;
     if (status === 'Half Day')   return pd / 2;
-    if (status === 'Holiday')    return pd;
+    if (status === 'Holiday')    return 0;   // Sundays / holidays are unpaid
     if (status === 'Weekly Off') return pd;
     // Leave = 0 (unpaid)
     return 0;
@@ -1181,8 +1210,8 @@ function renderDrawerContent() {
     const start    = new Date(cycle.start + 'T00:00:00');
     const end      = new Date(cycle.end   + 'T00:00:00');
 
-    // Actual days in this 26→25 cycle (e.g. 30 for a typical month)
-    const cycleDays = Math.round((end - start) / 86400000) + 1;
+    // Working days (Mon-Sat) in this 26→25 cycle — Sundays excluded from pay
+    const cycleDays = workingDays(start, end);
 
     // Update header meta with cycle-accurate per-day figure
     if (baseSalary > 0) {
@@ -1378,7 +1407,7 @@ function exportDrawerExcel() {
 
     const start    = new Date(cycle.start + 'T00:00:00');
     const end      = new Date(cycle.end   + 'T00:00:00');
-    const cycleDays = Math.round((end - start) / 86400000) + 1;
+    const cycleDays = workingDays(start, end);
     const pd        = baseSalary > 0 ? baseSalary / cycleDays : 0;
 
     const records = loadAttendance().filter(r =>

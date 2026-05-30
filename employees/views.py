@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.db.models import Q
+from django.db import transaction
 from django.utils import timezone
 import calendar
 import datetime
@@ -427,7 +428,10 @@ def import_excel_employees(request):
 @login_required
 @require_POST
 def import_json_employees(request):
-    """Import employees from a previously exported JSON file."""
+    """Import employees from a previously exported JSON file.
+    Supports both SPIM Suite export keys and SPIM Lite JSON keys.
+    Uses update_or_create so re-importing the same file updates rather
+    than duplicating records. Bank details are upserted when present."""
     json_file = request.FILES.get('json_file')
     if not json_file:
         messages.error(request, "No file selected.")
@@ -440,23 +444,76 @@ def import_json_employees(request):
         for emp in emp_list:
             if not isinstance(emp, dict) or not emp.get('name'):
                 continue
-            Employee.objects.create(
-                admin_id      = admin_id,
-                name          = emp.get('name', ''),
-                employee_id   = emp.get('employee_id', ''),
-                designation   = emp.get('designation', ''),
-                department    = emp.get('department', ''),
-                location      = emp.get('location', ''),
-                site          = emp.get('site', ''),
-                base_salary   = emp.get('base_salary', 0),
-                status        = emp.get('status', 'active'),
-                created_by    = request.user,
+
+            # ── Field aliases: accept both export and SPIM Lite key names ──
+            employee_id = emp.get('employee_id') or str(emp.get('id', ''))
+            designation = emp.get('designation') or emp.get('role', '')
+            # base_salary: prefer explicit key; fall back to 'salary'
+            raw_salary  = emp.get('base_salary')
+            if raw_salary is None:
+                raw_salary = emp.get('salary', 0)
+
+            employee_obj, _ = Employee.objects.update_or_create(
+                admin_id    = admin_id,
+                employee_id = employee_id,
+                defaults={
+                    'name':        emp.get('name', ''),
+                    'designation': designation,
+                    'department':  emp.get('department', ''),
+                    'location':    emp.get('location', ''),
+                    'site':        emp.get('site', ''),
+                    'base_salary': raw_salary or 0,
+                    'status':      emp.get('status', 'active'),
+                    'created_by':  request.user,
+                    # JSON contains per-employee individual salaries — mark as
+                    # custom override so sc_save never silently overwrites them.
+                    'salary_is_custom_override': True,
+                }
             )
             count += 1
+
+            # ── Bank details: upsert if any bank field is provided ──────────
+            bank_name      = emp.get('bank', '')
+            account_holder = emp.get('holder', '')
+            account_number = emp.get('account', '')
+            ifsc_code      = emp.get('ifsc', '')
+            if any([bank_name, account_holder, account_number, ifsc_code]):
+                BankDetail.objects.update_or_create(
+                    employee=employee_obj,
+                    defaults={
+                        'bank_name':      bank_name,
+                        'account_holder': account_holder,
+                        'account_number': account_number,
+                        'ifsc_code':      ifsc_code,
+                    }
+                )
+
         messages.success(request, f"Imported {count} employee(s) successfully.")
     except Exception as e:
         messages.error(request, f"Import failed: {str(e)}")
     return redirect('employees:list')
+
+
+@login_required
+def employee_list_json(request):
+    """Return the employee list as JSON for the attendance page live-fetch.
+    Bypasses browser HTML caching so salary changes are always reflected
+    immediately without requiring a hard reload."""
+    admin_id = get_admin_id(request.user)
+    employees = Employee.objects.filter(admin_id=admin_id)
+    emp_list = []
+    for emp in employees:
+        emp_list.append({
+            'id':           str(emp.employee_id) if emp.employee_id else str(emp.id),
+            'name':         emp.name,
+            'dept':         emp.department or '',
+            'role':         emp.designation or '',
+            'mainLocation': emp.location or '',
+            'site':         emp.site or '',
+            'leave':        '0',
+            'baseSalary':   float(emp.base_salary) if emp.base_salary else 0,
+        })
+    return JsonResponse({'employees': emp_list})
 
 
 @login_required
@@ -886,25 +943,28 @@ def manage_ajax(request):
             if base <= 0:
                 return JsonResponse({'success': False, 'error': 'Base salary must be greater than 0.'}, status=400)
             admin_id = get_admin_id(request.user)
-            # Reuse-or-create JobRole by name (centralized role master).
-            job_role, _ = JobRole.objects.get_or_create(admin_id=admin_id, name=role)
-            structure, created = SalaryStructure.objects.update_or_create(
-                admin_id=admin_id, job_role=job_role, level=level,
-                defaults={'base_salary': base},
-            )
-            # Push the new base to every employee that already matches this
-            # mapping so SPIM Lite Salary / Payslip generation reflect right
-            # away (Task 4 — "Prevent stale values"). Employees with a manual
-            # salary override are deliberately skipped (Case 3 of the
-            # override spec).
-            Employee.objects.filter(
-                admin_id=admin_id, level=level, job_role=job_role,
-                salary_is_custom_override=False,
-            ).update(base_salary=base)
-            Employee.objects.filter(
-                admin_id=admin_id, level=level, designation__iexact=role,
-                salary_is_custom_override=False,
-            ).update(base_salary=base)
+            # All three DB writes are atomic: if the Employee bulk-update fails
+            # the SalaryStructure write rolls back too — no partial state.
+            with transaction.atomic():
+                # Reuse-or-create JobRole by name (centralized role master).
+                job_role, _ = JobRole.objects.get_or_create(admin_id=admin_id, name=role)
+                structure, created = SalaryStructure.objects.update_or_create(
+                    admin_id=admin_id, job_role=job_role, level=level,
+                    defaults={'base_salary': base},
+                )
+                # Push the new base to every employee that already matches this
+                # mapping so SPIM Lite Salary / Payslip generation reflect right
+                # away (Task 4 — "Prevent stale values"). Employees with a manual
+                # salary override are deliberately skipped (Case 3 of the
+                # override spec).
+                Employee.objects.filter(
+                    admin_id=admin_id, level=level, job_role=job_role,
+                    salary_is_custom_override=False,
+                ).update(base_salary=base)
+                Employee.objects.filter(
+                    admin_id=admin_id, level=level, designation__iexact=role,
+                    salary_is_custom_override=False,
+                ).update(base_salary=base)
             return JsonResponse({
                 'success': True, 'created': created,
                 'config': {
