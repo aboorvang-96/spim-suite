@@ -2,7 +2,7 @@
   {
     "id": 9,
     "name": "ESSGEETA",
-    "role": "SPIM01",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OFFICE",
     "salary": 27000,
@@ -17,7 +17,7 @@
   {
     "id": 10,
     "name": "KANNAN",
-    "role": "SPIM 02",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 82500,
@@ -32,7 +32,7 @@
   {
     "id": 11,
     "name": "NAGARAJAN",
-    "role": "SPIM03",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 82500,
@@ -47,7 +47,7 @@
   {
     "id": 12,
     "name": "SIVA LAKSHMI",
-    "role": "SPIM 04",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OFFICE",
     "salary": 8000,
@@ -62,7 +62,7 @@
   {
     "id": 13,
     "name": "KOMBAIYA",
-    "role": "SPIM 05",
+    "role": "",
     "location": "OVERHAULING",
     "site": "CHITRADURGA",
     "salary": 36000,
@@ -77,7 +77,7 @@
   {
     "id": 14,
     "name": "MURUGAN MUTHU",
-    "role": "SPIM06",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "DEVARKULAM",
     "salary": 36000,
@@ -92,7 +92,7 @@
   {
     "id": 15,
     "name": "SARAVANA SELVAM",
-    "role": "SPIM07",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 36000,
@@ -107,7 +107,7 @@
   {
     "id": 16,
     "name": "KANDASAMY",
-    "role": "SPIM08",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 36000,
@@ -122,7 +122,7 @@
   {
     "id": 17,
     "name": "SUBBIAH SURESH",
-    "role": "SPIM09",
+    "role": "",
     "location": "RAJASTHAN",
     "site": "CUT BOLT",
     "salary": 36000,
@@ -137,7 +137,7 @@
   {
     "id": 18,
     "name": "ALAGARSAMY",
-    "role": "SPIM10",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 36000,
@@ -152,7 +152,7 @@
   {
     "id": 19,
     "name": "THIRUMURUGAN",
-    "role": "SPIM11",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "RADHAPURAM",
     "salary": 20000,
@@ -167,7 +167,7 @@
   {
     "id": 20,
     "name": "CHANDRU",
-    "role": "SPIM12",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 36000,
@@ -182,7 +182,7 @@
   {
     "id": 21,
     "name": "ARAVIND",
-    "role": "SPIM13",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "RADHAPURAM",
     "salary": 23000,
@@ -197,7 +197,7 @@
   {
     "id": 22,
     "name": "ANDREW",
-    "role": "SPIM14",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 21500,
@@ -212,7 +212,7 @@
   {
     "id": 23,
     "name": "ANAND",
-    "role": "SPIM15",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "RADHAPURAM",
     "salary": 36000,
@@ -227,7 +227,7 @@
   {
     "id": 24,
     "name": "SELVA MURUGAN",
-    "role": "SPIM16",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 17000,
@@ -242,7 +242,7 @@
   {
     "id": 25,
     "name": "MAHARAJA M",
-    "role": "SPIM17",
+    "role": "",
     "location": "RAJASTHAN",
     "site": "TCI WORK",
     "salary": 36000,
@@ -257,7 +257,7 @@
   {
     "id": 26,
     "name": "ASHOK",
-    "role": "SPIM18",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 22000,
@@ -272,7 +272,7 @@
   {
     "id": 27,
     "name": "ESWARAN",
-    "role": "SPIM19",
+    "role": "",
     "location": "KARNATAKA",
     "site": "WINDMILL",
     "salary": 23000,
@@ -287,7 +287,7 @@
   {
     "id": 28,
     "name": "ANANTHU B",
-    "role": "SPIM 20",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 21500,
@@ -302,7 +302,7 @@
   {
     "id": 29,
     "name": "SEBIN JOSEPH",
-    "role": "SPIM21",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 22500,
@@ -317,7 +317,7 @@
   {
     "id": 30,
     "name": "VENKATESH KUMAR",
-    "role": "SPIM22",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OWNER PA",
     "salary": 26000,
@@ -332,7 +332,7 @@
   {
     "id": 31,
     "name": "SEERUS",
-    "role": "SPIM23",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 36000,
@@ -347,7 +347,7 @@
   {
     "id": 32,
     "name": "SUDALAIDAS",
-    "role": "SPIM24",
+    "role": "",
     "location": "RAJASTHAN",
     "site": "WINDMILL",
     "salary": 25000,
@@ -362,7 +362,7 @@
   {
     "id": 33,
     "name": "PRAVIN R",
-    "role": "SPIM 25",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 21500,
@@ -377,7 +377,7 @@
   {
     "id": 34,
     "name": "VIPIN",
-    "role": "SPIM26",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 42900,
@@ -392,7 +392,7 @@
   {
     "id": 35,
     "name": "VIKRAM R",
-    "role": "SPIM27",
+    "role": "",
     "location": "KARNATAKA",
     "site": "WINDMILL",
     "salary": 22000,
@@ -407,7 +407,7 @@
   {
     "id": 36,
     "name": "VIGNESH RAJA",
-    "role": "SPIM28",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -422,7 +422,7 @@
   {
     "id": 37,
     "name": "KAVIN",
-    "role": "SPIM29",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -437,7 +437,7 @@
   {
     "id": 38,
     "name": "KARTHIKEYAN",
-    "role": "SPIM30",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 15600,
@@ -452,7 +452,7 @@
   {
     "id": 39,
     "name": "SUTHAN",
-    "role": "SPIM31",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -467,7 +467,7 @@
   {
     "id": 40,
     "name": "SELVA KANNAN",
-    "role": "SPIM32",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -482,7 +482,7 @@
   {
     "id": 41,
     "name": "PAULRAJ",
-    "role": "SPIM33",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -497,7 +497,7 @@
   {
     "id": 42,
     "name": "SASI KUMAR",
-    "role": "SPIM34",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -512,7 +512,7 @@
   {
     "id": 43,
     "name": "JOMAN JOSEPH",
-    "role": "SPIM 35",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -527,7 +527,7 @@
   {
     "id": 44,
     "name": "NIDHIN",
-    "role": "SPIM36",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -542,7 +542,7 @@
   {
     "id": 45,
     "name": "RAJ KUMAR",
-    "role": "SPIM37",
+    "role": "",
     "location": "OFFICE",
     "site": "DRIVER",
     "salary": 17000,
@@ -557,7 +557,7 @@
   {
     "id": 46,
     "name": "MOORTHY",
-    "role": "SPIM38",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 36000,
@@ -572,7 +572,7 @@
   {
     "id": 47,
     "name": "VIGNESH K RADHAPURAM",
-    "role": "SPIM39",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -587,7 +587,7 @@
   {
     "id": 48,
     "name": "ELANGO",
-    "role": "SPIM40",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -602,7 +602,7 @@
   {
     "id": 49,
     "name": "DOBIN SEBASTIN",
-    "role": "SPIM41",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -617,7 +617,7 @@
   {
     "id": 50,
     "name": "SIVA MAGESH",
-    "role": "SPIM42",
+    "role": "",
     "location": "RAJASTHAN",
     "site": "TCI",
     "salary": 26000,
@@ -632,7 +632,7 @@
   {
     "id": 51,
     "name": "PRAKASH",
-    "role": "SPIM43",
+    "role": "",
     "location": "RAJASTHAN",
     "site": "TCI",
     "salary": 25000,
@@ -647,7 +647,7 @@
   {
     "id": 52,
     "name": "PREMJIT",
-    "role": "SPIM44",
+    "role": "",
     "location": "RAJASTHAN",
     "site": "WINDMILL",
     "salary": 36000,
@@ -662,7 +662,7 @@
   {
     "id": 53,
     "name": "JEYAKUMAR",
-    "role": "SPIM44",
+    "role": "",
     "location": "RAJASTHAN",
     "site": "WINDMILL",
     "salary": 25000,
@@ -677,7 +677,7 @@
   {
     "id": 54,
     "name": "SELVA KUMAR",
-    "role": "SPIM45",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 20500,
@@ -692,7 +692,7 @@
   {
     "id": 55,
     "name": "KRISHNA KUMAR",
-    "role": "SPIM47",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 30000,
@@ -707,7 +707,7 @@
   {
     "id": 56,
     "name": "SANIL",
-    "role": "SPIM47",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 19500,
@@ -722,7 +722,7 @@
   {
     "id": 57,
     "name": "VIKRAM",
-    "role": "SPIM48",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 21000,
@@ -737,7 +737,7 @@
   {
     "id": 58,
     "name": "KEETHRAJA",
-    "role": "SPIM50",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 1000,
@@ -752,7 +752,7 @@
   {
     "id": 59,
     "name": "VIMAL",
-    "role": "SPIM51",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 36000,
@@ -767,7 +767,7 @@
   {
     "id": 60,
     "name": "PRTCHI MUTHU",
-    "role": "SPIM52",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "KUDANKULAM",
     "salary": 15600,
@@ -782,7 +782,7 @@
   {
     "id": 61,
     "name": "NIRANJAN",
-    "role": "SPIM53",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 15000,
@@ -797,7 +797,7 @@
   {
     "id": 62,
     "name": "MUTHURAMAN",
-    "role": "SPIM54",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 36000,
@@ -812,7 +812,7 @@
   {
     "id": 63,
     "name": "NARAYANAN",
-    "role": "SPIM54",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20500,
@@ -827,7 +827,7 @@
   {
     "id": 64,
     "name": "MANOJ",
-    "role": "SPIM56",
+    "role": "",
     "location": "KARNATAKA",
     "site": "OVERHAULING WORK",
     "salary": 23400,
@@ -842,7 +842,7 @@
   {
     "id": 65,
     "name": "SUTHARSON",
-    "role": "SPIM57",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 22000,
@@ -857,7 +857,7 @@
   {
     "id": 66,
     "name": "BALAJI",
-    "role": "SPIM58",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 22000,
@@ -872,7 +872,7 @@
   {
     "id": 67,
     "name": "SENTHIL KUMAR",
-    "role": "SPIM58",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OFFICE",
     "salary": 20000,
@@ -887,7 +887,7 @@
   {
     "id": 68,
     "name": "VELLAIYA",
-    "role": "SPIM59",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 20800,
@@ -902,7 +902,7 @@
   {
     "id": 69,
     "name": "MAGESH KERALA",
-    "role": "SPIM60",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 22000,
@@ -917,7 +917,7 @@
   {
     "id": 70,
     "name": "MAGESH RAJA",
-    "role": "SPIM61",
+    "role": "",
     "location": "COIMBATORE",
     "site": "OVERHAULING",
     "salary": 22000,
@@ -932,7 +932,7 @@
   {
     "id": 71,
     "name": "SHAN LAWRENCE",
-    "role": "SPIM63",
+    "role": "",
     "location": "KARNATAKA",
     "site": "OVERHAULING",
     "salary": 36000,
@@ -947,7 +947,7 @@
   {
     "id": 72,
     "name": "GUNASEELAN",
-    "role": "SPIM64",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 4800,
@@ -962,7 +962,7 @@
   {
     "id": 73,
     "name": "MUTHU SUNDAR",
-    "role": "SPIM65",
+    "role": "",
     "location": "KARNATAKA",
     "site": "OVERHAULING",
     "salary": 15100,
@@ -977,7 +977,7 @@
   {
     "id": 74,
     "name": "VEYILRAJ",
-    "role": "SPIM65",
+    "role": "",
     "location": "KARNATAKA",
     "site": "OVERHAULING",
     "salary": 11800,
@@ -992,7 +992,7 @@
   {
     "id": 75,
     "name": "ANANTHU S",
-    "role": "SPIM 67",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 1950,
@@ -1007,7 +1007,7 @@
   {
     "id": 76,
     "name": "SANKAR",
-    "role": "SPIM68",
+    "role": "",
     "location": "TIRUNELVELI",
     "site": "OVERHAULING",
     "salary": 7200,

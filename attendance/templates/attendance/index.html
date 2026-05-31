@@ -181,7 +181,7 @@
 
 /* Summary KPIs */
 .emp-kpi-row {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.6rem;
     margin-bottom: 1rem;
 }
 .emp-kpi {
@@ -195,6 +195,7 @@
 .kpi-holiday .val { color: #7c3aed; }
 .kpi-weeklyoff .val { color: #475569; }
 .kpi-halfday .val { color: #2563eb; }
+.kpi-sunday  .val { color: #64748b; }
 
 /* Calendar */
 .cal-section { margin-bottom: 1rem; }
@@ -221,7 +222,9 @@
 .cal-leave    { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
 .cal-holiday  { background: #e9d5ff; border-color: #c4b5fd; color: #5b21b6; }
 .cal-weeklyoff{ background: #e2e8f0; border-color: #cbd5e1; color: #334155; }
+.cal-noweekoff{ background: #fee2e2; border-color: #fca5a5; color: #7f1d1d; }
 .cal-halfday  { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+.cal-sunday   { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
 .cal-none     { background: #f8fafc; border-color: #e2e8f0; color: #94a3b8; }
 .cal-today    { box-shadow: 0 0 0 2px #667eea; }
 
@@ -304,6 +307,9 @@
 @media (max-width: 640px) {
     .emp-kpi-row { grid-template-columns: repeat(3, 1fr); }
     .top-controls .fg { flex: 1 1 160px; }
+}
+@media (max-width: 900px) and (min-width: 641px) {
+    .emp-kpi-row { grid-template-columns: repeat(3, 1fr); }
 }
 </style>
 {% endblock %}
@@ -765,12 +771,21 @@ function updateLocSiteDropdown() {
 
 /* ═══════════════════════════════════════════════
    DEFAULT STATUS LOGIC (Task 4)
-   Sunday → Holiday, others → Present
+   Sundays render as "Sunday" via the calendar's date-based fallback
+   (see renderDrawerContent) and are NEVER auto-saved as a status —
+   admin must explicitly override to Week Off / Leave / Holiday for
+   the change to persist to the AttendanceRecord table.
 ═══════════════════════════════════════════════ */
 function defaultStatusForDate(dateStr) {
     if (!dateStr) return 'Present';
     const day = new Date(dateStr + 'T00:00:00').getDay();
-    return day === 0 ? 'Holiday' : 'Present';
+    return day === 0 ? '' : 'Present';
+}
+
+/* True iff the given YYYY-MM-DD falls on a Sunday. */
+function isSunday(dateStr) {
+    if (!dateStr) return false;
+    return new Date(dateStr + 'T00:00:00').getDay() === 0;
 }
 
 /* ═══════════════════════════════════════════════
@@ -1119,32 +1134,70 @@ function closeEmpDrawer() {
     drawerEmpData = null;
 }
 
-/* Count Mon-Sat days in [start, end] — Sundays are excluded from the
-   per-day salary divisor so employees are not under-paid for a month
-   that happens to have more Sundays than another. */
-function workingDays(start, end) {
+/* RequiredPaidDays denominator — MUST mirror the Suite salary module
+   rule in employees/views.py::_compute_attendance_earnings:
+     - 30-day month       → 26
+     - 28- or 29-day mo.  → 24
+     - 31-day month (or other) → actual non-Sunday days in the month
+   The cycle (26→25) is anchored on its END month for this lookup so the
+   per-day rate the attendance drawer shows is the same number that drives
+   the eventual payslip. */
+function requiredPaidDaysForMonth(year, month1to12) {
+    const lastDay = new Date(year, month1to12, 0).getDate();
+    if (lastDay === 30) return 26;
+    if (lastDay === 28 || lastDay === 29) return 24;
     let count = 0;
-    const cur = new Date(start);
-    while (cur <= end) {
-        if (cur.getDay() !== 0) count++;   // 0 = Sunday
-        cur.setDate(cur.getDate() + 1);
+    for (let d = 1; d <= lastDay; d++) {
+        if (new Date(year, month1to12 - 1, d).getDay() !== 0) count++;
     }
     return count;
 }
 
 function perDay(monthlySalary, cycleDays) {
-    const divisor = (cycleDays && cycleDays > 0) ? cycleDays : 30;
+    const divisor = (cycleDays && cycleDays > 0) ? cycleDays : 26;
     return monthlySalary > 0 ? monthlySalary / divisor : 0;
 }
 
+/* Per-cell informational earning — matches the salary module's per-status
+   pay weights so the on-calendar figure equals the contribution that day
+   will make on the payslip. Note that the authoritative Cycle Total Earned
+   is computed by computeCycleEarnings() below (handles the earned-week-off
+   credit and the min(raw_paid, required) cap). */
 function dailyEarning(status, baseSalary, cycleDays) {
     const pd = perDay(baseSalary, cycleDays);
-    if (status === 'Present')    return pd;
-    if (status === 'Half Day')   return pd / 2;
-    if (status === 'Holiday')    return 0;   // Sundays / holidays are unpaid
-    if (status === 'Weekly Off') return pd;
-    // Leave = 0 (unpaid)
+    if (status === 'Present')     return pd;
+    if (status === 'Half Day')    return pd / 2;
+    if (status === 'Holiday')     return pd;          // paid per spec
+    if (status === 'Weekly Off')  return pd;          // credited if valid
+    // Sunday / Leave / Absent / No Week Off → 0
     return 0;
+}
+
+/* Authoritative cycle earnings — direct port of the Suite's
+   _compute_attendance_earnings formula. Sundays are excluded entirely
+   from both numerator and denominator; explicit week-off marks combine
+   with auto-earned (floor(present/6)) credit; "No Week Off" rows reduce
+   that credit; the final paid_days count is capped at RequiredPaidDays
+   so the cycle can never over-pay the base salary. */
+function computeCycleEarnings(records, baseSalary, requiredPaidDays) {
+    if (!baseSalary || !requiredPaidDays) return 0;
+    let present = 0, holiday = 0, half = 0, weekOff = 0, noWeekOff = 0;
+    records.forEach(r => {
+        if (isSunday(r.date)) return;          // Sundays never count
+        switch (r.status) {
+            case 'Present':     present++;   break;
+            case 'Holiday':     holiday++;   break;
+            case 'Half Day':    half++;      break;
+            case 'Weekly Off':  weekOff++;   break;
+            case 'No Week Off': noWeekOff++; break;
+        }
+    });
+    const earned    = Math.floor(present / 6);
+    const credited  = Math.max(earned, weekOff);
+    const validWO   = Math.max(0, credited - noWeekOff);
+    const rawPaid   = present + holiday + validWO + 0.5 * half;
+    const paidDays  = Math.min(rawPaid, requiredPaidDays);
+    return (baseSalary / requiredPaidDays) * paidDays;
 }
 
 /* Build 26→25 cycle list covering last 12 months */
@@ -1192,16 +1245,8 @@ function renderDrawerContent() {
     records.forEach(r => recMap[r.date] = r);
 
     // ── KPIs ──
-    const kpiCounts = { Present:0, Leave:0, Holiday:0, 'Weekly Off':0, 'Half Day':0 };
+    const kpiCounts = { Present:0, Leave:0, Holiday:0, 'Weekly Off':0, 'Half Day':0, Sunday:0 };
     records.forEach(r => { if (kpiCounts[r.status] !== undefined) kpiCounts[r.status]++; });
-
-    document.getElementById('drawerKpis').innerHTML = `
-        <div class="emp-kpi kpi-present"><div class="val">${kpiCounts.Present}</div><div class="lbl">Present</div></div>
-        <div class="emp-kpi kpi-leave"><div class="val">${kpiCounts.Leave}</div><div class="lbl">Leave</div></div>
-        <div class="emp-kpi kpi-holiday"><div class="val">${kpiCounts.Holiday}</div><div class="lbl">Holiday</div></div>
-        <div class="emp-kpi kpi-weeklyoff"><div class="val">${kpiCounts['Weekly Off']}</div><div class="lbl">Weekly Off</div></div>
-        <div class="emp-kpi kpi-halfday"><div class="val">${kpiCounts['Half Day']}</div><div class="lbl">Half Day</div></div>
-    `;
 
     // ── Calendar (with status + salary inside each cell) ──
     const calEl    = document.getElementById('drawerCal');
@@ -1210,8 +1255,29 @@ function renderDrawerContent() {
     const start    = new Date(cycle.start + 'T00:00:00');
     const end      = new Date(cycle.end   + 'T00:00:00');
 
-    // Working days (Mon-Sat) in this 26→25 cycle — Sundays excluded from pay
-    const cycleDays = workingDays(start, end);
+    // Per-day divisor anchored on the cycle's END month — same rule the
+    // salary module uses, so the on-screen per-day rate equals the payslip.
+    const cycleDays = requiredPaidDaysForMonth(end.getFullYear(), end.getMonth() + 1);
+
+    // Count un-recorded Sundays inside the cycle so the Sunday KPI shows
+    // the calendar-true count (admin override would have created a record
+    // and bumped the matching status counter above instead).
+    {
+        let curS = new Date(start);
+        while (curS <= end) {
+            if (curS.getDay() === 0 && !recMap[dateToStr(curS)]) kpiCounts.Sunday++;
+            curS.setDate(curS.getDate() + 1);
+        }
+    }
+
+    document.getElementById('drawerKpis').innerHTML = `
+        <div class="emp-kpi kpi-present"><div class="val">${kpiCounts.Present}</div><div class="lbl">Present</div></div>
+        <div class="emp-kpi kpi-leave"><div class="val">${kpiCounts.Leave}</div><div class="lbl">Leave</div></div>
+        <div class="emp-kpi kpi-holiday"><div class="val">${kpiCounts.Holiday}</div><div class="lbl">Holiday</div></div>
+        <div class="emp-kpi kpi-weeklyoff"><div class="val">${kpiCounts['Weekly Off']}</div><div class="lbl">Weekly Off</div></div>
+        <div class="emp-kpi kpi-halfday"><div class="val">${kpiCounts['Half Day']}</div><div class="lbl">Half Day</div></div>
+        <div class="emp-kpi kpi-sunday"><div class="val">${kpiCounts.Sunday}</div><div class="lbl">Sunday</div></div>
+    `;
 
     // Update header meta with cycle-accurate per-day figure
     if (baseSalary > 0) {
@@ -1226,7 +1292,6 @@ function renderDrawerContent() {
     const firstDow = start.getDay();
     for (let b = 0; b < firstDow; b++) calHtml += '<div class="cal-day cal-empty"></div>';
 
-    let totalEarned = 0;
     let cur = new Date(start);
     while (cur <= end) {
         const ds      = dateToStr(cur);
@@ -1236,13 +1301,14 @@ function renderDrawerContent() {
 
         let cls, statusLbl;
         if (rec) {
+            // Admin override on any date (including a Sunday) takes precedence
+            // over the date-based "Sunday" fallback. The record's stored status
+            // is what flows to SPIM Lite and to the payslip.
             const slug = rec.status.toLowerCase().replace(/\s+/g, '');
             cls       = 'cal-' + slug;
             statusLbl = rec.status === 'Weekly Off' ? 'W/Off' : rec.status;
-            // Salary only on saved records
             const earned = dailyEarning(rec.status, baseSalary, cycleDays);
-            totalEarned += earned;
-            const salaryLine = baseSalary > 0
+            const salaryLine = (baseSalary > 0 && earned > 0)
                 ? '₹' + earned.toLocaleString('en-IN', {maximumFractionDigits: 0})
                 : '';
             calHtml += `<div class="cal-day ${cls}${isToday ? ' cal-today' : ''}">
@@ -1250,18 +1316,25 @@ function renderDrawerContent() {
                 <div class="ds">${statusLbl}</div>
                 ${salaryLine ? `<div class="dc">${salaryLine}</div>` : ''}
             </div>`;
-        } else {
-            cls       = dow === 0 ? 'cal-holiday' : 'cal-none';
-            statusLbl = dow === 0 ? 'Holiday' : '-';
-            calHtml += `<div class="cal-day ${cls}${isToday ? ' cal-today' : ''}">
+        } else if (dow === 0) {
+            // Auto-Sunday — purely display-level, no record stored, no pay
+            calHtml += `<div class="cal-day cal-sunday${isToday ? ' cal-today' : ''}">
                 <div class="dn">${cur.getDate()}</div>
-                <div class="ds">${statusLbl}</div>
+                <div class="ds">Sunday</div>
+            </div>`;
+        } else {
+            calHtml += `<div class="cal-day cal-none${isToday ? ' cal-today' : ''}">
+                <div class="dn">${cur.getDate()}</div>
+                <div class="ds">-</div>
             </div>`;
         }
         cur.setDate(cur.getDate() + 1);
     }
     calEl.innerHTML = calHtml;
 
+    // Authoritative cycle total — uses the same formula as the salary
+    // module so the figure here always matches the payslip for this cycle.
+    const totalEarned = computeCycleEarnings(records, baseSalary, cycleDays);
     if (baseSalary > 0 && totalEarned > 0) {
         totalEl.textContent = 'Cycle Total Earned: ₹' +
             totalEarned.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1407,7 +1480,7 @@ function exportDrawerExcel() {
 
     const start    = new Date(cycle.start + 'T00:00:00');
     const end      = new Date(cycle.end   + 'T00:00:00');
-    const cycleDays = workingDays(start, end);
+    const cycleDays = requiredPaidDaysForMonth(end.getFullYear(), end.getMonth() + 1);
     const pd        = baseSalary > 0 ? baseSalary / cycleDays : 0;
 
     const records = loadAttendance().filter(r =>
@@ -1418,22 +1491,24 @@ function exportDrawerExcel() {
 
     // Build rows for every day in cycle
     const rows = [['Employee ID', 'Employee Name', 'Date', 'Day', 'Status', 'Remarks', 'Salary Earned (₹)']];
-    let totalEarned = 0;
     let cur = new Date(start);
     while (cur <= end) {
         const ds  = dateToStr(cur);
         const rec = recMap[ds];
         const dow = DAY_NAMES[cur.getDay()];
-        const status  = rec ? rec.status : (cur.getDay() === 0 ? 'Holiday' : '-');
+        const status  = rec ? rec.status : (cur.getDay() === 0 ? 'Sunday' : '-');
         const remarks = rec ? (rec.remarks || '') : '';
         const earned  = rec ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
-        totalEarned  += earned;
         rows.push([empId, empName, ds, dow, status, remarks, earned > 0 ? earned.toFixed(2) : '']);
         cur.setDate(cur.getDate() + 1);
     }
+    // Cycle total uses the authoritative formula (with cap + earned-week-off
+    // credit) — same number shown in the drawer footer.
+    const totalEarned = computeCycleEarnings(records, baseSalary, cycleDays);
     rows.push([]);
     rows.push(['', '', '', '', '', 'Cycle Total Earned:', totalEarned.toFixed(2)]);
     rows.push(['', '', '', '', '', 'Base Salary:', baseSalary]);
+    rows.push(['', '', '', '', '', 'Per Day (÷' + cycleDays + '):', pd.toFixed(2)]);
     rows.push(['', '', '', '', '', 'Cycle:', cycle.label]);
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
