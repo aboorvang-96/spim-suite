@@ -5,6 +5,8 @@ from django.core.exceptions import MultipleObjectsReturned
 from employees.models import Employee
 from accounts.views import get_admin_id
 from .models import AttendanceRecord
+from .utils import ensure_sunday_holidays
+import datetime
 import json
 
 @login_required
@@ -108,6 +110,24 @@ def load_attendance(request):
     admin_id = get_admin_id(request.user)
     date_from = request.GET.get('date_from', '')
     date_to   = request.GET.get('date_to', '')
+
+    # Lazy Sunday auto-Holiday backfill — every Sunday in the requested
+    # window gets a 'holiday' AttendanceRecord row per employee (skipping
+    # any existing rows so admin overrides survive). When `date_to` isn't
+    # supplied we default to "end of the current calendar month" so the
+    # default attendance page load still backfills the visible cycle.
+    if date_from:
+        backfill_to = date_to
+        if not backfill_to:
+            try:
+                df = datetime.datetime.strptime(date_from, '%Y-%m-%d').date()
+                # End of df's month — gives the summary tab a full window
+                next_month = df.replace(day=28) + datetime.timedelta(days=4)
+                backfill_to = (next_month.replace(day=1) - datetime.timedelta(days=1)).isoformat()
+            except ValueError:
+                backfill_to = ''
+        if backfill_to:
+            ensure_sunday_holidays(admin_id, date_from, backfill_to)
 
     qs = AttendanceRecord.objects.filter(admin_id=admin_id).select_related('employee')
     if date_from:

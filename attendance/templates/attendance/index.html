@@ -258,6 +258,27 @@
 }
 .dl-menu button:hover { background: #f4f7ff; color: #4f46e5; }
 
+/* Bulk-mark dropdown (Mark Present / Leave / Holiday) — sits inside the
+   bulk-toolbar. Visual style matches .dl-menu so the page has one
+   consistent dropdown vocabulary. */
+.mark-wrap { position: relative; display: inline-block; }
+.mark-caret { font-size: 0.6rem; margin-left: 0.2rem; opacity: 0.75; }
+.mark-menu {
+    display: none; position: absolute; right: 0; top: calc(100% + 4px);
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 7px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    min-width: 168px; z-index: 920; overflow: hidden;
+}
+.mark-menu.open { display: block; }
+.mark-menu button {
+    width: 100%; background: none; border: none; padding: 0.55rem 0.85rem;
+    text-align: left; font-size: 0.8rem; font-weight: 600; color: #334155;
+    cursor: pointer; display: flex; align-items: center; gap: 0.5rem;
+    transition: background 0.1s;
+}
+.mark-menu button:hover { background: #f4f7ff; color: #4f46e5; }
+.mark-menu button:disabled { opacity: 0.45; cursor: not-allowed; }
+
 /* Date-drilldown modal */
 .dd-overlay {
     display: none; position: fixed; inset: 0;
@@ -356,7 +377,14 @@
                     </label>
                     <span id="selectedCount" class="badge badge-info">0 / 0 selected</span>
                     <div style="flex:1"></div>
-                    <button type="button" id="markPresentBtn" class="btn btn-secondary btn-sm" onclick="markSelectedPresent()" disabled style="opacity:0.45; cursor:not-allowed;">Mark Present</button>
+                    <div class="mark-wrap">
+                        <button type="button" id="markPresentBtn" class="btn btn-secondary btn-sm" onclick="toggleMarkMenu(event)" disabled style="opacity:0.45; cursor:not-allowed;">Mark Present <span class="mark-caret">&#9662;</span></button>
+                        <div id="markMenu" class="mark-menu" role="menu">
+                            <button type="button" role="menuitem" onclick="markSelectedAs('Present')">Mark Present</button>
+                            <button type="button" role="menuitem" onclick="markSelectedAs('Leave')">Mark Leave</button>
+                            <button type="button" role="menuitem" onclick="markSelectedAs('Holiday')">Mark Holiday</button>
+                        </div>
+                    </div>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="clearAllSelections()">Clear Selection</button>
                     <button type="button" class="btn btn-primary btn-sm" onclick="saveBulkAttendance()">Save Selected</button>
                 </div>
@@ -936,11 +964,43 @@ function updateSelectedCount() {
     }
 }
 
-function markSelectedPresent() {
+/* ═══════════════════════════════════════════════
+   BULK MARK DROPDOWN (Present / Leave / Holiday)
+   The trigger button keeps the label "Mark Present" so the resting UI
+   is unchanged. Clicking it opens a 3-option menu; picking an option
+   applies that status to every checked row in the bulk table (same
+   target as the old markSelectedPresent). Save flow is untouched —
+   the admin still clicks "Save Selected" to persist.
+═══════════════════════════════════════════════ */
+function toggleMarkMenu(evt) {
+    // Disabled state mirrors the button's disabled flag — when nothing
+    // is selected the menu must not open at all.
+    const btn = document.getElementById('markPresentBtn');
+    if (btn && btn.disabled) return;
+    if (evt) evt.stopPropagation();
+    document.getElementById('markMenu').classList.toggle('open');
+}
+
+function markSelectedAs(status) {
     const rows = [...document.querySelectorAll('#bulkAttBody tr')]
         .filter(tr => tr.querySelector('.rowCheck') && tr.querySelector('.rowCheck').checked);
-    rows.forEach(tr => { tr.querySelector('.row-status').value = 'Present'; });
+    rows.forEach(tr => { tr.querySelector('.row-status').value = status; });
+    document.getElementById('markMenu').classList.remove('open');
 }
+
+/* Back-compat shim: anything still calling the original 1-click action
+   continues to work (used by tests / external integrations that may
+   trigger #markPresentBtn programmatically). */
+function markSelectedPresent() { markSelectedAs('Present'); }
+
+/* Click-outside dismiss — same pattern as the export dropdown above. */
+document.addEventListener('click', function(e) {
+    const wrap = document.querySelector('.mark-wrap');
+    if (wrap && !wrap.contains(e.target)) {
+        const menu = document.getElementById('markMenu');
+        if (menu) menu.classList.remove('open');
+    }
+});
 
 /* ═══════════════════════════════════════════════
    SAVE BULK
@@ -1302,12 +1362,20 @@ function renderDrawerContent() {
         let cls, statusLbl;
         if (rec) {
             // Admin override on any date (including a Sunday) takes precedence
-            // over the date-based "Sunday" fallback. The record's stored status
-            // is what flows to SPIM Lite and to the payslip.
+            // over the date-based fallback. The record's stored status is what
+            // flows to SPIM Lite and to the payslip.
             const slug = rec.status.toLowerCase().replace(/\s+/g, '');
             cls       = 'cal-' + slug;
             statusLbl = rec.status === 'Weekly Off' ? 'W/Off' : rec.status;
-            const earned = dailyEarning(rec.status, baseSalary, cycleDays);
+            // Sundays auto-saved as Holiday must show ₹0 — they're excluded
+            // from the salary module's numerator via .exclude(date__week_day=1)
+            // so paying perDay here would diverge from the actual payslip.
+            // If the admin manually overrides a Sunday to something else
+            // (e.g. Present), this branch still zeroes the cell because
+            // Sundays are unpayable working days per the salary spec.
+            const earned = (dow === 0)
+                ? 0
+                : dailyEarning(rec.status, baseSalary, cycleDays);
             const salaryLine = (baseSalary > 0 && earned > 0)
                 ? '₹' + earned.toLocaleString('en-IN', {maximumFractionDigits: 0})
                 : '';
@@ -1317,7 +1385,9 @@ function renderDrawerContent() {
                 ${salaryLine ? `<div class="dc">${salaryLine}</div>` : ''}
             </div>`;
         } else if (dow === 0) {
-            // Auto-Sunday — purely display-level, no record stored, no pay
+            // Defensive fallback for the rare case where the server backfill
+            // hasn't yet created the Sunday-Holiday row (e.g. a cycle no user
+            // has ever viewed). The next load_attendance request creates it.
             calHtml += `<div class="cal-day cal-sunday${isToday ? ' cal-today' : ''}">
                 <div class="dn">${cur.getDate()}</div>
                 <div class="ds">Sunday</div>
@@ -1496,9 +1566,13 @@ function exportDrawerExcel() {
         const ds  = dateToStr(cur);
         const rec = recMap[ds];
         const dow = DAY_NAMES[cur.getDay()];
-        const status  = rec ? rec.status : (cur.getDay() === 0 ? 'Sunday' : '-');
+        const isSun = cur.getDay() === 0;
+        const status  = rec ? rec.status : (isSun ? 'Sunday' : '-');
         const remarks = rec ? (rec.remarks || '') : '';
-        const earned  = rec ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
+        // Sundays pay 0 regardless of stored status — mirrors the salary
+        // module's .exclude(date__week_day=1) so the export matches the
+        // payslip exactly.
+        const earned  = (rec && !isSun) ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
         rows.push([empId, empName, ds, dow, status, remarks, earned > 0 ? earned.toFixed(2) : '']);
         cur.setDate(cur.getDate() + 1);
     }

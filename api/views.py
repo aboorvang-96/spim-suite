@@ -29,6 +29,7 @@ from django.db.models import Sum
 
 from employees.models import Employee, SalaryUpdate, BankDetail
 from attendance.models import AttendanceRecord
+from attendance.utils import ensure_sunday_holidays
 from projects.models import WorkLog, MachineLocation
 from .models import MobileAuthToken
 
@@ -417,7 +418,31 @@ def mobile_attendance(request):
     if month:
         try:
             y, m = month.split('-')
-            qs = qs.filter(date__year=int(y), date__month=int(m))
+            year_i, month_i = int(y), int(m)
+            qs = qs.filter(date__year=year_i, date__month=month_i)
+            # Lazy Sunday auto-Holiday backfill scoped to this employee for
+            # the requested month — guarantees that when the Lite app
+            # fetches a month's attendance, every Sunday already exists
+            # as a 'holiday' row (created here if missing, untouched if
+            # the admin has already overridden it).
+            try:
+                import calendar as _cal
+                last_day = _cal.monthrange(year_i, month_i)[1]
+                ensure_sunday_holidays(
+                    emp.admin_id,
+                    date(year_i, month_i, 1),
+                    date(year_i, month_i, last_day),
+                    employees=[emp],
+                )
+                # Re-query so the freshly-created rows are included in the
+                # response. Cheap — same indexes as the original query.
+                qs = AttendanceRecord.objects.filter(
+                    employee=emp,
+                    date__year=year_i,
+                    date__month=month_i,
+                ).order_by('-date')
+            except (ValueError, TypeError):
+                pass
         except (ValueError, IndexError):
             pass
     records = [{
