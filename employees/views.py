@@ -685,12 +685,12 @@ def salary_dashboard(request):
                 attendance_earnings = gross_base
                 attendance_paid_days = 0.0
 
-            if salary_record:
-                net = float(salary_record.net_pay)
-            else:
-                # No payslip generated yet for the selected month: derive net
-                # from the live attendance_earnings already computed above.
-                net = attendance_earnings + ot - advance - ded
+            # Always derive net from the LIVE attendance_earnings so the
+            # dashboard reflects current attendance data. salary_record.net_pay
+            # is a snapshot stamped at Save time for payslip rendering — using
+            # it here would lock the row at a stale value (e.g. ₹0 from an
+            # earlier save when attendance had not yet been marked).
+            net = attendance_earnings + ot - advance - ded
 
             if salary_record:
                 processed_count += 1
@@ -728,7 +728,7 @@ def salary_dashboard(request):
                 'attendance_earnings': attendance_earnings,
                 # Paid-days breakdown (Present + WeekOff + Holiday + 0.5·HalfDay)
                 # surfaced so the Edit Salary modal can display it read-only.
-                'paid_days': attendance_paid_days,
+                'paid_days': float(attendance_paid_days),
                 'overtime': ot,
                 'food_allowance': food_allowance,
                 'food_usage': food_usage,
@@ -788,10 +788,17 @@ def salary_dashboard(request):
 def _compute_attendance_breakdown(employee, month_date, basic_salary):
     """
     Compute both the attendance-prorated payable base and the paid-days
-    count for the given (employee, month). Returns (final_salary, paid_days)
-    both as Decimal. Future Sundays auto-marked Holiday by the backend
-    backfill are excluded — they only contribute once the cycle has
-    reached that date.
+    count for the given (employee, payroll month). Returns (final_salary,
+    paid_days) both as Decimal.
+
+    Cycle window: 26th of the previous month → 25th of `month_date`'s
+    month — the SPIM 26→25 attendance cycle, matching the frontend
+    attendance calendar.
+
+    Future dates are excluded entirely (no pay for days that haven't
+    happened yet). Future Sundays auto-marked Holiday by the backend
+    backfill are also excluded by the explicit Sunday rule, kept as a
+    defensive guard.
 
     See _compute_attendance_earnings for the formula and fallback semantics.
     """
@@ -800,22 +807,28 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     # Coerce to Decimal to prevent float × Decimal TypeError
     basic_salary = Decimal(str(basic_salary))
 
-    year  = month_date.year
-    month = month_date.month
-    last_day = calendar.monthrange(year, month)[1]
+    # ---- 26→25 cycle anchored on month_date's END month ----
+    cycle_end = month_date.replace(day=25)
+    if month_date.month == 1:
+        prev = month_date.replace(year=month_date.year - 1, month=12)
+    else:
+        prev = month_date.replace(month=month_date.month - 1)
+    cycle_start = prev.replace(day=26)
 
-    # ---- CycleDays = full calendar days in the month ----
-    cycle_days = last_day
+    # ---- CycleDays = actual calendar days in the cycle window ----
+    cycle_days = (cycle_end - cycle_start).days + 1
 
     if cycle_days <= 0:
         # Defensive: never divide by zero.
         return basic_salary, Decimal('0')
 
+    today = datetime.date.today()
+
     records = AttendanceRecord.objects.filter(
         employee=employee,
-        date__year=year,
-        date__month=month,
-    )
+        date__gte=cycle_start,
+        date__lte=cycle_end,
+    ).filter(date__lte=today)
 
     if not records.exists():
         # No attendance marked — treat as fully paid (safe fallback).
@@ -823,8 +836,8 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
         # with the full-base earnings figure.
         return basic_salary, Decimal(str(cycle_days))
 
-    # Future Sundays carrying an auto-Holiday row must not count yet.
-    today = datetime.date.today()
+    # Defensive Sunday rule: even if a future-Sunday row leaked past the
+    # date__lte=today filter, do not credit it.
     records_paid = records.exclude(
         date__week_day=1, date__gt=today,
     )
