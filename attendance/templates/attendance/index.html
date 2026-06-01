@@ -617,6 +617,7 @@ function syncRecordsToServer(records) {
 
 document.addEventListener('DOMContentLoaded', function () {
     setTodayDate();
+    deduplicateAttendanceLocalStorage();
 
     /* ── Load shared DB records so all linked admins share visibility ── */
     function loadFromServer() {
@@ -701,6 +702,29 @@ function loadEmployees() {
 }
 function loadAttendance() {
     return JSON.parse(localStorage.getItem(ATTENDANCE_KEY) || '[]');
+}
+
+/* One-time cleanup — removes any duplicate localStorage entries left by
+   the previous saveBulkAttendance flow (which used plain .push without
+   dedup). Keeps the first record per (empId, date); subsequent ones with
+   the same key are dropped. Safe to call repeatedly. */
+function deduplicateAttendanceLocalStorage() {
+    const raw = loadAttendance();
+    const seen = new Map();
+    const deduped = [];
+    for (const r of raw) {
+        const key = r.empId + '|' + r.date;
+        if (!seen.has(key)) {
+            seen.set(key, true);
+            deduped.push(r);
+        }
+    }
+    if (deduped.length !== raw.length) {
+        localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(deduped));
+        console.log('[Attendance] Removed',
+            raw.length - deduped.length,
+            'duplicate records from localStorage');
+    }
 }
 
 /* ═══════════════════════════════════════════════
@@ -1028,7 +1052,11 @@ function saveBulkAttendance() {
 
         if (!date || !status) return;
 
-        attendance.push({
+        // Upsert on (empId, date) so re-saving the same row doesn't pile up
+        // duplicate localStorage entries (the DB already de-duplicates via
+        // the AttendanceRecord unique_together('employee','date') — this
+        // keeps the local cache aligned with the DB shape).
+        const newRecord = {
             empId:        tr.dataset.empId,
             empName:      tr.dataset.empName,
             baseSalary:   parseFloat(tr.dataset.baseSalary) || 0,
@@ -1037,7 +1065,15 @@ function saveBulkAttendance() {
             workingSite:  ws === '__add_new' ? '' : ws,
             date, status, remarks,
             hours: calculateHours(status)
-        });
+        };
+        const existingIdx = attendance.findIndex(
+            r => r.empId === tr.dataset.empId && r.date === date
+        );
+        if (existingIdx >= 0) {
+            attendance[existingIdx] = newRecord;
+        } else {
+            attendance.push(newRecord);
+        }
         saved++;
     });
 
