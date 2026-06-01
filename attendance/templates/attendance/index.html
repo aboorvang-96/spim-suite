@@ -1194,70 +1194,49 @@ function closeEmpDrawer() {
     drawerEmpData = null;
 }
 
-/* RequiredPaidDays denominator — MUST mirror the Suite salary module
-   rule in employees/views.py::_compute_attendance_earnings:
-     - 30-day month       → 26
-     - 28- or 29-day mo.  → 24
-     - 31-day month (or other) → actual non-Sunday days in the month
-   The cycle (26→25) is anchored on its END month for this lookup so the
-   per-day rate the attendance drawer shows is the same number that drives
-   the eventual payslip. */
-function requiredPaidDaysForMonth(year, month1to12) {
-    const lastDay = new Date(year, month1to12, 0).getDate();
-    if (lastDay === 30) return 26;
-    if (lastDay === 28 || lastDay === 29) return 24;
-    let count = 0;
-    for (let d = 1; d <= lastDay; d++) {
-        if (new Date(year, month1to12 - 1, d).getDay() !== 0) count++;
-    }
-    return count;
+/* Cycle divisor = FULL calendar days in the cycle window (inclusive).
+   30-day cycle → 30, 31-day cycle → 31, 28-day cycle → 28. Mirrors the
+   Suite salary module rule in employees/views.py::_compute_attendance_earnings. */
+function calendarDays(start, end) {
+    return Math.round((end - start) / 86400000) + 1;
 }
 
 function perDay(monthlySalary, cycleDays) {
-    const divisor = (cycleDays && cycleDays > 0) ? cycleDays : 26;
+    const divisor = (cycleDays && cycleDays > 0) ? cycleDays : 30;
     return monthlySalary > 0 ? monthlySalary / divisor : 0;
 }
 
-/* Per-cell informational earning — matches the salary module's per-status
-   pay weights so the on-calendar figure equals the contribution that day
-   will make on the payslip. Note that the authoritative Cycle Total Earned
-   is computed by computeCycleEarnings() below (handles the earned-week-off
-   credit and the min(raw_paid, required) cap). */
+/* Per-cell earning — pay-per-status weights per the business rule.
+   Sundays are auto-marked Holiday upstream → they pay full. */
 function dailyEarning(status, baseSalary, cycleDays) {
     const pd = perDay(baseSalary, cycleDays);
-    if (status === 'Present')     return pd;
-    if (status === 'Half Day')    return pd / 2;
-    if (status === 'Holiday')     return pd;          // paid per spec
-    if (status === 'Weekly Off')  return pd;          // credited if valid
-    // Sunday / Leave / Absent / No Week Off → 0
+    if (status === 'Present')    return pd;
+    if (status === 'Half Day')   return pd / 2;
+    if (status === 'Holiday')    return pd;
+    if (status === 'Week Off')   return pd;
+    if (status === 'Weekly Off') return pd;
+    if (status === 'Leave')      return 0;
+    if (status === 'No Week Off') return 0;
+    if (status === 'Absent')     return 0;
     return 0;
 }
 
-/* Authoritative cycle earnings — direct port of the Suite's
-   _compute_attendance_earnings formula. Sundays are excluded entirely
-   from both numerator and denominator; explicit week-off marks combine
-   with auto-earned (floor(present/6)) credit; "No Week Off" rows reduce
-   that credit; the final paid_days count is capped at RequiredPaidDays
-   so the cycle can never over-pay the base salary. */
-function computeCycleEarnings(records, baseSalary, requiredPaidDays) {
-    if (!baseSalary || !requiredPaidDays) return 0;
-    let present = 0, holiday = 0, half = 0, weekOff = 0, noWeekOff = 0;
+/* Authoritative cycle earnings — sum of per-status pay weights over
+   every record in the cycle. Divisor = calendar days in the cycle. */
+function computeCycleEarnings(records, baseSalary, cycleDays) {
+    if (!baseSalary || !cycleDays) return 0;
+    let present = 0, holiday = 0, half = 0, weekOff = 0;
     records.forEach(r => {
-        if (isSunday(r.date)) return;          // Sundays never count
         switch (r.status) {
-            case 'Present':     present++;   break;
-            case 'Holiday':     holiday++;   break;
-            case 'Half Day':    half++;      break;
-            case 'Weekly Off':  weekOff++;   break;
-            case 'No Week Off': noWeekOff++; break;
+            case 'Present':     present++;  break;
+            case 'Holiday':     holiday++;  break;
+            case 'Half Day':    half++;     break;
+            case 'Week Off':
+            case 'Weekly Off':  weekOff++;  break;
         }
     });
-    const earned    = Math.floor(present / 6);
-    const credited  = Math.max(earned, weekOff);
-    const validWO   = Math.max(0, credited - noWeekOff);
-    const rawPaid   = present + holiday + validWO + 0.5 * half;
-    const paidDays  = Math.min(rawPaid, requiredPaidDays);
-    return (baseSalary / requiredPaidDays) * paidDays;
+    const paidDays = present + holiday + weekOff + 0.5 * half;
+    return (baseSalary / cycleDays) * paidDays;
 }
 
 /* Build 26→25 cycle list covering last 12 months */
@@ -1315,9 +1294,9 @@ function renderDrawerContent() {
     const start    = new Date(cycle.start + 'T00:00:00');
     const end      = new Date(cycle.end   + 'T00:00:00');
 
-    // Per-day divisor anchored on the cycle's END month — same rule the
-    // salary module uses, so the on-screen per-day rate equals the payslip.
-    const cycleDays = requiredPaidDaysForMonth(end.getFullYear(), end.getMonth() + 1);
+    // Per-day divisor = full calendar days in the cycle window — same rule
+    // the salary module uses, so the on-screen per-day rate equals the payslip.
+    const cycleDays = calendarDays(start, end);
 
     // Count un-recorded Sundays inside the cycle so the Sunday KPI shows
     // the calendar-true count (admin override would have created a record
@@ -1367,15 +1346,9 @@ function renderDrawerContent() {
             const slug = rec.status.toLowerCase().replace(/\s+/g, '');
             cls       = 'cal-' + slug;
             statusLbl = rec.status === 'Weekly Off' ? 'W/Off' : rec.status;
-            // Sundays auto-saved as Holiday must show ₹0 — they're excluded
-            // from the salary module's numerator via .exclude(date__week_day=1)
-            // so paying perDay here would diverge from the actual payslip.
-            // If the admin manually overrides a Sunday to something else
-            // (e.g. Present), this branch still zeroes the cell because
-            // Sundays are unpayable working days per the salary spec.
-            const earned = (dow === 0)
-                ? 0
-                : dailyEarning(rec.status, baseSalary, cycleDays);
+            // Sundays auto-saved as Holiday pay full per the new rule
+            // (Holiday = full day pay). Cell earning is purely status-driven.
+            const earned = dailyEarning(rec.status, baseSalary, cycleDays);
             const salaryLine = (baseSalary > 0 && earned > 0)
                 ? '₹' + earned.toLocaleString('en-IN', {maximumFractionDigits: 0})
                 : '';
@@ -1550,7 +1523,7 @@ function exportDrawerExcel() {
 
     const start    = new Date(cycle.start + 'T00:00:00');
     const end      = new Date(cycle.end   + 'T00:00:00');
-    const cycleDays = requiredPaidDaysForMonth(end.getFullYear(), end.getMonth() + 1);
+    const cycleDays = calendarDays(start, end);
     const pd        = baseSalary > 0 ? baseSalary / cycleDays : 0;
 
     const records = loadAttendance().filter(r =>
@@ -1569,10 +1542,8 @@ function exportDrawerExcel() {
         const isSun = cur.getDay() === 0;
         const status  = rec ? rec.status : (isSun ? 'Sunday' : '-');
         const remarks = rec ? (rec.remarks || '') : '';
-        // Sundays pay 0 regardless of stored status — mirrors the salary
-        // module's .exclude(date__week_day=1) so the export matches the
-        // payslip exactly.
-        const earned  = (rec && !isSun) ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
+        // Pay is purely status-driven (Sundays pay full via their auto-Holiday status).
+        const earned  = rec ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
         rows.push([empId, empName, ds, dow, status, remarks, earned > 0 ? earned.toFixed(2) : '']);
         cur.setDate(cur.getDate() + 1);
     }

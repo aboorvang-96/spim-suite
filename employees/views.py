@@ -783,30 +783,20 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
     """
     Attendance-prorated payable base from AttendanceRecord rows.
 
-    Sundays are NOT payable working days and are excluded from both the
-    required-paid-days denominator and the attendance-count numerator.
+    Divisor:
+      CycleDays = full calendar days in the month (28 / 29 / 30 / 31).
 
-    RequiredPaidDays (cycle denominator):
-      - 30-day month      → 26
-      - 28- or 29-day mo. → 24
-      - 31-day month      → actual non-Sunday days in the month
-      - other (defensive) → actual non-Sunday days in the month
-
-    Status pay weights (per spec):
-      - present     → 1.0
-      - holiday     → 1.0
+    Status pay weights (per business rule):
+      - present     → 1.0  (full day pay)
+      - week_off    → 1.0  (full day pay)
+      - holiday     → 1.0  (full day pay; includes Sundays auto-marked Holiday)
       - half_day    → 0.5
       - leave       → 0.0
+      - no_week_off → 0.0
       - absent      → 0.0
-      - no_week_off → 0.0  (reduces ValidWeekOff — see below)
-      - week_off    → display-only; pay derived from EarnedWeekOff
 
-    EarnedWeekOff   = floor(PresentDays / 6)
-    ValidWeekOff    = max(0, EarnedWeekOff - NoWeekOffCount)
-
-    RawPaidDays = Present + Holiday + ValidWeekOff + 0.5·HalfDay
-    PaidDays    = min(RawPaidDays, RequiredPaidDays)
-    DailySalary = MonthlySalary / RequiredPaidDays
+    PaidDays    = Present + WeekOff + Holiday + 0.5·HalfDay
+    DailySalary = MonthlySalary / CycleDays
     FinalSalary = DailySalary × PaidDays
 
     Safe fallback: if no attendance records exist for the month, return
@@ -824,20 +814,10 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
     month = month_date.month
     last_day = calendar.monthrange(year, month)[1]
 
-    # ---- RequiredPaidDays per spec (Step 3) ----
-    if last_day == 30:
-        required_paid_days = 26
-    elif last_day in (28, 29):
-        required_paid_days = 24
-    else:
-        # 31-day month, plus defensive fallback for any other length.
-        month_start = datetime.date(year, month, 1)
-        required_paid_days = sum(
-            1 for offset in range(last_day)
-            if (month_start + datetime.timedelta(days=offset)).weekday() != 6
-        )
+    # ---- CycleDays = full calendar days in the month ----
+    cycle_days = last_day
 
-    if required_paid_days <= 0:
+    if cycle_days <= 0:
         # Defensive: never divide by zero.
         return basic_salary
 
@@ -851,40 +831,22 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
         # No attendance marked — treat as fully paid (safe fallback).
         return basic_salary
 
-    # Django __week_day: 1 = Sunday. Exclude any Sunday-dated records
-    # entirely from attendance counts (Sundays are unpayable per spec).
-    non_sunday = records.exclude(date__week_day=1)
+    present_days  = records.filter(status='present').count()
+    holiday_days  = records.filter(status='holiday').count()
+    half_days     = records.filter(status='half_day').count()
+    week_off_days = records.filter(status='week_off').count()
 
-    present_days      = non_sunday.filter(status='present').count()
-    holiday_days      = non_sunday.filter(status='holiday').count()
-    half_days         = non_sunday.filter(status='half_day').count()
-    no_week_off_days  = non_sunday.filter(status='no_week_off').count()
-    # Explicitly-marked week_off rows count as paid days (matches the mobile
-    # rule in attendanceStore.getPresentCount: Present + Week Off = paid).
-    explicit_week_off_days = non_sunday.filter(status='week_off').count()
-
-    # ---- Earned-week-off validation (Rules 3 & 4) ----
-    # Credit is the LARGER of explicit admin marks and auto-earned rest days
-    # (floor(present/6)), so the two models combine without double-counting.
-    # `no_week_off` markings still subtract from the final credit.
-    earned_week_offs = present_days // 6
-    credited_week_offs = max(earned_week_offs, explicit_week_off_days)
-    valid_week_off   = max(0, credited_week_offs - no_week_off_days)
-
-    # ---- RawPaidDays (Step 7) ----
-    raw_paid_days = (
+    # ---- PaidDays = pure sum of per-status weights ----
+    paid_days = (
         Decimal(str(present_days))
+        + Decimal(str(week_off_days))
         + Decimal(str(holiday_days))
-        + Decimal(str(valid_week_off))
         + (Decimal(str(half_days)) * Decimal('0.5'))
     )
 
-    # ---- Cap at RequiredPaidDays (Step 7) ----
-    required_dec = Decimal(str(required_paid_days))
-    paid_days = raw_paid_days if raw_paid_days <= required_dec else required_dec
-
-    # ---- Final salary (Step 8) ----
-    daily_salary  = basic_salary / required_dec
+    # ---- Final salary ----
+    cycle_dec     = Decimal(str(cycle_days))
+    daily_salary  = basic_salary / cycle_dec
     final_salary  = (daily_salary * paid_days).quantize(Decimal('0.01'))
     return final_salary
 
