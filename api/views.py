@@ -766,18 +766,30 @@ def mobile_salary(request):
     present_days = att_qs.filter(status='present').count()
     absent_days  = att_qs.filter(status='absent').count()
 
+    # Live net salary — same helper the Suite Salary dashboard uses, so SPIM
+    # Lite sees the current attendance-prorated payable base instead of a
+    # stale SalaryUpdate.net_pay snapshot (which is stamped at Save time and
+    # can be 0 for cycles with no manual save yet).
+    # Deferred import: employees.views imports from attendance.models, which
+    # already depends on employees.models — keeping this import inside the
+    # function avoids any chance of an import-time cycle through api.views.
+    from employees.views import _compute_attendance_breakdown
+    net_salary_amount, paid_days_dec = _compute_attendance_breakdown(
+        emp, cycle_end.replace(day=1), float(emp.base_salary),
+    )
+    net_salary   = str(round(net_salary_amount, 2))
+    paid_days    = float(paid_days_dec)
+    basic_salary = str(emp.base_salary)
+    hra          = '0.00'  # not modelled on SalaryUpdate
+
+    # Allowances + deductions still come from the SalaryUpdate row (the
+    # admin-entered figures); fall back to 0.00 when no row exists yet.
     if sal:
-        basic_salary = str(sal.basic_salary)
-        hra          = '0.00'  # not modelled on SalaryUpdate
-        allowances   = str(sal.extra_allowance + sal.ot_allowance + sal.food_allowance)
-        deductions   = str(sal.total_deduction)
-        net_salary   = str(sal.net_pay)
+        allowances = str(sal.extra_allowance + sal.ot_allowance + sal.food_allowance)
+        deductions = str(sal.total_deduction)
     else:
-        basic_salary = '0.00'
-        hra          = '0.00'
-        allowances   = '0.00'
-        deductions   = '0.00'
-        net_salary   = '0.00'
+        allowances = '0.00'
+        deductions = '0.00'
 
     return JsonResponse({
         'success': True,
@@ -787,6 +799,7 @@ def mobile_salary(request):
             'allowances':   allowances,
             'deductions':   deductions,
             'net_salary':   net_salary,
+            'paid_days':    paid_days,
             'present_days': present_days,
             'absent_days':  absent_days,
             'cycle_start':  str(cycle_start),
@@ -821,16 +834,39 @@ def mobile_dashboard(request):
     todays_rec   = AttendanceRecord.objects.filter(employee=emp, date=today).first()
     today_status = todays_rec.status if todays_rec else None
 
-    # Calendar-month counts (same scope as mobile_profile's attendance_summary)
-    month_qs = AttendanceRecord.objects.filter(
-        employee=emp, date__year=today.year, date__month=today.month,
-    )
-    present_days = month_qs.filter(status='present').count()
-    absent_days  = month_qs.filter(status='absent').count()
+    # 26→25 cycle anchored on today — same window mobile_salary uses, so the
+    # home tab and the salary tab agree on the active cycle.
+    if today.day >= 26:
+        cycle_start = today.replace(day=26)
+        if today.month == 12:
+            cycle_end = date(today.year + 1, 1, 25)
+        else:
+            cycle_end = date(today.year, today.month + 1, 25)
+    else:
+        if today.month == 1:
+            cycle_start = date(today.year - 1, 12, 26)
+        else:
+            cycle_start = date(today.year, today.month - 1, 26)
+        cycle_end = today.replace(day=25)
 
-    # Latest payslip net pay
-    latest            = SalaryUpdate.objects.filter(employee=emp).order_by('-month').first()
-    latest_net_salary = str(latest.net_pay) if latest else '0.00'
+    # Cycle attendance counts, capped at today so future-dated rows (auto
+    # Sunday holidays etc.) do not inflate the present/absent figures.
+    cycle_qs = AttendanceRecord.objects.filter(
+        employee=emp,
+        date__gte=cycle_start,
+        date__lte=cycle_end,
+    ).filter(date__lte=today)
+    present_days = cycle_qs.filter(status='present').count()
+    absent_days  = cycle_qs.filter(status__in=['absent', 'leave', 'no_week_off']).count()
+
+    # Live net salary — same helper the Suite Salary dashboard uses, so the
+    # SPIM Lite home tab no longer surfaces a stale SalaryUpdate.net_pay.
+    # Deferred import to avoid any import-time cycle through api.views.
+    from employees.views import _compute_attendance_breakdown
+    latest_net_salary_amount, _paid_dec = _compute_attendance_breakdown(
+        emp, cycle_end.replace(day=1), float(emp.base_salary),
+    )
+    latest_net_salary = str(round(latest_net_salary_amount, 2))
 
     # Company block — deferred import (matches mobile_profile's pattern).
     company_name = ''
