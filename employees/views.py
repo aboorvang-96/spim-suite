@@ -673,14 +673,17 @@ def salary_dashboard(request):
                 or (salary_record.month if salary_record else timezone.now().date().replace(day=1))
             )
             try:
-                attendance_earnings = float(_compute_attendance_earnings(
+                _earn_dec, _paid_dec = _compute_attendance_breakdown(
                     e, ae_month, gross_base,
-                ))
+                )
+                attendance_earnings = float(_earn_dec)
+                attendance_paid_days = float(_paid_dec)
             except Exception as exc:
                 # Defensive: never let a per-row compute kill the whole
                 # dashboard. Surface in logs and fall back to gross_base.
                 print(f'[salary_dashboard] attendance compute failed for emp {e.pk}: {exc}')
                 attendance_earnings = gross_base
+                attendance_paid_days = 0.0
 
             if salary_record:
                 net = float(salary_record.net_pay)
@@ -723,6 +726,9 @@ def salary_dashboard(request):
                 # the row's month — Edit Salary modal reads this instead of
                 # its localStorage fallback so it always matches the page.
                 'attendance_earnings': attendance_earnings,
+                # Paid-days breakdown (Present + WeekOff + Holiday + 0.5·HalfDay)
+                # surfaced so the Edit Salary modal can display it read-only.
+                'paid_days': attendance_paid_days,
                 'overtime': ot,
                 'food_allowance': food_allowance,
                 'food_usage': food_usage,
@@ -779,6 +785,70 @@ def salary_dashboard(request):
 
 
 
+def _compute_attendance_breakdown(employee, month_date, basic_salary):
+    """
+    Compute both the attendance-prorated payable base and the paid-days
+    count for the given (employee, month). Returns (final_salary, paid_days)
+    both as Decimal. Future Sundays auto-marked Holiday by the backend
+    backfill are excluded — they only contribute once the cycle has
+    reached that date.
+
+    See _compute_attendance_earnings for the formula and fallback semantics.
+    """
+    from attendance.models import AttendanceRecord
+
+    # Coerce to Decimal to prevent float × Decimal TypeError
+    basic_salary = Decimal(str(basic_salary))
+
+    year  = month_date.year
+    month = month_date.month
+    last_day = calendar.monthrange(year, month)[1]
+
+    # ---- CycleDays = full calendar days in the month ----
+    cycle_days = last_day
+
+    if cycle_days <= 0:
+        # Defensive: never divide by zero.
+        return basic_salary, Decimal('0')
+
+    records = AttendanceRecord.objects.filter(
+        employee=employee,
+        date__year=year,
+        date__month=month,
+    )
+
+    if not records.exists():
+        # No attendance marked — treat as fully paid (safe fallback).
+        # Paid-days surfaced as CycleDays so the modal stays consistent
+        # with the full-base earnings figure.
+        return basic_salary, Decimal(str(cycle_days))
+
+    # Future Sundays carrying an auto-Holiday row must not count yet.
+    today = datetime.date.today()
+    records_paid = records.exclude(
+        date__week_day=1, date__gt=today,
+    )
+
+    present_days  = records_paid.filter(status='present').count()
+    holiday_days  = records_paid.filter(status='holiday').count()
+    half_days     = records_paid.filter(status='half_day').count()
+    week_off_days = records_paid.filter(status='week_off').count()
+
+    # ---- PaidDays = pure sum of per-status weights ----
+    paid_days = (
+        Decimal(str(present_days))
+        + Decimal(str(week_off_days))
+        + Decimal(str(holiday_days))
+        + (Decimal(str(half_days)) * Decimal('0.5'))
+    )
+
+    # ---- Final salary ----
+    cycle_dec     = Decimal(str(cycle_days))
+    daily_salary  = basic_salary / cycle_dec
+    final_salary  = (daily_salary * paid_days).quantize(Decimal('0.01'))
+    return final_salary, paid_days
+
+
 def _compute_attendance_earnings(employee, month_date, basic_salary):
     """
     Attendance-prorated payable base from AttendanceRecord rows.
@@ -805,49 +875,7 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
     The import of AttendanceRecord is deferred to avoid a circular import:
     attendance.models imports Employee from employees.models.
     """
-    from attendance.models import AttendanceRecord
-
-    # Coerce to Decimal to prevent float × Decimal TypeError
-    basic_salary = Decimal(str(basic_salary))
-
-    year  = month_date.year
-    month = month_date.month
-    last_day = calendar.monthrange(year, month)[1]
-
-    # ---- CycleDays = full calendar days in the month ----
-    cycle_days = last_day
-
-    if cycle_days <= 0:
-        # Defensive: never divide by zero.
-        return basic_salary
-
-    records = AttendanceRecord.objects.filter(
-        employee=employee,
-        date__year=year,
-        date__month=month,
-    )
-
-    if not records.exists():
-        # No attendance marked — treat as fully paid (safe fallback).
-        return basic_salary
-
-    present_days  = records.filter(status='present').count()
-    holiday_days  = records.filter(status='holiday').count()
-    half_days     = records.filter(status='half_day').count()
-    week_off_days = records.filter(status='week_off').count()
-
-    # ---- PaidDays = pure sum of per-status weights ----
-    paid_days = (
-        Decimal(str(present_days))
-        + Decimal(str(week_off_days))
-        + Decimal(str(holiday_days))
-        + (Decimal(str(half_days)) * Decimal('0.5'))
-    )
-
-    # ---- Final salary ----
-    cycle_dec     = Decimal(str(cycle_days))
-    daily_salary  = basic_salary / cycle_dec
-    final_salary  = (daily_salary * paid_days).quantize(Decimal('0.01'))
+    final_salary, _ = _compute_attendance_breakdown(employee, month_date, basic_salary)
     return final_salary
 
 

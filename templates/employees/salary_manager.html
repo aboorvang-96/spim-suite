@@ -223,6 +223,10 @@
                         <input type="number" name="advance" id="edit-advance" class="filter-input" oninput="calcNet()" title="Advance Pay">
                     </div>
                     <div class="form-group">
+                        <label class="stat-label">Paid Days <span style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(Present + Week Off + Holiday + 0.5×Half Day)</span></label>
+                        <input type="text" id="edit-paid-days" class="filter-input" readonly style="background:var(--slate-50);cursor:not-allowed;" title="Sum of paid days from attendance records for this cycle" placeholder="No records">
+                    </div>
+                    <div class="form-group">
                         <label class="stat-label">Attendance Earnings (₹) <span style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(from attendance records)</span></label>
                         <input type="number" id="edit-att-earnings" class="filter-input" readonly style="background:var(--slate-50);cursor:not-allowed;" title="Auto-calculated from attendance records for this cycle" placeholder="No records — base used">
                         <input type="hidden" name="attendance_earnings" id="edit-att-earnings-hidden">
@@ -654,6 +658,19 @@
         document.getElementById('edit-pf-amount').value = s.pf_amount || 0;
         document.getElementById('edit-food-allowance').value = s.food_allowance || 0;
         document.getElementById('edit-food-usage').value = s.food_usage || 0;
+
+        // Paid Days breakdown (server-computed, same helper as Attendance Earnings).
+        // Display as "<n> days" — fractional value when half-days are present.
+        const paidDaysEl = document.getElementById('edit-paid-days');
+        if (paidDaysEl) {
+            const pd = (typeof s.paid_days === 'number') ? s.paid_days : null;
+            if (pd !== null && pd > 0) {
+                const pdStr = (pd % 1 === 0) ? String(pd) : pd.toFixed(1);
+                paidDaysEl.value = pdStr + ' days';
+            } else {
+                paidDaysEl.value = '';
+            }
+        }
 
         document.getElementById('l-bank').innerText = s.bank_name || 'Not Provided';
         document.getElementById('l-holder').innerText = s.account_holder || 'Not Provided';

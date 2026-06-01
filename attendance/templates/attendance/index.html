@@ -1222,11 +1222,16 @@ function dailyEarning(status, baseSalary, cycleDays) {
 }
 
 /* Authoritative cycle earnings — sum of per-status pay weights over
-   every record in the cycle. Divisor = calendar days in the cycle. */
+   every record in the cycle. Divisor = calendar days in the cycle.
+   Future Sundays (auto-marked Holiday by the backend backfill) are
+   excluded — they pay only once the cycle has reached that date. */
 function computeCycleEarnings(records, baseSalary, cycleDays) {
     if (!baseSalary || !cycleDays) return 0;
+    const todayDateStr = todayStr();
     let present = 0, holiday = 0, half = 0, weekOff = 0;
     records.forEach(r => {
+        const dow = new Date(r.date + 'T00:00:00').getDay();
+        if (dow === 0 && r.date > todayDateStr) return;
         switch (r.status) {
             case 'Present':     present++;  break;
             case 'Holiday':     holiday++;  break;
@@ -1346,9 +1351,15 @@ function renderDrawerContent() {
             const slug = rec.status.toLowerCase().replace(/\s+/g, '');
             cls       = 'cal-' + slug;
             statusLbl = rec.status === 'Weekly Off' ? 'W/Off' : rec.status;
-            // Sundays auto-saved as Holiday pay full per the new rule
-            // (Holiday = full day pay). Cell earning is purely status-driven.
-            const earned = dailyEarning(rec.status, baseSalary, cycleDays);
+            // Future Sundays auto-saved as Holiday must NOT pay yet — the
+            // cycle hasn't reached that date. Render them as blank '-' with
+            // ₹0 so the calendar matches the cycle total.
+            const isFutureSunday = (dow === 0 && ds > today);
+            if (isFutureSunday) {
+                cls       = 'cal-none';
+                statusLbl = '-';
+            }
+            const earned = isFutureSunday ? 0 : dailyEarning(rec.status, baseSalary, cycleDays);
             const salaryLine = (baseSalary > 0 && earned > 0)
                 ? '₹' + earned.toLocaleString('en-IN', {maximumFractionDigits: 0})
                 : '';
@@ -1534,16 +1545,21 @@ function exportDrawerExcel() {
 
     // Build rows for every day in cycle
     const rows = [['Employee ID', 'Employee Name', 'Date', 'Day', 'Status', 'Remarks', 'Salary Earned (₹)']];
+    const todayDateStr = todayStr();
     let cur = new Date(start);
     while (cur <= end) {
         const ds  = dateToStr(cur);
         const rec = recMap[ds];
         const dow = DAY_NAMES[cur.getDay()];
         const isSun = cur.getDay() === 0;
-        const status  = rec ? rec.status : (isSun ? 'Sunday' : '-');
+        // Future Sundays auto-saved as Holiday must NOT pay yet — same
+        // rule applied in the calendar render and cycle total.
+        const isFutureSunday = isSun && ds > todayDateStr;
+        const status  = isFutureSunday
+            ? '-'
+            : (rec ? rec.status : (isSun ? 'Sunday' : '-'));
         const remarks = rec ? (rec.remarks || '') : '';
-        // Pay is purely status-driven (Sundays pay full via their auto-Holiday status).
-        const earned  = rec ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
+        const earned  = (rec && !isFutureSunday) ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
         rows.push([empId, empName, ds, dow, status, remarks, earned > 0 ? earned.toFixed(2) : '']);
         cur.setDate(cur.getDate() + 1);
     }
