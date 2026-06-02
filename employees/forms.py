@@ -11,24 +11,9 @@ class EmployeeForm(forms.ModelForm):
         ]:
             if field in self.fields:
                 self.fields[field].required = False
-        # If the employee has already had their Employee ID changed once,
-        # lock the field at the form level (UI hint — backend still enforces).
-        if self.instance and self.instance.pk and self.instance.employee_id_edit_count >= 1:
-            if 'employee_id' in self.fields:
-                self.fields['employee_id'].disabled = True
-                self.fields['employee_id'].help_text = (
-                    "Employee ID already modified once and is locked."
-                )
 
     def clean_employee_id(self):
-        new_val = (self.cleaned_data.get('employee_id') or '').strip()
-        if self.instance and self.instance.pk:
-            old_val = self.instance.employee_id or ''
-            if new_val and new_val != old_val and self.instance.employee_id_edit_count >= 1:
-                raise forms.ValidationError(
-                    "Employee ID already modified once and is locked."
-                )
-        return new_val
+        return (self.cleaned_data.get('employee_id') or '').strip()
 
     class Meta:
         model = Employee

@@ -301,12 +301,7 @@ def edit_employee(request, pk):
         form = EmployeeForm(request.POST, instance=employee)
         if form.is_valid():
             new_emp_id = (form.cleaned_data.get('employee_id') or '').strip()
-            # SPIM Lite rule: Employee ID may be edited only once.
             if new_emp_id and new_emp_id != original_emp_id:
-                if employee.employee_id_edit_count >= 1:
-                    messages.error(request, "Employee ID already modified once and is locked.")
-                    return redirect('employees:list')
-                employee.employee_id_edit_count = employee.employee_id_edit_count + 1
                 employee.employee_login_id = new_emp_id
             updated = form.save()
             # Re-apply Salary Config when Role / Level / JobRole changed so
@@ -356,15 +351,8 @@ def employee_edit_ajax(request, pk):
     original_role  = (employee.designation or '').strip().lower()
     original_level = (employee.level or '').strip().lower()
     employee.name                = name
-    # Edit-once enforcement for Employee ID (SPIM Lite rule)
     posted_emp_id = request.POST.get('employee_id', employee.employee_id).strip()
     if posted_emp_id != employee.employee_id:
-        if employee.employee_id_edit_count >= 1:
-            return JsonResponse({
-                'success': False,
-                'error': 'Employee ID already modified once and is locked.',
-            }, status=400)
-        employee.employee_id_edit_count = employee.employee_id_edit_count + 1
         employee.employee_login_id = posted_emp_id
     employee.employee_id         = posted_emp_id
     employee.designation         = request.POST.get('designation', employee.designation).strip()
@@ -503,8 +491,9 @@ def employee_list_json(request):
     employees = Employee.objects.filter(admin_id=admin_id)
     emp_list = []
     for emp in employees:
+        # EMP ID must come from the employee_id column only — never the PK.
         emp_list.append({
-            'id':           str(emp.employee_id) if emp.employee_id else str(emp.id),
+            'id':           emp.employee_id or '',
             'name':         emp.name,
             'dept':         emp.department or '',
             'role':         emp.designation or '',

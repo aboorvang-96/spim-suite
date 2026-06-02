@@ -558,7 +558,7 @@
         }
 
         salaryData.forEach(s => {
-            const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+            const empIdDisplay = (s.employee_id || '');
             const row = `
                 <tr>
                     <td class="sticky-col"><strong>${empIdDisplay}</strong></td>
@@ -945,7 +945,7 @@
 
         const tableData = salaryData.map((s, idx) => {
             const locSite = [s.location, s.site].filter(Boolean).join('/');
-            const empId   = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+            const empId   = (s.employee_id || '');
             return [
                 idx + 1,
                 s.employee_name || '-',
@@ -985,7 +985,7 @@
         const rows = salaryData.map((s, idx) => ({
             'Sl No':      idx + 1,
             'Name':       s.employee_name || '',
-            'ID':         s.employee_id   || ('EMP-' + String(s.id).padStart(3, '0')),
+            'ID':         (s.employee_id || ''),
             'Loc/Site':   [s.location, s.site].filter(Boolean).join('/'),
             'Bank':       s.bank_name      || '',
             'IFSC Code':  s.ifsc_code      || '',
@@ -1010,7 +1010,7 @@
         const doc = new jsPDF('p', 'mm', 'a4');
         const pageW = doc.internal.pageSize.width;
         const pageH = doc.internal.pageSize.height;
-        const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+        const empIdDisplay = (s.employee_id || '');
         const net = s.net_payable !== undefined ? s.net_payable : ((s.base_salary||0) + (s.overtime||0) - (s.advance_pay||0) - (s.deduction||0));
 
         // ── Company data ──
@@ -1242,7 +1242,7 @@
 
         salaryData.forEach(s => {
             const doc = renderPayslipPDF(s);
-            const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+            const empIdDisplay = (s.employee_id || '');
             const pdfBlob = doc.output('blob');
             zip.file(`Payslip_${empIdDisplay}_${s.month}.pdf`, pdfBlob);
         });
@@ -1258,7 +1258,7 @@
     function downloadPayslip(id) {
         const s = salaryData.find(x => x.id === id);
         if (!s) return;
-        const empIdDisplay = s.employee_id || ('EMP-' + String(s.id).padStart(3, '0'));
+        const empIdDisplay = (s.employee_id || '');
         const doc = renderPayslipPDF(s);
         doc.save(`Payslip_${empIdDisplay}_${s.month || ''}_${s.year || ''}.pdf`);
     }

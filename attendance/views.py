@@ -20,9 +20,11 @@ def index(request):
         
     emp_list = []
     for emp in employees:
-        # Provide the properties expected by the attendance JS
+        # EMP ID must come from the employee_id column only — never the PK.
+        # Employees missing an employee_id surface as blank so admins can
+        # spot and backfill them via the (now unlocked) Edit form.
         emp_list.append({
-            'id': str(emp.employee_id) if emp.employee_id else str(emp.id),
+            'id': emp.employee_id or '',
             'name': emp.name,
             'dept': emp.department or '',
             'role': emp.designation or '',
@@ -151,7 +153,7 @@ def load_attendance(request):
     }
 
     records = [{
-        'empId':   r.employee.employee_id or str(r.employee.id),
+        'empId':   r.employee.employee_id or '',
         'empName': r.employee.name,
         'date':    r.date.isoformat(),
         'status':  STATUS_DISPLAY.get(r.status, 'Present'),
