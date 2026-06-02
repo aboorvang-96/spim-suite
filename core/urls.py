@@ -7,6 +7,7 @@ from django.shortcuts import redirect
 urlpatterns = [
     path('admin/',     admin.site.urls),
     path('auth/',      include('accounts.urls',  namespace='accounts')),
+    path('api/',       include('api.urls',       namespace='api')),
     path('dashboard/', include('dashboard.urls', namespace='dashboard')),
     path('finance/',   include('finance.urls',   namespace='finance')),
     path('projects/',  include('projects.urls',  namespace='projects')),
