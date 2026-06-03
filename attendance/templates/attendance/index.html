@@ -652,7 +652,12 @@ document.addEventListener('DOMContentLoaded', function () {
             (data.records || []).forEach(function(r) {
                 var hrs = r.status === 'Present' ? '8.00' : (r.status === 'Half Day' ? '4.00' : '0.00');
                 existing.push({
-                    empId: r.empId, empName: r.empName || '',
+                    empId: r.empId,
+                    // empPk preserved alongside empId so subsequent edit/
+                    // delete operations on this local record can resolve
+                    // to the right Employee row even when empId is blank.
+                    empPk: r.empPk ? String(r.empPk) : '',
+                    empName: r.empName || '',
                     mainLocation: '', site: '', workingSite: '',
                     date: r.date, status: r.status, remarks: '', hours: hrs, baseSalary: 0
                 });
@@ -886,6 +891,12 @@ function loadBulkAttendanceTable() {
     targetEmps.forEach(emp => {
         const tr = document.createElement('tr');
         tr.dataset.empId   = emp.id;
+        // empPk is the Employee row's DB primary key. It is NEVER displayed
+        // as the EMP ID — display still reads `emp.id` (employee_id only).
+        // It is used purely as a save/edit/delete fallback identifier so
+        // employees with a blank employee_id column don't get silently
+        // dropped by the server's empId-required check.
+        tr.dataset.empPk   = String(emp.pk || '');
         tr.dataset.empName = emp.name;
         tr.dataset.baseSalary = emp.baseSalary || 0;
         tr.innerHTML = `
@@ -1073,6 +1084,7 @@ function saveBulkAttendance() {
         // keeps the local cache aligned with the DB shape).
         const newRecord = {
             empId:        tr.dataset.empId,
+            empPk:        tr.dataset.empPk || '',
             empName:      tr.dataset.empName,
             baseSalary:   parseFloat(tr.dataset.baseSalary) || 0,
             mainLocation: mainLocation || '',
@@ -1094,12 +1106,20 @@ function saveBulkAttendance() {
 
     localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
 
-    /* Sync newly saved records to DB so other linked admins can see them */
+    /* Sync newly saved records to DB so other linked admins can see them.
+       `pk` is sent alongside `empId` so the server can resolve employees
+       with a blank employee_id via the PK fallback (fixes the silent-drop
+       that caused admin marks to vanish after a hard refresh). */
     var serverRecords = [];
     rows.forEach(tr => {
         var d = tr.querySelector('.row-date').value;
         var s = tr.querySelector('.row-status').value;
-        if (d && s) serverRecords.push({ empId: tr.dataset.empId, date: d, status: s });
+        if (d && s) serverRecords.push({
+            empId: tr.dataset.empId,
+            pk:    tr.dataset.empPk || '',
+            date:  d,
+            status: s,
+        });
     });
     syncRecordsToServer(serverRecords);
 
@@ -1134,9 +1154,15 @@ function updateAttendance() {
         hours: calculateHours(status)
     };
     localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(att));
-    /* Sync edit to DB */
+    /* Sync edit to DB — include `pk` so blank-empId records can still
+       resolve on the server (mirrors the saveBulkAttendance payload). */
     var updated = att[editingIndex];
-    if (updated) syncRecordsToServer([{ empId: updated.empId, date: updated.date, status: updated.status }]);
+    if (updated) syncRecordsToServer([{
+        empId:  updated.empId,
+        pk:     updated.empPk || '',
+        date:   updated.date,
+        status: updated.status,
+    }]);
     closeEditModal();
 }
 
@@ -1146,7 +1172,8 @@ function deleteAttendance(idx) {
     var toDelete = att[idx];
     att.splice(idx, 1);
     localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(att));
-    /* Sync deletion to DB */
+    /* Sync deletion to DB — include `pk` so blank-empId records can still
+       resolve on the server (mirrors save/edit payload shape). */
     if (toDelete) {
         fetch('/attendance/delete/', {
             method: 'POST',
@@ -1155,7 +1182,11 @@ function deleteAttendance(idx) {
                 'X-Requested-With': 'XMLHttpRequest',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ empId: toDelete.empId, date: toDelete.date })
+            body: JSON.stringify({
+                empId: toDelete.empId,
+                pk:    toDelete.empPk || '',
+                date:  toDelete.date,
+            })
         }).catch(function() {});
     }
 }

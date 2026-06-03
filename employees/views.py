@@ -492,8 +492,12 @@ def employee_list_json(request):
     emp_list = []
     for emp in employees:
         # EMP ID must come from the employee_id column only — never the PK.
+        # `pk` is an internal-only field that lets the attendance JS resolve
+        # the right Employee row when `employee_id` is blank. It is never
+        # displayed as the EMP ID.
         emp_list.append({
             'id':           emp.employee_id or '',
+            'pk':           emp.pk,
             'name':         emp.name,
             'dept':         emp.department or '',
             'role':         emp.designation or '',

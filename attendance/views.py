@@ -23,8 +23,13 @@ def index(request):
         # EMP ID must come from the employee_id column only — never the PK.
         # Employees missing an employee_id surface as blank so admins can
         # spot and backfill them via the (now unlocked) Edit form.
+        # `pk` is a separate, internal-only field used by the client so
+        # save/edit/delete still resolve to the right Employee row when
+        # `employee_id` happens to be blank. It is never displayed as
+        # the EMP ID.
         emp_list.append({
             'id': emp.employee_id or '',
+            'pk': emp.pk,
             'name': emp.name,
             'dept': emp.department or '',
             'role': emp.designation or '',
@@ -58,16 +63,32 @@ def save_attendance(request):
             # Assuming data is a list of attendance records
             for record in data:
                 emp_id = record.get('empId')
-                if not emp_id:
-                    continue
-                # Find employee by employee_id or numeric pk
-                try:
-                    emp = Employee.objects.get(employee_id=emp_id, admin_id=admin_id)
-                except (Employee.DoesNotExist, MultipleObjectsReturned):
+                emp_pk = record.get('pk')
+                # Find employee by employee_id, falling back to the explicit
+                # `pk` field, then to numeric empId (legacy localStorage rows
+                # that stored the PK in the empId slot). Empty empId is no
+                # longer a hard skip — when the client provides `pk`, the
+                # lookup still resolves. This is the fix for the silent
+                # "26 admin marks vanish on refresh" + "1 employee missing"
+                # bugs caused by employees with a blank employee_id column.
+                emp = None
+                if emp_id:
+                    try:
+                        emp = Employee.objects.get(employee_id=emp_id, admin_id=admin_id)
+                    except (Employee.DoesNotExist, MultipleObjectsReturned):
+                        emp = None
+                if emp is None and emp_pk:
+                    try:
+                        emp = Employee.objects.get(pk=emp_pk, admin_id=admin_id)
+                    except (Employee.DoesNotExist, MultipleObjectsReturned, ValueError, TypeError):
+                        emp = None
+                if emp is None and emp_id:
                     try:
                         emp = Employee.objects.get(id=emp_id, admin_id=admin_id)
-                    except (Employee.DoesNotExist, MultipleObjectsReturned):
-                        continue
+                    except (Employee.DoesNotExist, MultipleObjectsReturned, ValueError):
+                        emp = None
+                if emp is None:
+                    continue
                 
                 date = record.get('date')
                 status = record.get('status', 'Present').lower()
@@ -154,6 +175,7 @@ def load_attendance(request):
 
     records = [{
         'empId':   r.employee.employee_id or '',
+        'empPk':   r.employee.pk,  # internal lookup key — never displayed as EMP ID
         'empName': r.employee.name,
         'date':    r.date.isoformat(),
         'status':  STATUS_DISPLAY.get(r.status, 'Present'),
@@ -169,16 +191,30 @@ def delete_attendance(request):
             data = json.loads(request.body)
             admin_id = get_admin_id(request.user)
             emp_id = data.get('empId')
+            emp_pk = data.get('pk')
             date = data.get('date')
-            if not emp_id:
+            if not emp_id and not emp_pk:
                 return JsonResponse({'success': False, 'error': 'Employee ID is required'})
-            try:
-                emp = Employee.objects.get(employee_id=emp_id, admin_id=admin_id)
-            except (Employee.DoesNotExist, MultipleObjectsReturned):
+            # Mirror save_attendance's lookup order so legacy records with a
+            # blank employee_id can still be deleted via their `pk` field.
+            emp = None
+            if emp_id:
+                try:
+                    emp = Employee.objects.get(employee_id=emp_id, admin_id=admin_id)
+                except (Employee.DoesNotExist, MultipleObjectsReturned):
+                    emp = None
+            if emp is None and emp_pk:
+                try:
+                    emp = Employee.objects.get(pk=emp_pk, admin_id=admin_id)
+                except (Employee.DoesNotExist, MultipleObjectsReturned, ValueError, TypeError):
+                    emp = None
+            if emp is None and emp_id:
                 try:
                     emp = Employee.objects.get(id=emp_id, admin_id=admin_id)
-                except (Employee.DoesNotExist, MultipleObjectsReturned):
-                    return JsonResponse({'success': False, 'error': 'Employee not found'})
+                except (Employee.DoesNotExist, MultipleObjectsReturned, ValueError):
+                    emp = None
+            if emp is None:
+                return JsonResponse({'success': False, 'error': 'Employee not found'})
             
             AttendanceRecord.objects.filter(employee=emp, date=date, admin_id=admin_id).delete()
             return JsonResponse({'success': True})
