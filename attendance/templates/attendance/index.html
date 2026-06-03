@@ -621,19 +621,34 @@ document.addEventListener('DOMContentLoaded', function () {
 
     /* ── Load shared DB records so all linked admins share visibility ── */
     function loadFromServer() {
-        var today = todayStr();
-        var firstOfMonth = today.slice(0, 7) + '-01';
-        fetch('/attendance/load/?date_from=' + firstOfMonth, {
+        /* Fetch from the start of the active 26→25 cycle, not the first
+           of the calendar month. With a "first of month" anchor the May
+           26-31 portion of the current cycle was never fetched into
+           localStorage, so the Daily Summary and the salary drawer were
+           missing the opening days of every cycle. */
+        var todayD = new Date();
+        var anchorMonthOffset = (todayD.getDate() >= 26) ? 0 : -1;
+        var cycleAnchor = new Date(
+            todayD.getFullYear(),
+            todayD.getMonth() + anchorMonthOffset,
+            26
+        );
+        var pad2 = function(n) { return (n < 10 ? '0' : '') + n; };
+        var cycleStart =
+            cycleAnchor.getFullYear() + '-' +
+            pad2(cycleAnchor.getMonth() + 1) + '-' +
+            pad2(cycleAnchor.getDate());
+        fetch('/attendance/load/?date_from=' + cycleStart, {
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             /* DB is authoritative for the loaded date range.
-               Drop all local records from firstOfMonth onwards, then
+               Drop all local records from cycleStart onwards, then
                repopulate from DB — ensures every linked admin in the same
                organisation sees the same attendance data on page load. */
             var existing = loadAttendance();
-            existing = existing.filter(function(r) { return r.date < firstOfMonth; });
+            existing = existing.filter(function(r) { return r.date < cycleStart; });
             (data.records || []).forEach(function(r) {
                 var hrs = r.status === 'Present' ? '8.00' : (r.status === 'Half Day' ? '4.00' : '0.00');
                 existing.push({

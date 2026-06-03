@@ -96,6 +96,17 @@ def ensure_sunday_holidays(
     if df is None or dt is None or df > dt:
         return 0
 
+    # Cap the backfill window at today — never pre-fill future Sundays as
+    # Holiday. Existing rows for any date (admin overrides, prior auto-
+    # fills) are preserved unconditionally by the bulk_create(..., ignore_
+    # conflicts=True) call below, so this only prevents NEW rows from
+    # being created for dates that haven't arrived yet.
+    today = datetime.date.today()
+    if dt > today:
+        dt = today
+    if df > dt:
+        return 0
+
     sundays = _sundays_between(df, dt)
     if not sundays:
         return 0
