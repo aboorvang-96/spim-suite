@@ -1224,7 +1224,10 @@ function generateSummary() {
         else byDate[r.date][s] = 1;
     });
 
-    const dates = Object.keys(byDate).sort();
+    // Descending: newest date at the top of the Daily Summary table.
+    // ISO YYYY-MM-DD strings sort lexicographically == chronologically,
+    // so .sort().reverse() yields strict newest-first ordering.
+    const dates = Object.keys(byDate).sort().reverse();
     dates.forEach(d => {
         const v   = byDate[d];
         const fmt = d.split('-').reverse().join('/');
