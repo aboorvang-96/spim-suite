@@ -21,6 +21,7 @@ ALLOWED_HOSTS = ['*']
 # Required when DEBUG=False
 CSRF_TRUSTED_ORIGINS = [
     'https://spim-suite-production.up.railway.app',
+    'https://spim-lite.vercel.app',
 ]
 
 # Security settings for production
@@ -93,6 +94,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:19006',
     'http://127.0.0.1:19006',
     'https://spim-suite.railway.app',
+    'https://spim-lite.vercel.app',
 ]
 
 CORS_ALLOW_CREDENTIALS = False
