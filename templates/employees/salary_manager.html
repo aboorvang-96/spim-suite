@@ -649,7 +649,8 @@
 
         // Auto-populate Base Salary from Role + Level mapping (fallback: stored base_salary)
         const cfgBase = getBaseSalaryFor(curRole, curLevel);
-        const baseToShow = (cfgBase !== null) ? cfgBase : (s.base_salary || 0);
+        const overridden = !!s.salary_is_custom_override;
+        const baseToShow = (cfgBase !== null && !overridden) ? cfgBase : (s.base_salary || 0);
 
         document.getElementById('edit-salary').value = baseToShow;
         document.getElementById('edit-ot').value = s.overtime || 0;
