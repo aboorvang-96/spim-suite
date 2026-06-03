@@ -363,14 +363,23 @@ def mobile_profile(request):
 def mobile_attendance(request):
     """
     GET  -> own attendance records (optional ?month=YYYY-MM filter).
-    POST -> upsert own attendance for a single date.
+    POST -> create own attendance for a single date (locked once created).
             Body: { "date": "YYYY-MM-DD" (optional, defaults today), "status": "present|absent|half_day|leave" }
-            Uses the AttendanceRecord (employee, date) unique-together so no
-            duplicate rows are ever created — submitting the same date again
-            updates the existing row instead of creating a new one. The same
-            row is what SPIM Suite's attendance/payroll modules read, so a
-            mark-present from mobile flows into salary calculations the moment
-            payroll is recomputed for that cycle.
+
+    Locking rules (Suite ⇄ Lite sync hardening):
+      * If a record already exists with source='admin', the employee cannot
+        overwrite it. Response: HTTP 409 with the locked record.
+      * If a record already exists with source='employee' and the status
+        matches, the response is idempotent success (safe to retry).
+      * If a record already exists with source='employee' but the status
+        differs, the employee cannot self-correct — HTTP 409. Admin can
+        still override via the Suite admin save endpoint, which writes
+        source='admin' and re-locks the row.
+      * No existing record → create a new employee-sourced row.
+
+    The presence of a record (any source) is the lock. Every record in the
+    response carries `locked: true` so SPIM Lite can render the lock state
+    without inferring it from `source`.
     """
     emp = request.employee
 
@@ -393,22 +402,58 @@ def mobile_attendance(request):
         if d > date.today():
             return JsonResponse({'success': False, 'error': 'Cannot mark attendance for a future date.'}, status=400)
 
-        rec, created = AttendanceRecord.objects.update_or_create(
+        # Lock enforcement — never destructively overwrite an existing row
+        # from the mobile path. This stops APK background-sync POSTs from
+        # silently overwriting admin marks (root cause of the 30-40 min
+        # "revert" symptom).
+        existing = AttendanceRecord.objects.filter(employee=emp, date=d).first()
+        if existing is not None:
+            payload_record = {
+                'id':     existing.id,
+                'date':   str(existing.date),
+                'status': existing.status,
+                'source': existing.source,
+                'locked': True,
+            }
+            if existing.source == 'admin':
+                return JsonResponse({
+                    'success': False,
+                    'error':   'Attendance for this date has been set by the admin and is locked.',
+                    'locked':  True,
+                    'record':  payload_record,
+                }, status=409)
+            # source == 'employee'
+            if existing.status == status_val:
+                # Idempotent retry — same value the employee already marked.
+                return JsonResponse({
+                    'success': True,
+                    'created': False,
+                    'locked':  True,
+                    'record':  payload_record,
+                })
+            return JsonResponse({
+                'success': False,
+                'error':   'You have already marked attendance for this date.',
+                'locked':  True,
+                'record':  payload_record,
+            }, status=409)
+
+        rec = AttendanceRecord.objects.create(
             employee=emp, date=d,
-            defaults={
-                'status':   status_val,
-                'source':   'employee',
-                'admin_id': emp.admin_id,
-            },
+            status=status_val,
+            source='employee',
+            admin_id=emp.admin_id,
         )
         return JsonResponse({
             'success': True,
-            'created': created,
+            'created': True,
+            'locked':  True,
             'record': {
                 'id':     rec.id,
                 'date':   str(rec.date),
                 'status': rec.status,
                 'source': rec.source,
+                'locked': True,
             },
         })
 
@@ -450,6 +495,9 @@ def mobile_attendance(request):
         'date':   str(r.date),
         'status': r.status,
         'source': r.source,
+        # Presence of a record == locked. Explicit flag so SPIM Lite can
+        # render the lock state without inferring it from `source`.
+        'locked': True,
     } for r in qs[:200]]
     return JsonResponse({'success': True, 'attendance': records})
 
