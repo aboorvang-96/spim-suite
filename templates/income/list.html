@@ -418,9 +418,6 @@
   <!-- 4. INCOME LIST -->
   <section class="income-list-v5">
     <div class="income-grid-v5" id="incomeGrid">
-      {# Grouped by Account — one card per account. Detail panel inside
-         carries every individual income's data-* attrs so the existing
-         edit modal still works without contract changes. #}
       {% for group in accounts_grouped %}
       <div class="income-card-v5" data-account-key="{{ group.account_key }}" data-income-count="{{ group.count }}">
         <!-- LATEST DATE & TOTAL AMOUNT -->
