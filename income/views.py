@@ -177,13 +177,19 @@ def income_list(request):
         acc = (i.payment_mode or '').strip().lower()
         i.combo_data = combo_map.get((src, acc)) if (src and acc) else None
 
+    # Group the filtered incomes by Account for the new
+    # one-card-per-account list view. Header summary / filters /
+    # add-edit-delete URLs are intentionally unchanged.
+    accounts_grouped = _group_incomes_by_account(incomes_list)
+
     return render(request, 'income/list.html', {
-        'incomes':       incomes_list,
-        'categories':    categories,
-        'total':         total,
-        'count':         count,
-        'average':       average,
-        'total_balance': sum(c['balance'] for c in balance_combos),
+        'incomes':          incomes_list,
+        'accounts_grouped': accounts_grouped,
+        'categories':       categories,
+        'total':            total,
+        'count':            count,
+        'average':          average,
+        'total_balance':    sum(c['balance'] for c in balance_combos),
         'filters': {
             'category': category_id, 'date_from': date_from, 'date_to': date_to,
             'search': search, 'amount_min': amount_min, 'amount_max': amount_max,
@@ -223,6 +229,47 @@ def _is_ajax(request):
     return (
         request.headers.get('X-Requested-With') == 'XMLHttpRequest'
         or 'application/json' in request.headers.get('Accept', '')
+    )
+
+
+def _group_incomes_by_account(qs):
+    """
+    Group an already-filtered Income queryset by `payment_mode` (the
+    column that holds the Account name). Mirrors the expense-side helper
+    in finance.views — see that docstring for full semantics.
+    """
+    import datetime as _dt
+    from decimal import Decimal as _D
+    groups = {}
+    for i in qs:
+        acc = (getattr(i, 'payment_mode', None) or '').strip()
+        key = acc.lower()
+        g = groups.get(key)
+        if g is None:
+            g = {
+                'account':      acc or '(No Account)',
+                'account_key':  key,
+                'total':        _D('0'),
+                'count':        0,
+                'latest_date':  i.date,
+                'transactions': [],
+            }
+            groups[key] = g
+        g['total'] += i.amount
+        g['count'] += 1
+        g['transactions'].append(i)
+        if i.date and (g['latest_date'] is None or i.date > g['latest_date']):
+            g['latest_date'] = i.date
+            g['account'] = acc or '(No Account)'
+    for g in groups.values():
+        g['transactions'].sort(
+            key=lambda x: (x.date or _dt.date.min),
+            reverse=True,
+        )
+    return sorted(
+        groups.values(),
+        key=lambda g: (g['latest_date'] or _dt.date.min),
+        reverse=True,
     )
 
 

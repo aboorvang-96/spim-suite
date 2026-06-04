@@ -71,6 +71,63 @@ def _is_ajax(request):
     )
 
 
+def _group_expenses_by_account(qs):
+    """
+    Group an already-filtered Transaction queryset by `payment_mode` (the
+    column that holds the Account name, e.g. "MURUGAN NALLAKANNU").
+
+    Returns a list of dicts, sorted by latest_date descending:
+        {
+            'account':      <display name, casing of the most recent row>,
+            'account_key':  <lower-cased account, the dedup key>,
+            'total':        Decimal — sum of all amounts in this group,
+            'count':        int — number of transactions,
+            'latest_date':  date — most recent transaction date,
+            'transactions': [Transaction, ...] — sorted by date desc,
+        }
+
+    Records with a blank account fall under the "(No Account)" bucket so
+    they are still visible to the admin (instead of silently disappearing).
+    Lower-cased keys mirror the case-insensitive matching used by
+    `_balance_by_combo_expense` above — two rows with "Cash" / "CASH"
+    collapse into one card.
+    """
+    import datetime as _dt
+    from decimal import Decimal as _D
+    groups = {}
+    for t in qs:
+        acc = (getattr(t, 'payment_mode', None) or '').strip()
+        key = acc.lower()
+        g = groups.get(key)
+        if g is None:
+            g = {
+                'account':      acc or '(No Account)',
+                'account_key':  key,
+                'total':        _D('0'),
+                'count':        0,
+                'latest_date':  t.date,
+                'transactions': [],
+            }
+            groups[key] = g
+        g['total'] += t.amount
+        g['count'] += 1
+        g['transactions'].append(t)
+        if t.date and (g['latest_date'] is None or t.date > g['latest_date']):
+            g['latest_date'] = t.date
+            # Refresh display casing to the most recent row's spelling.
+            g['account'] = acc or '(No Account)'
+    for g in groups.values():
+        g['transactions'].sort(
+            key=lambda x: (x.date or _dt.date.min),
+            reverse=True,
+        )
+    return sorted(
+        groups.values(),
+        key=lambda g: (g['latest_date'] or _dt.date.min),
+        reverse=True,
+    )
+
+
 def _expense_combo_data(t, user):
     """Return the combo balance dict for this transaction's (income_source, account) pair.
     Comparison is case-insensitive to match the normalised _balance_by_combo_expense keys."""
@@ -163,9 +220,15 @@ def transaction_list(request):
         'incomeSource': t.income_source or '',
     } for t in transactions_list])
 
+    # Group the filtered transactions by Account for the new
+    # one-card-per-account list view. Header summary / filters /
+    # add-edit-delete URLs are intentionally unchanged.
+    accounts_grouped = _group_expenses_by_account(transactions_list)
+
     return render(request, 'finance/list.html', {
         'transactions':        transactions_list,
         'transactions_json':   transactions_json,
+        'accounts_grouped':    accounts_grouped,
         'total_expense':       total_expense,
         'this_month_expense':  this_month_expense,
         'expense_count':       expense_count,
