@@ -415,9 +415,6 @@
     <!-- 4. EXPENSE LIST SECTION -->
     <section class="expense-list-v5">
         <div class="expense-grid-v5" id="expenseGrid">
-            {# Grouped by Account — one card per account. Detail panel inside
-               carries every individual transaction's data-* attrs so the
-               existing edit modal still works without contract changes. #}
             {% for group in accounts_grouped %}
             <div class="expense-card-v5" data-account-key="{{ group.account_key }}" data-expense-count="{{ group.count }}">
                 <!-- LATEST DATE & TOTAL AMOUNT -->
