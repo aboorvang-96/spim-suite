@@ -332,6 +332,24 @@
 @media (max-width: 900px) and (min-width: 641px) {
     .emp-kpi-row { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ── Locked row (already marked for this date) ── */
+.att-table tbody tr.row-locked { background: #f3f4f6 !important; opacity: 0.7; }
+.att-table tbody tr.row-locked:hover td { background: #f3f4f6 !important; }
+.att-table tbody tr.row-locked td { color: #9ca3af; }
+.att-table tbody tr.row-locked input:disabled,
+.att-table tbody tr.row-locked select:disabled,
+.att-table tbody tr.row-locked textarea:disabled {
+    background: #e9ecef; cursor: not-allowed; color: #9ca3af; border-color: #d1d5db;
+}
+.row-status-badge { display: none; }
+.sb-noweekoff { background: #fee2e2; color: #7f1d1d; }
+/* Edit Attendance mode button — active state */
+.btn-edit-att-active {
+    background: #059669 !important; color: white !important;
+    border-color: #059669 !important;
+    box-shadow: 0 0 0 2px rgba(5,150,105,0.25);
+}
 </style>
 {% endblock %}
 
@@ -385,6 +403,7 @@
                             <button type="button" role="menuitem" onclick="markSelectedAs('Holiday')">Mark Holiday</button>
                         </div>
                     </div>
+                    <button type="button" id="editAttModeBtn" class="btn btn-secondary btn-sm" onclick="toggleEditAttendanceMode()" title="Allow editing already-marked attendance">✏️ Edit Attendance</button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="clearAllSelections()">Clear Selection</button>
                     <button type="button" class="btn btn-primary btn-sm" onclick="saveBulkAttendance()">Save Selected</button>
                 </div>
@@ -580,9 +599,10 @@ const STATUS_OPTIONS  = ['Present', 'Leave', 'Holiday', 'Weekly Off', 'Half Day'
 const DAY_NAMES       = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTH_NAMES     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-let editingIndex  = null;
-let drawerEmpId   = null;
-let drawerEmpData = null;
+let editingIndex      = null;
+let drawerEmpId       = null;
+let drawerEmpData     = null;
+let editAttendanceMode = false;
 
 /* ═══════════════════════════════════════════════
    INIT
@@ -864,6 +884,10 @@ function isSunday(dateStr) {
    BULK TABLE (Tasks 1, 4)
 ═══════════════════════════════════════════════ */
 function loadBulkAttendanceTable() {
+    // Reset edit mode whenever the table is (re)loaded (filter or location change)
+    editAttendanceMode = false;
+    _syncEditModeBtn();
+
     const empId        = document.getElementById('attEmployee').value;
     const locSiteVal   = document.getElementById('attLocSite') ? document.getElementById('attLocSite').value : '';
     const allEmployees = loadEmployees();
@@ -926,6 +950,7 @@ function loadBulkAttendanceTable() {
                 <select class="row-status form-select">
                     ${buildStatusOptions('')}
                 </select>
+                <span class="row-status-badge sb" style="display:none;"></span>
             </td>
             <td>
                 <textarea class="row-remarks form-input" placeholder="Remarks..."></textarea>
@@ -934,13 +959,18 @@ function loadBulkAttendanceTable() {
         tbody.appendChild(tr);
     });
 
-    updateSelectedCount();
+    applyAttendanceLocks();  // lock already-marked rows for the selected date
 }
 
 function syncRowDates() {
     const date = document.getElementById('attDate').value;
     if (!date) return;
+    // Set all row dates — JS assignment works even on disabled inputs
     document.querySelectorAll('#bulkAttBody .row-date').forEach(inp => { inp.value = date; });
+    // Reset edit mode and re-evaluate locks for the new date
+    editAttendanceMode = false;
+    _syncEditModeBtn();
+    applyAttendanceLocks();
 }
 
 /* ═══════════════════════════════════════════════
@@ -978,9 +1008,86 @@ function handleWorkingSiteChange(sel) {
 /* ═══════════════════════════════════════════════
    SELECT ALL / COUNT
 ═══════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════
+   EDIT ATTENDANCE MODE & ROW LOCKING
+═══════════════════════════════════════════════ */
+function _syncEditModeBtn() {
+    const btn = document.getElementById('editAttModeBtn');
+    if (!btn) return;
+    if (editAttendanceMode) {
+        btn.textContent = '🔓 Editing ON';
+        btn.classList.add('btn-edit-att-active');
+    } else {
+        btn.textContent = '✏️ Edit Attendance';
+        btn.classList.remove('btn-edit-att-active');
+    }
+}
+
+function toggleEditAttendanceMode() {
+    editAttendanceMode = !editAttendanceMode;
+    _syncEditModeBtn();
+    applyAttendanceLocks();
+}
+
+function applyAttendanceLocks() {
+    const attendance = loadAttendance();
+    document.querySelectorAll('#bulkAttBody tr').forEach(function(tr) {
+        var empId   = tr.dataset.empId  || '';
+        var empPk   = tr.dataset.empPk  || '';
+        var dateEl  = tr.querySelector('.row-date');
+        var rowDate = dateEl ? dateEl.value : '';
+        if (!rowDate) { unlockRow(tr); return; }
+        var existing = attendance.find(function(a) {
+            if (a.date !== rowDate) return false;
+            // Primary: DB primary key (always available for server-synced records)
+            if (empPk !== '' && a.empPk === empPk) return true;
+            // Fallback: employee_id for non-blank IDs
+            if (empId !== '' && a.empId === empId) return true;
+            return false;
+        });
+        if (existing && !editAttendanceMode) {
+            lockRow(tr, existing.status);
+        } else {
+            unlockRow(tr);
+        }
+    });
+    updateSelectedCount();
+}
+
+function lockRow(tr, status) {
+    tr.classList.add('row-locked');
+    var chk = tr.querySelector('.rowCheck');
+    if (chk) { chk.disabled = true; chk.checked = false; }
+    var sel   = tr.querySelector('.row-status');
+    var badge = tr.querySelector('.row-status-badge');
+    if (sel) sel.style.display = 'none';
+    if (badge) {
+        var key = status.toLowerCase().replace(/\s+/g, '');
+        badge.className = 'row-status-badge sb sb-' + key;
+        badge.textContent = status + ' 🔒';
+        badge.style.display = 'inline-block';
+    }
+    tr.querySelectorAll(
+        'select.row-locsite, select.row-workingsite, input.row-date, textarea.row-remarks'
+    ).forEach(function(el) { el.disabled = true; });
+}
+
+function unlockRow(tr) {
+    tr.classList.remove('row-locked');
+    var chk = tr.querySelector('.rowCheck');
+    if (chk) chk.disabled = false;
+    var sel   = tr.querySelector('.row-status');
+    var badge = tr.querySelector('.row-status-badge');
+    if (sel) sel.style.display = '';
+    if (badge) badge.style.display = 'none';
+    tr.querySelectorAll(
+        'select.row-locsite, select.row-workingsite, input.row-date, textarea.row-remarks'
+    ).forEach(function(el) { el.disabled = false; });
+}
+
 function toggleSelectAll(masterChk) {
     const chk = masterChk.checked;
-    document.querySelectorAll('#bulkAttBody .rowCheck').forEach(c => c.checked = chk);
+    document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').forEach(c => c.checked = chk);
     ['selectAllChk','headerCheck'].forEach(id => {
         const e = document.getElementById(id); if (e) e.checked = chk;
     });
@@ -988,7 +1095,7 @@ function toggleSelectAll(masterChk) {
 }
 
 function clearAllSelections() {
-    document.querySelectorAll('#bulkAttBody .rowCheck').forEach(c => c.checked = false);
+    document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').forEach(c => c.checked = false);
     ['selectAllChk','headerCheck'].forEach(id => {
         const e = document.getElementById(id); if (e) { e.checked = false; e.indeterminate = false; }
     });
@@ -996,10 +1103,15 @@ function clearAllSelections() {
 }
 
 function updateSelectedCount() {
-    const total   = document.querySelectorAll('#bulkAttBody .rowCheck').length;
+    const total   = document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').length;
     const checked = document.querySelectorAll('#bulkAttBody .rowCheck:checked').length;
+    const locked  = document.querySelectorAll('#bulkAttBody tr.row-locked').length;
     const badge   = document.getElementById('selectedCount');
-    if (badge) badge.textContent = checked + ' / ' + total + ' selected';
+    if (badge) {
+        let txt = checked + ' / ' + total + ' selected';
+        if (locked > 0) txt += ' · ' + locked + ' already marked';
+        badge.textContent = txt;
+    }
     ['selectAllChk','headerCheck'].forEach(id => {
         const e = document.getElementById(id);
         if (!e) return;
@@ -1124,7 +1236,16 @@ function saveBulkAttendance() {
     syncRecordsToServer(serverRecords);
 
     showAlert('attAlert', 'Saved ' + saved + ' record(s) successfully', 'success');
-    clearAllSelections();
+    // Lock saved rows immediately so they show as already-marked
+    editAttendanceMode = false;
+    _syncEditModeBtn();
+    applyAttendanceLocks();
+    // Uncheck any remaining unlocked rows
+    document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').forEach(c => c.checked = false);
+    ['selectAllChk','headerCheck'].forEach(function(id) {
+        var e = document.getElementById(id); if (e) { e.checked = false; e.indeterminate = false; }
+    });
+    updateSelectedCount();
 }
 
 /* ═══════════════════════════════════════════════
@@ -1203,6 +1324,9 @@ function generateSummary() {
 
     if (from)    records = records.filter(r => r.date >= from);
     if (to)      records = records.filter(r => r.date <= to);
+    // Never show future dates — the backend auto-fills upcoming Sundays as
+    // Holiday records but they must not appear in the summary until the date arrives.
+    records = records.filter(r => r.date <= todayStr());
     if (empId)   records = records.filter(r => (r.empId   || '').toLowerCase().includes(empId));
     if (empName) records = records.filter(r => (r.empName || '').toLowerCase().includes(empName));
 

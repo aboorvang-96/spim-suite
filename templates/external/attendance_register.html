@@ -447,35 +447,6 @@
         #bulkAttTable tbody tr td:first-child {
             background: inherit;
         }
-        /* ── Locked row (already marked for this date) ── */
-        #bulkAttTable tbody tr.row-locked {
-            background: #f3f4f6 !important;
-            opacity: 0.7;
-        }
-        #bulkAttTable tbody tr.row-locked:hover {
-            background: #f3f4f6 !important;
-        }
-        #bulkAttTable tbody tr.row-locked td {
-            color: #9ca3af;
-        }
-        #bulkAttTable tbody tr.row-locked input:disabled,
-        #bulkAttTable tbody tr.row-locked select:disabled,
-        #bulkAttTable tbody tr.row-locked textarea:disabled {
-            background: #e9ecef;
-            cursor: not-allowed;
-            color: #9ca3af;
-            border-color: #d1d5db;
-        }
-        .row-status-badge { display: none; }
-        /* Extra status classes (SPIM Lite compatibility) */
-        .status-weeklyoff { background: #ede9fe; color: #5b21b6; }
-        .status-sunday    { background: #fce7f3; color: #9d174d; }
-        /* Edit Attendance mode button — active state */
-        .btn-edit-att-active {
-            background: #059669 !important;
-            color: white !important;
-            box-shadow: 0 0 0 2px rgba(5,150,105,0.25);
-        }
     </style>
 </head>
 <body>
@@ -582,7 +553,6 @@
                             <input type="checkbox" id="selectAllChk" onchange="toggleSelectAll(this)" style="width:auto; cursor:pointer;"> Select All
                         </label>
                         <button class="btn-secondary btn-small" onclick="clearAllSelections()">Clear All</button>
-                        <button id="editAttModeBtn" class="btn-secondary btn-small" onclick="toggleEditAttendanceMode()" title="Allow editing already-marked attendance">✏️ Edit Attendance</button>
                         <span id="selectedCount" style="font-size:12px; color:#667eea; font-weight:700;"></span>
                     </div>
 
@@ -792,7 +762,6 @@
         const SITES_KEY = 'sites';
         const WORKING_SITES_KEY = 'workingSites';
         let editingIndex = null;
-        let editAttendanceMode = false;
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -1122,10 +1091,6 @@
             const site    = document.getElementById('attSite').value;
             const wrapper = document.getElementById('bulkAttTableWrapper');
 
-            // Reset edit mode whenever the table is (re)loaded (date or site change)
-            editAttendanceMode = false;
-            _syncEditModeBtn();
-
             if (!mainLoc || !site) {
                 wrapper.style.display = 'none';
                 return;
@@ -1160,7 +1125,6 @@
                             <option value="Half Day">Half Day</option>
                             <option value="Holiday">Holiday</option>
                         </select>
-                        <span class="row-status-badge status-badge" style="display:none;"></span>
                     </td>
                     <td><input type="time" class="row-intime" style="width:100%; min-width:88px;"></td>
                     <td><input type="time" class="row-outtime" style="width:100%; min-width:88px;"></td>
@@ -1191,7 +1155,7 @@
 
             wrapper.style.display = 'block';
             document.getElementById('selectAllChk').checked = false;
-            applyAttendanceLocks();   // lock already-marked rows for the selected date
+            updateSelectedCount();
         }
 
         function handleWorkingSiteChange(selectEl) {
@@ -1233,93 +1197,23 @@
             }
         }
 
-        // ── Edit Attendance Mode & Row Locking ────────────────────────────────
-        function _syncEditModeBtn() {
-            const btn = document.getElementById('editAttModeBtn');
-            if (!btn) return;
-            if (editAttendanceMode) {
-                btn.textContent = '🔓 Editing ON';
-                btn.classList.add('btn-edit-att-active');
-            } else {
-                btn.textContent = '✏️ Edit Attendance';
-                btn.classList.remove('btn-edit-att-active');
-            }
-        }
-
-        function toggleEditAttendanceMode() {
-            editAttendanceMode = !editAttendanceMode;
-            _syncEditModeBtn();
-            applyAttendanceLocks();
-        }
-
-        function applyAttendanceLocks() {
-            const date = document.getElementById('attDate').value;
-            if (!date) { updateSelectedCount(); return; }
-            const attendance = loadAttendance();
-            document.querySelectorAll('#bulkAttBody tr').forEach(tr => {
-                const empId = tr.dataset.empId;
-                if (!empId) return;
-                const existing = attendance.find(a => a.empId === empId && a.date === date);
-                if (existing && !editAttendanceMode) {
-                    lockRow(tr, existing.status);
-                } else {
-                    unlockRow(tr);
-                }
-            });
-            updateSelectedCount();
-        }
-
-        function lockRow(tr, status) {
-            tr.classList.add('row-locked');
-            const chk = tr.querySelector('.rowCheck');
-            if (chk) { chk.disabled = true; chk.checked = false; }
-            const sel = tr.querySelector('.row-status');
-            const badge = tr.querySelector('.row-status-badge');
-            if (sel) sel.style.display = 'none';
-            if (badge) {
-                const key = status.toLowerCase().replace(/ /g, '');
-                badge.className = `row-status-badge status-badge status-${key}`;
-                badge.textContent = status + ' 🔒';
-                badge.style.display = 'inline-block';
-            }
-            tr.querySelectorAll('select.row-workingsite, select.row-reason, input.row-intime, input.row-outtime, textarea.row-remarks, input.row-workingsite-new').forEach(el => {
-                el.disabled = true;
-            });
-        }
-
-        function unlockRow(tr) {
-            tr.classList.remove('row-locked');
-            const chk = tr.querySelector('.rowCheck');
-            if (chk) chk.disabled = false;
-            const sel = tr.querySelector('.row-status');
-            const badge = tr.querySelector('.row-status-badge');
-            if (sel) sel.style.display = '';
-            if (badge) badge.style.display = 'none';
-            tr.querySelectorAll('select.row-workingsite, select.row-reason, input.row-intime, input.row-outtime, textarea.row-remarks').forEach(el => {
-                el.disabled = false;
-            });
-        }
-
         function toggleSelectAll(masterChk) {
-            document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').forEach(chk => {
+            document.querySelectorAll('#bulkAttBody .rowCheck').forEach(chk => {
                 chk.checked = masterChk.checked;
             });
             updateSelectedCount();
         }
 
         function clearAllSelections() {
-            document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').forEach(chk => chk.checked = false);
+            document.querySelectorAll('#bulkAttBody .rowCheck').forEach(chk => chk.checked = false);
             document.getElementById('selectAllChk').checked = false;
             updateSelectedCount();
         }
 
         function updateSelectedCount() {
-            const total   = document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').length;
+            const total   = document.querySelectorAll('#bulkAttBody .rowCheck').length;
             const checked = document.querySelectorAll('#bulkAttBody .rowCheck:checked').length;
-            const locked  = document.querySelectorAll('#bulkAttBody tr.row-locked').length;
-            let txt = `${checked} / ${total} selected`;
-            if (locked > 0) txt += ` · ${locked} already marked`;
-            document.getElementById('selectedCount').textContent = txt;
+            document.getElementById('selectedCount').textContent = `${checked} / ${total} selected`;
             // Sync master checkbox
             const master = document.getElementById('selectAllChk');
             master.indeterminate = checked > 0 && checked < total;
@@ -1389,11 +1283,7 @@
 
             localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
             showAlert('attAlert', `✅ ${savedCount} attendance record(s) saved successfully.`, 'success');
-            // Lock saved rows immediately so they show as already-marked
-            editAttendanceMode = false;
-            _syncEditModeBtn();
-            applyAttendanceLocks();
-            document.getElementById('selectAllChk').checked = false;
+            clearBulkAttendanceForm();
             displayAttendance();
             generateSummary();
         }
@@ -1405,8 +1295,6 @@
             document.getElementById('bulkAttTableWrapper').style.display = 'none';
             document.getElementById('bulkAttBody').innerHTML = '';
             document.getElementById('attAlert').innerHTML = '';
-            editAttendanceMode = false;
-            _syncEditModeBtn();
         }
 
         function calculateHours(inTime, outTime) {
