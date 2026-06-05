@@ -19,23 +19,14 @@
 
 {% block header_actions %}
 <div class="flex gap-2">
-    <div id="download-report-wrapper" style="position:relative;display:inline-block;">
-        <button type="button" id="downloadReportBtn" class="btn btn-outline btn-sm bg-white" title="Download salary report">
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-            Download Report
-            <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="margin-left:2px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-        </button>
-        <div id="download-dropdown" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:180px;z-index:200;overflow:hidden;">
-            <button type="button" id="downloadPdfBtn" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:0.8rem;color:#1e293b;text-align:left;white-space:nowrap;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
-                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                Download PDF
-            </button>
-            <button type="button" id="downloadExcelBtn" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:0.8rem;color:#1e293b;text-align:left;white-space:nowrap;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
-                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                Download Excel (.xlsx)
-            </button>
-        </div>
-    </div>
+    <button type="button" id="downloadPdfBtn" class="btn btn-outline btn-sm bg-white" title="Download salary report as PDF">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        Download PDF
+    </button>
+    <button type="button" id="downloadExcelBtn" class="btn btn-outline btn-sm bg-white" title="Download salary report as Excel">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Download Excel
+    </button>
     <button onclick="generateBulkZip()" class="btn btn-primary btn-sm">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
         Bulk Payslips
@@ -498,23 +489,13 @@
         // is a CSP `script-src 'self'` deployed by a reverse proxy, which
         // blocks inline event handlers but allows external <script> blocks.
         // Binding via addEventListener inside an external script avoids
-        // that class of failure entirely. Console logs in each handler
-        // (see toggleDownloadDropdown / generatePDF / generateExcel below)
-        // make it obvious in DevTools whether each click is registering.
-        const _dlBtn       = document.getElementById('downloadReportBtn');
+        // that class of failure entirely.
         const _dlPdfBtn    = document.getElementById('downloadPdfBtn');
         const _dlExcelBtn  = document.getElementById('downloadExcelBtn');
-        if (_dlBtn)   _dlBtn.addEventListener('click', toggleDownloadDropdown);
-        if (_dlPdfBtn) _dlPdfBtn.addEventListener('click', function () {
-            generatePDF();
-            closeDownloadDropdown();
-        });
-        if (_dlExcelBtn) _dlExcelBtn.addEventListener('click', function () {
-            generateExcel();
-            closeDownloadDropdown();
-        });
+        if (_dlPdfBtn)   _dlPdfBtn.addEventListener('click', generatePDF);
+        if (_dlExcelBtn) _dlExcelBtn.addEventListener('click', generateExcel);
         console.log('[salary report] download buttons wired:', {
-            trigger: !!_dlBtn, pdf: !!_dlPdfBtn, excel: !!_dlExcelBtn,
+            pdf: !!_dlPdfBtn, excel: !!_dlExcelBtn,
         });
     });
 
@@ -941,21 +922,6 @@
         fetchData();
     }
 
-    // Download Report — dropdown helpers
-    function toggleDownloadDropdown() {
-        console.log('[salary report] toggleDownloadDropdown fired');
-        const dd = document.getElementById('download-dropdown');
-        dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
-    }
-    function closeDownloadDropdown() {
-        const dd = document.getElementById('download-dropdown');
-        if (dd) dd.style.display = 'none';
-    }
-    document.addEventListener('click', function(e) {
-        const wrapper = document.getElementById('download-report-wrapper');
-        if (wrapper && !wrapper.contains(e.target)) closeDownloadDropdown();
-    });
-
     // PDF / Excel Generation — SERVER-SIDE.
     //
     // The previous client-side approach (jsPDF + SheetJS from cdnjs)
@@ -998,9 +964,11 @@
         // must produce the same download.
         console.log('[salary report] download URL:', url);
 
-        // Loading indicator on the "Download Report" trigger button so the
-        // user gets immediate feedback that the click registered.
-        const triggerBtn = document.querySelector('#download-report-wrapper > button');
+        // Loading indicator on the clicked button so the user gets
+        // immediate feedback that the click registered.
+        const triggerBtn = document.getElementById(
+            fmt === 'pdf' ? 'downloadPdfBtn' : 'downloadExcelBtn'
+        );
         let originalHTML = '';
         if (triggerBtn) {
             originalHTML = triggerBtn.innerHTML;
