@@ -777,6 +777,251 @@ def salary_dashboard(request):
     })
 
 
+# ─── Server-side Salary Report Download ─────────────────────────────────────
+# The previous Download Report button relied on jsPDF + SheetJS loaded from
+# cdnjs.cloudflare.com. On networks that block cdnjs (corporate proxies,
+# aggressive ad-blockers, some Railway egress paths) the libraries never
+# parse and the click does nothing. This server-side path uses reportlab
+# (PDF) and openpyxl (XLSX), both already pinned in requirements.txt
+# (lines 32, 54), so no CDN dependency remains.
+#
+# The view mirrors salary_dashboard's JSON filter pipeline + per-employee
+# salary derivation, then streams a binary file with Content-Disposition:
+# attachment. The frontend simply navigates the browser to the URL — no
+# client-side JS library involvement at all.
+# ────────────────────────────────────────────────────────────────────────────
+@login_required
+def salary_report_download(request):
+    """
+    GET /employees/salary/report/download/?format=pdf|xlsx
+        &month=June&year=2026
+        &location=...&site=...&bank=...&search=...
+
+    Returns a PDF (default) or XLSX file containing the same salary rows
+    the Salary Management page is currently showing, with these 8 columns:
+        EMP ID | EMP NAME | SITE | SALARY (₹) | BANK NAME | ACCOUNT HOLDER
+        | ACCOUNT NUMBER | IFSC CODE
+    Filename: Salary_Report_<Month>_<Year>.{pdf,xlsx}
+    """
+    fmt = (request.GET.get('format') or 'pdf').strip().lower()
+    if fmt not in ('pdf', 'xlsx'):
+        fmt = 'pdf'
+
+    month_name = (request.GET.get('month') or '').strip()
+    year       = (request.GET.get('year') or '').strip()
+    f_location = request.GET.get('location', '')
+    f_site     = request.GET.get('site', '')
+    f_bank     = request.GET.get('bank', '')
+    f_search   = (request.GET.get('search', '') or '').lower()
+
+    admin_id = get_admin_id(request.user)
+    queryset = Employee.objects.filter(admin_id=admin_id).order_by('name')
+    if f_location:
+        queryset = queryset.filter(location=f_location)
+    if f_site:
+        queryset = queryset.filter(site=f_site)
+    if f_bank:
+        queryset = queryset.filter(bank_details__bank_name=f_bank)
+    if f_search:
+        queryset = queryset.filter(
+            Q(name__icontains=f_search) | Q(employee_id__icontains=f_search)
+        )
+
+    target_date = None
+    if month_name and year:
+        try:
+            m_idx = timezone_month_map(month_name)
+            target_date = datetime.date(int(year), m_idx, 1)
+        except Exception:
+            target_date = None
+
+    # Build rows — same derivation as salary_dashboard JSON branch.
+    rows = []
+    total_net = 0.0
+    for e in queryset:
+        # Mirror dashboard's idempotent base-salary back-fill so the download
+        # never reports ₹0 for an employee just because their base hasn't
+        # been viewed in the dashboard yet.
+        if (not e.base_salary) and (not e.salary_is_custom_override) and (e.level or '').strip():
+            _apply_role_level_salary(e, admin_id, force=False)
+            if e.base_salary:
+                e.save(update_fields=['base_salary', 'fixed_allowance'])
+
+        if target_date:
+            salary_record = e.salary_history.filter(
+                month__year=target_date.year, month__month=target_date.month
+            ).first()
+        else:
+            salary_record = e.salary_history.order_by('-month').first()
+
+        gross_base = float(salary_record.basic_salary if salary_record else e.base_salary)
+        ot         = float(salary_record.ot_allowance if salary_record else 0)
+        advance    = float(salary_record.advance_pay if salary_record else 0)
+        ded        = float(salary_record.total_deduction if salary_record else 0)
+        ae_month   = (
+            target_date
+            or (salary_record.month if salary_record else timezone.now().date().replace(day=1))
+        )
+        try:
+            earn_dec, _paid_dec = _compute_attendance_breakdown(e, ae_month, gross_base)
+            attendance_earnings = float(earn_dec)
+        except Exception as exc:
+            print(f'[salary_report_download] attendance compute failed for emp {e.pk}: {exc}')
+            attendance_earnings = gross_base
+        net = attendance_earnings + ot - advance - ded
+
+        bank = getattr(e, 'bank_details', None)
+        rows.append({
+            'emp_id':         e.employee_id or '',
+            'emp_name':       e.name or '',
+            'site':           e.site or '',
+            'salary':         net,
+            'bank_name':      bank.bank_name      if bank else '',
+            'account_holder': bank.account_holder if bank else '',
+            'account_number': bank.account_number if bank else '',
+            'ifsc_code':      bank.ifsc_code      if bank else '',
+        })
+        total_net += net
+
+    safe_month = (month_name or 'AllMonths').replace(' ', '_')
+    safe_year  = (str(year) if year else 'AllYears').replace(' ', '_')
+    filename_base = f"Salary_Report_{safe_month}_{safe_year}"
+    period_label  = f"{month_name} {year}".strip() or "All Periods"
+
+    if fmt == 'xlsx':
+        return _render_salary_xlsx(rows, total_net, filename_base, period_label)
+    return _render_salary_pdf(rows, total_net, filename_base, period_label)
+
+
+def _render_salary_xlsx(rows, total_net, filename_base, period_label):
+    """Build the salary report as an XLSX HttpResponse using openpyxl."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Salary Report'
+
+    headers = [
+        'EMP ID', 'EMP NAME', 'SITE', 'SALARY (₹)',
+        'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE',
+    ]
+    ws.append(headers)
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='1E293B')
+    for col_idx in range(1, len(headers) + 1):
+        c = ws.cell(row=1, column=col_idx)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal='center')
+
+    for r in rows:
+        ws.append([
+            r['emp_id'],
+            r['emp_name'],
+            r['site'],
+            float(r['salary'] or 0),
+            r['bank_name'],
+            r['account_holder'],
+            r['account_number'],
+            r['ifsc_code'],
+        ])
+
+    # Blank separator + totals footer
+    ws.append([])
+    ws.append([
+        f'Total Employees: {len(rows)}', '', '',
+        float(total_net or 0),
+        '', 'Total Salary Paid', '', '',
+    ])
+
+    widths = [14, 24, 18, 14, 22, 26, 22, 18]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = HttpResponse(
+        buf.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.xlsx"'
+    return response
+
+
+def _render_salary_pdf(rows, total_net, filename_base, period_label):
+    """Build the salary report as a landscape A4 PDF HttpResponse using reportlab."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title14', parent=styles['Title'], fontSize=14, alignment=0)
+    sub_style   = ParagraphStyle('Sub8',    parent=styles['Normal'], fontSize=8)
+
+    story = [
+        Paragraph(f"Salary Report — {period_label}", title_style),
+        Paragraph(
+            f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            sub_style,
+        ),
+        Spacer(1, 6),
+    ]
+
+    table_data = [[
+        'EMP ID', 'EMP NAME', 'SITE', 'SALARY (Rs)',
+        'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE',
+    ]]
+    for r in rows:
+        table_data.append([
+            r['emp_id']         or '-',
+            r['emp_name']       or '-',
+            r['site']           or '-',
+            '{:,.2f}'.format(float(r['salary'] or 0)),
+            r['bank_name']      or '-',
+            r['account_holder'] or '-',
+            r['account_number'] or '-',
+            r['ifsc_code']      or '-',
+        ])
+    table_data.append([
+        f'Total Employees: {len(rows)}', '', '',
+        '{:,.2f}'.format(float(total_net or 0)),
+        '', 'Total Salary Paid', '', '',
+    ])
+
+    col_widths = [55, 95, 75, 65, 95, 110, 95, 70]
+    tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
+        ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
+        ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, -1), 7),
+        ('ALIGN',      (3, 1), (3, -1),  'RIGHT'),
+        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
+        ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
+        ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
+    ]))
+    story.append(tbl)
+    doc.build(story)
+
+    buf.seek(0)
+    response = HttpResponse(buf.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.pdf"'
+    return response
+
 
 def _compute_attendance_breakdown(employee, month_date, basic_salary):
     """

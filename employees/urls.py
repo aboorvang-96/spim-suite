@@ -26,6 +26,7 @@ urlpatterns = [
     path('<int:pk>/bank/', views.bank_details, name='add_step2_bank'),
     path('<int:pk>/pf/', views.pf_details, name='add_step3_pf'),
     path('salary/dashboard/', views.salary_dashboard, name='salary_dashboard'),
+    path('salary/report/download/', views.salary_report_download, name='salary_report_download'),
     path('manage/ajax/', views.manage_ajax, name='manage_ajax'),
     path('salary/generate-expenses/', views.generate_salary_expenses, name='generate_salary_expenses'),
     
