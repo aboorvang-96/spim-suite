@@ -915,8 +915,9 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
     ws.title = 'Salary Report'
 
     headers = [
-        'EMP ID', 'EMP NAME', 'SITE', 'SALARY (₹)',
+        'EMP ID', 'EMP NAME', 'SITE',
         'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE',
+        'SALARY (₹)',
     ]
     ws.append(headers)
     header_font = Font(bold=True, color='FFFFFF')
@@ -932,22 +933,22 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
             r['emp_id'],
             r['emp_name'],
             r['site'],
-            float(r['salary'] or 0),
             r['bank_name'],
             r['account_holder'],
             r['account_number'],
             r['ifsc_code'],
+            float(r['salary'] or 0),
         ])
 
     # Blank separator + totals footer
     ws.append([])
     ws.append([
         f'Total Employees: {len(rows)}', '', '',
-        float(total_net or 0),
         '', 'Total Salary Paid', '', '',
+        float(total_net or 0),
     ])
 
-    widths = [14, 24, 18, 14, 22, 26, 22, 18]
+    widths = [14, 24, 18, 22, 26, 22, 18, 14]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[chr(64 + i)].width = w
 
@@ -990,34 +991,35 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
     ]
 
     table_data = [[
-        'EMP ID', 'EMP NAME', 'SITE', 'SALARY (Rs)',
+        'EMP ID', 'EMP NAME', 'SITE',
         'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE',
+        'SALARY (Rs)',
     ]]
     for r in rows:
         table_data.append([
             r['emp_id']         or '-',
             r['emp_name']       or '-',
             r['site']           or '-',
-            '{:,.2f}'.format(float(r['salary'] or 0)),
             r['bank_name']      or '-',
             r['account_holder'] or '-',
             r['account_number'] or '-',
             r['ifsc_code']      or '-',
+            '{:,.2f}'.format(float(r['salary'] or 0)),
         ])
     table_data.append([
         f'Total Employees: {len(rows)}', '', '',
-        '{:,.2f}'.format(float(total_net or 0)),
         '', 'Total Salary Paid', '', '',
+        '{:,.2f}'.format(float(total_net or 0)),
     ])
 
-    col_widths = [55, 95, 75, 65, 95, 110, 95, 70]
+    col_widths = [55, 95, 75, 95, 110, 95, 70, 65]
     tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
         ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
         ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
         ('FONTSIZE',   (0, 0), (-1, -1), 7),
-        ('ALIGN',      (3, 1), (3, -1),  'RIGHT'),
+        ('ALIGN',      (7, 1), (7, -1),  'RIGHT'),
         ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
         ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
