@@ -9,6 +9,11 @@
     <!-- PWA -->
     <link rel="manifest" href="{% static 'pwa/manifest.json' %}">
     <meta name="theme-color" content="#1a2f5e">
+    <!-- Standards-track tag: mobile-web-app-capable supersedes the Apple-only
+         variant on modern Chrome (the deprecation warning appears in console
+         when the Apple-only tag is used alone). The Apple form is kept
+         alongside for iOS Safari which still requires it. -->
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="SPIM">

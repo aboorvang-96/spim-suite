@@ -960,10 +960,53 @@
             bank:     getVal('f-bank'),
         });
         const url = "{% url 'employees:salary_report_download' %}" + '?' + params.toString();
-        // window.location.href triggers the browser's native download flow
-        // because the server returns Content-Disposition: attachment. No
-        // popup blockers, no new-tab handling needed.
-        window.location.href = url;
+
+        // Print the exact URL so the user / dev can verify it from the
+        // browser console — pasted directly into the address bar this URL
+        // must produce the same download.
+        console.log('[salary report] download URL:', url);
+
+        // Loading indicator on the "Download Report" trigger button so the
+        // user gets immediate feedback that the click registered.
+        const triggerBtn = document.querySelector('#download-report-wrapper > button');
+        let originalHTML = '';
+        if (triggerBtn) {
+            originalHTML = triggerBtn.innerHTML;
+            triggerBtn.disabled = true;
+            triggerBtn.innerHTML = 'Downloading...';
+        }
+
+        // Build a hidden anchor with `download` attribute and click it.
+        // This is more reliable than window.location.href:
+        //   * It does NOT replace the current page URL, so the user
+        //     stays on the Salary Management screen.
+        //   * The `download` attribute hints to the browser "save, don't
+        //     navigate" even if the server's Content-Disposition header
+        //     gets stripped by an aggressive proxy.
+        //   * A 302 redirect (e.g. session expired) surfaces as a real
+        //     navigation we can see, instead of being silently swallowed.
+        const link = document.createElement('a');
+        link.href     = url;
+        link.download = '';        // honor the server's filename
+        link.rel      = 'noopener';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        // Remove the anchor on the next tick so the click handler has a
+        // chance to fire in every browser before the node disappears.
+        setTimeout(function() {
+            if (link.parentNode) link.parentNode.removeChild(link);
+        }, 0);
+
+        // Restore the trigger button label after the browser had time to
+        // start the download. 2s is enough for the request to hit the
+        // server and the download to begin.
+        setTimeout(function() {
+            if (triggerBtn) {
+                triggerBtn.disabled  = false;
+                triggerBtn.innerHTML = originalHTML;
+            }
+        }, 2000);
     }
 
     // ── Unified Payslip PDF Renderer (shared between single and bulk download) ──

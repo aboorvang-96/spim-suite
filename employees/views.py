@@ -802,6 +802,16 @@ def salary_report_download(request):
         EMP ID | EMP NAME | SITE | SALARY (₹) | BANK NAME | ACCOUNT HOLDER
         | ACCOUNT NUMBER | IFSC CODE
     Filename: Salary_Report_<Month>_<Year>.{pdf,xlsx}
+
+    Auth note: @login_required protects this view against unauthenticated
+    callers. If reached without a session it will 302 to LOGIN_URL (see
+    config/settings.py). In practice this can only happen if a user's
+    session expired between the page render and the download click — the
+    salary_manager page itself is @login_required too, so an unauthenticated
+    user can't see the Download button in the first place. The frontend
+    uses an <a download> click pattern that does NOT replace the current
+    URL, so if Django redirects to login the user stays on the salary
+    page and can re-authenticate without losing context.
     """
     fmt = (request.GET.get('format') or 'pdf').strip().lower()
     if fmt not in ('pdf', 'xlsx'):
