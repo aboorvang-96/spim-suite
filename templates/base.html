@@ -383,9 +383,15 @@
         })();
 
         // ─── Service worker registration ─────────────────────────────
+        // Fetch the SW from the root URL '/sw.js' (not /static/pwa/sw.js)
+        // so it can legally claim scope '/'. The Django view at config/urls.py
+        // serves the same file with Service-Worker-Allowed and no-cache
+        // headers. Previously this threw:
+        //   SecurityError: The path of the provided scope ('/') is not
+        //   under the max scope allowed ('/static/pwa/')
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
-                navigator.serviceWorker.register('{% static "pwa/sw.js" %}', { scope: '/' })
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
                     .catch(function(err) { console.warn('SW registration failed:', err); });
             });
         }
