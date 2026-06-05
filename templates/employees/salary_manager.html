@@ -931,77 +931,110 @@
     });
 
     // PDF / Excel Generation
+    //
+    // Guards added so the "Download Report" button never silently no-ops:
+    //   * If the CDN libraries (jsPDF / XLSX) failed to load (offline,
+    //     blocked by network/ad-blocker), surface a toast instead of
+    //     letting the destructure throw a swallowed TypeError.
+    //   * If salaryData is empty (user clicked before fetchData filled
+    //     it, or filters yielded zero rows), surface a toast instead of
+    //     emitting an empty file the user perceives as "nothing happened".
+    //   * Wrap the body in try/catch so any other runtime error surfaces.
+    //
+    // Column set and filename match the spec:
+    //   EMP ID, EMP NAME, SITE, SALARY (₹), BANK NAME, ACCOUNT HOLDER,
+    //   ACCOUNT NUMBER, IFSC CODE   →   Salary_Report_<Month>_<Year>.<ext>
     function generatePDF() {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('l', 'mm', 'a4');
-        const month = document.getElementById('f-month').value;
-        const year  = document.getElementById('f-year').value;
+        try {
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                showToast("PDF library failed to load. Check network and retry.", "error");
+                return;
+            }
+            if (!salaryData || salaryData.length === 0) {
+                showToast("No salary records to download for this selection.", "error");
+                return;
+            }
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('l', 'mm', 'a4');
+            const month = document.getElementById('f-month').value;
+            const year  = document.getElementById('f-year').value;
 
-        doc.setFontSize(16);
-        doc.text(`Salary Report — ${month} ${year}`, 14, 14);
-        doc.setFontSize(8);
-        doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 20);
+            doc.setFontSize(16);
+            doc.text(`Salary Report — ${month} ${year}`, 14, 14);
+            doc.setFontSize(8);
+            doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 20);
 
-        const totalSalary = salaryData.reduce((sum, s) => sum + (s.net_payable || 0), 0);
+            const totalSalary = salaryData.reduce((sum, s) => sum + (s.net_payable || 0), 0);
 
-        const tableData = salaryData.map((s, idx) => {
-            const locSite = [s.location, s.site].filter(Boolean).join('/');
-            const empId   = (s.employee_id || '');
-            return [
-                idx + 1,
-                s.employee_name || '-',
-                empId,
-                locSite || '-',
-                s.bank_name     || '-',
-                s.ifsc_code     || '-',
+            const tableData = salaryData.map(s => [
+                s.employee_id    || '-',
+                s.employee_name  || '-',
+                s.site           || '-',
+                (s.net_payable || 0).toLocaleString('en-IN'),
+                s.bank_name      || '-',
+                s.account_holder || '-',
                 s.account_number || '-',
-                (s.net_payable  || 0).toLocaleString('en-IN'),
-            ];
-        });
+                s.ifsc_code      || '-',
+            ]);
 
-        doc.autoTable({
-            startY: 25,
-            head: [['Sl No', 'Name', 'ID', 'Loc/Site', 'Bank', 'IFSC Code', 'Acc No', 'Salary (₹)']],
-            body: tableData,
-            foot: [[
-                '', `Total Employees: ${salaryData.length}`, '', '', '', '',
-                'Total Salary Paid:',
-                `₹${totalSalary.toLocaleString('en-IN')}`,
-            ]],
-            theme: 'grid',
-            styles: { fontSize: 7 },
-            headStyles: { fillColor: [30, 41, 59] },
-            footStyles: { fillColor: [240, 253, 244], textColor: [5, 150, 105], fontStyle: 'bold' },
-            columnStyles: { 7: { halign: 'right' } },
-        });
+            doc.autoTable({
+                startY: 25,
+                head: [['EMP ID', 'EMP NAME', 'SITE', 'SALARY (₹)', 'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE']],
+                body: tableData,
+                foot: [[
+                    `Total Employees: ${salaryData.length}`, '', '',
+                    `₹${totalSalary.toLocaleString('en-IN')}`,
+                    '', 'Total Salary Paid', '', '',
+                ]],
+                theme: 'grid',
+                styles: { fontSize: 7 },
+                headStyles: { fillColor: [30, 41, 59] },
+                footStyles: { fillColor: [240, 253, 244], textColor: [5, 150, 105], fontStyle: 'bold' },
+                columnStyles: { 3: { halign: 'right' } },
+            });
 
-        doc.save(`SPIM_Salary_Report_${month}_${year}.pdf`);
+            doc.save(`Salary_Report_${month}_${year}.pdf`);
+        } catch (err) {
+            showToast("Could not generate PDF: " + (err && err.message ? err.message : err), "error");
+        }
     }
 
     function generateExcel() {
-        const month = document.getElementById('f-month').value;
-        const year  = document.getElementById('f-year').value;
-        const totalSalary = salaryData.reduce((sum, s) => sum + (s.net_payable || 0), 0);
+        try {
+            if (typeof XLSX === 'undefined') {
+                showToast("Excel library failed to load. Check network and retry.", "error");
+                return;
+            }
+            if (!salaryData || salaryData.length === 0) {
+                showToast("No salary records to download for this selection.", "error");
+                return;
+            }
+            const month = document.getElementById('f-month').value;
+            const year  = document.getElementById('f-year').value;
+            const totalSalary = salaryData.reduce((sum, s) => sum + (s.net_payable || 0), 0);
 
-        const rows = salaryData.map((s, idx) => ({
-            'Sl No':      idx + 1,
-            'Name':       s.employee_name || '',
-            'ID':         (s.employee_id || ''),
-            'Loc/Site':   [s.location, s.site].filter(Boolean).join('/'),
-            'Bank':       s.bank_name      || '',
-            'IFSC Code':  s.ifsc_code      || '',
-            'Acc No':     s.account_number || '',
-            'Salary (₹)': s.net_payable    || 0,
-        }));
+            const rows = salaryData.map(s => ({
+                'EMP ID':         s.employee_id    || '',
+                'EMP NAME':       s.employee_name  || '',
+                'SITE':           s.site           || '',
+                'SALARY (₹)':     s.net_payable    || 0,
+                'BANK NAME':      s.bank_name      || '',
+                'ACCOUNT HOLDER': s.account_holder || '',
+                'ACCOUNT NUMBER': s.account_number || '',
+                'IFSC CODE':      s.ifsc_code      || '',
+            }));
 
-        rows.push({});  // blank separator
-        rows.push({ 'Sl No': 'Total Employees',  'Name': salaryData.length });
-        rows.push({ 'Sl No': 'Total Salary Paid', 'Name': `₹${totalSalary.toLocaleString('en-IN')}` });
+            rows.push({});  // blank separator
+            rows.push({ 'EMP ID': 'Total Employees',  'EMP NAME': salaryData.length });
+            rows.push({ 'EMP ID': 'Total Salary Paid', 'EMP NAME': `₹${totalSalary.toLocaleString('en-IN')}` });
 
-        const worksheet = XLSX.utils.json_to_sheet(rows);
-        const workbook  = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Salary Report');
-        XLSX.writeFile(workbook, `SPIM_Salary_Report_${month}_${year}.xlsx`);
+            const worksheet = XLSX.utils.json_to_sheet(rows);
+            const workbook  = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Salary Report');
+            XLSX.writeFile(workbook, `Salary_Report_${month}_${year}.xlsx`);
+        } catch (err) {
+            showToast("Could not generate Excel: " + (err && err.message ? err.message : err), "error");
+        }
     }
 
     // ── Unified Payslip PDF Renderer (shared between single and bulk download) ──
