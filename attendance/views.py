@@ -92,6 +92,11 @@ def save_attendance(request):
                 
                 date = record.get('date')
                 status = record.get('status', 'Present').lower()
+                # Site / Working Site (new — Mod 1 sync from admin UI).
+                # Optional; when omitted the existing record's values
+                # survive via the `defaults` mechanism below.
+                site_val         = (record.get('site')         or '').strip()
+                working_site_val = (record.get('workingSite')  or record.get('working_site') or '').strip()
                 # Status mapping to match our model (extended for new
                 # payroll rules — holiday / week_off / no_week_off are now
                 # distinct enums; UI variants like "Weekly Off" normalise
@@ -112,15 +117,24 @@ def save_attendance(request):
                 }
                 model_status = status_map.get(status, 'present')
                 
+                defaults = {
+                    'admin_id': admin_id,
+                    'status':   model_status,
+                    'source':   'admin',
+                    'created_by': request.user,
+                }
+                # Only persist site / working_site when the client actually
+                # sent them, so an admin bulk save that omits the new fields
+                # doesn't wipe out a value previously set by the employee.
+                if site_val:
+                    defaults['site'] = site_val
+                if working_site_val:
+                    defaults['working_site'] = working_site_val
+
                 AttendanceRecord.objects.update_or_create(
                     employee=emp,
                     date=date,
-                    defaults={
-                        'admin_id': admin_id,
-                        'status': model_status,
-                        'source': 'admin',
-                        'created_by': request.user
-                    }
+                    defaults=defaults,
                 )
             return JsonResponse({'success': True})
         except Exception as e:
@@ -179,6 +193,10 @@ def load_attendance(request):
         'empName': r.employee.name,
         'date':    r.date.isoformat(),
         'status':  STATUS_DISPLAY.get(r.status, 'Present'),
+        # Site / Working Site — defensive getattr so this view stays alive
+        # even before migration 0004 has been applied to the Suite DB.
+        'site':        getattr(r, 'site',         '') or '',
+        'workingSite': getattr(r, 'working_site', '') or '',
     } for r in qs]
 
     return JsonResponse({'success': True, 'records': records})

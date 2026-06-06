@@ -16,6 +16,8 @@ All authenticated routes are filtered to the employee that owns the token.
 There is no way to query another employee's data through these endpoints.
 """
 import json
+import logging
+import traceback
 from functools import wraps
 from datetime import date, datetime
 
@@ -32,6 +34,12 @@ from attendance.models import AttendanceRecord
 from attendance.utils import ensure_sunday_holidays
 from projects.models import WorkLog, MachineLocation
 from .models import MobileAuthToken
+
+# Dedicated logger for the SPIM Lite mobile API. Surfaces silent save
+# failures (admin_id mismatch, DB errors, lock conflicts) in Railway logs
+# so the intermittent attendance-sync bug is debuggable. Configure once at
+# module load — Django's root logger settings forward records to console.
+_log = logging.getLogger('spim.api.mobile')
 
 
 # ---------------------------------------------------------------------------
@@ -384,12 +392,25 @@ def mobile_attendance(request):
     emp = request.employee
 
     if request.method == 'POST':
-        data       = _json_body(request)
-        date_str   = (data.get('date') or '').strip() or date.today().isoformat()
-        status_val = (data.get('status') or 'present').strip().lower()
+        # ─── Parse + validate request body ──────────────────────────────
+        data         = _json_body(request)
+        date_str     = (data.get('date') or '').strip() or date.today().isoformat()
+        status_val   = (data.get('status') or 'present').strip().lower()
+        # Site / Working Site fields (new — Mod 2/3). Both optional. When
+        # the SPIM Lite client doesn't send them (older builds), the
+        # employee's home-site is used as a sensible default so the Suite
+        # registry still gets a populated Site column.
+        site_val         = (data.get('site') or '').strip()
+        working_site_val = (data.get('working_site') or '').strip()
+        if not site_val:
+            site_val = (emp.site or '').strip()
 
         valid_status = {s for s, _ in AttendanceRecord.STATUS_CHOICES}
         if status_val not in valid_status:
+            _log.warning(
+                'mobile_attendance POST rejected: invalid status emp=%s status=%s',
+                emp.pk, status_val,
+            )
             return JsonResponse(
                 {'success': False, 'error': f'Invalid status. Allowed: {sorted(valid_status)}'},
                 status=400,
@@ -397,63 +418,137 @@ def mobile_attendance(request):
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
         except ValueError:
+            _log.warning(
+                'mobile_attendance POST rejected: bad date emp=%s date=%r',
+                emp.pk, date_str,
+            )
             return JsonResponse({'success': False, 'error': 'date must be YYYY-MM-DD.'}, status=400)
         # Don't allow marking attendance for future dates
         if d > date.today():
             return JsonResponse({'success': False, 'error': 'Cannot mark attendance for a future date.'}, status=400)
 
-        # Lock enforcement — never destructively overwrite an existing row
-        # from the mobile path. This stops APK background-sync POSTs from
-        # silently overwriting admin marks (root cause of the 30-40 min
-        # "revert" symptom).
+        # ─── Resolve admin_id robustly ──────────────────────────────────
+        # Bug 1 root cause: when emp.admin_id was 'PENDING' / blank /
+        # mismatched, the AttendanceRecord landed in a tenancy bucket the
+        # Suite's `filter(admin_id=admin_id)` queries never touched, so
+        # the mark "saved successfully" from the mobile side but vanished
+        # in the Suite registry. Fall back to the employee's creator's
+        # admin_id when the direct field is unusable.
+        effective_admin_id = (emp.admin_id or '').strip()
+        if not effective_admin_id or effective_admin_id == 'PENDING':
+            creator = getattr(emp, 'created_by', None)
+            if creator is not None and getattr(creator, 'admin_id', None):
+                effective_admin_id = creator.admin_id
+                _log.info(
+                    'mobile_attendance: emp=%s admin_id was %r, resolved via creator → %r',
+                    emp.pk, emp.admin_id, effective_admin_id,
+                )
+        if not effective_admin_id:
+            _log.error(
+                'mobile_attendance: emp=%s has no usable admin_id; mark will be invisible to Suite',
+                emp.pk,
+            )
+            return JsonResponse({
+                'success': False,
+                'error': 'Employee account is missing tenant scope. Please ask your admin to refresh your profile.',
+            }, status=500)
+
+        # ─── Lock enforcement ───────────────────────────────────────────
+        # Never destructively overwrite an existing row from the mobile
+        # path. This stops APK background-sync POSTs from silently
+        # overwriting admin marks. EXCEPTION: a Sunday-auto-Holiday row
+        # (source='admin' but stamped purely by the lazy backfill) should
+        # NOT prevent the employee from claiming Present for that Sunday —
+        # the previous behaviour was the root cause of the intermittent
+        # "marks vanish" symptom on Sundays touched by ensure_sunday_holidays.
         existing = AttendanceRecord.objects.filter(employee=emp, date=d).first()
         if existing is not None:
             payload_record = {
-                'id':     existing.id,
-                'date':   str(existing.date),
-                'status': existing.status,
-                'source': existing.source,
-                'locked': True,
+                'id':           existing.id,
+                'date':         str(existing.date),
+                'status':       existing.status,
+                'source':       existing.source,
+                'site':         getattr(existing, 'site', '') or '',
+                'working_site': getattr(existing, 'working_site', '') or '',
+                'locked':       True,
             }
-            if existing.source == 'admin':
+            # Detect the auto-Sunday-Holiday case: source='admin' + status='holiday'
+            # + the date IS a Sunday + the row has no human-set audit fields.
+            # The lazy ensure_sunday_holidays helper creates rows with
+            # created_by=NULL and status='holiday'. Those should be
+            # overwritable by the employee mark.
+            is_auto_sunday = (
+                existing.source == 'admin'
+                and existing.status == 'holiday'
+                and existing.created_by_id is None
+                and d.weekday() == 6  # Sunday
+            )
+            if existing.source == 'admin' and not is_auto_sunday:
                 return JsonResponse({
                     'success': False,
                     'error':   'Attendance for this date has been set by the admin and is locked.',
                     'locked':  True,
                     'record':  payload_record,
                 }, status=409)
-            # source == 'employee'
-            if existing.status == status_val:
-                # Idempotent retry — same value the employee already marked.
+            if existing.source == 'employee':
+                if existing.status == status_val:
+                    # Idempotent retry — same value the employee already marked.
+                    return JsonResponse({
+                        'success': True,
+                        'created': False,
+                        'locked':  True,
+                        'record':  payload_record,
+                    })
                 return JsonResponse({
-                    'success': True,
-                    'created': False,
+                    'success': False,
+                    'error':   'You have already marked attendance for this date.',
                     'locked':  True,
                     'record':  payload_record,
-                })
+                }, status=409)
+            # is_auto_sunday → fall through to upsert below
+
+        # ─── Save (or upsert auto-Sunday-Holiday) ────────────────────────
+        # Wrapped in try/except so transient DB errors surface in Railway
+        # logs and return a meaningful error to the mobile client instead
+        # of the generic 500 the previous code emitted.
+        try:
+            rec, created = AttendanceRecord.objects.update_or_create(
+                employee=emp,
+                date=d,
+                defaults={
+                    'status':       status_val,
+                    'source':       'employee',
+                    'admin_id':     effective_admin_id,
+                    'site':         site_val,
+                    'working_site': working_site_val,
+                },
+            )
+        except Exception as exc:
+            _log.exception(
+                'mobile_attendance save failed: emp=%s date=%s status=%s admin_id=%s err=%s',
+                emp.pk, d, status_val, effective_admin_id, exc,
+            )
             return JsonResponse({
                 'success': False,
-                'error':   'You have already marked attendance for this date.',
-                'locked':  True,
-                'record':  payload_record,
-            }, status=409)
+                'error':   f'Could not save attendance: {exc.__class__.__name__}: {exc}',
+            }, status=500)
 
-        rec = AttendanceRecord.objects.create(
-            employee=emp, date=d,
-            status=status_val,
-            source='employee',
-            admin_id=emp.admin_id,
+        _log.info(
+            'mobile_attendance saved: emp=%s date=%s status=%s site=%r ws=%r admin_id=%s created=%s',
+            emp.pk, d, status_val, site_val, working_site_val, effective_admin_id, created,
         )
         return JsonResponse({
             'success': True,
-            'created': True,
+            'created': created,
             'locked':  True,
             'record': {
-                'id':     rec.id,
-                'date':   str(rec.date),
-                'status': rec.status,
-                'source': rec.source,
-                'locked': True,
+                'id':           rec.id,
+                'date':         str(rec.date),
+                'status':       rec.status,
+                'source':       rec.source,
+                'site':         rec.site or '',
+                'working_site': rec.working_site or '',
+                'locked':       True,
             },
         })
 
@@ -495,6 +590,10 @@ def mobile_attendance(request):
         'date':   str(r.date),
         'status': r.status,
         'source': r.source,
+        # Site / Working Site — defensive getattr keeps the GET working
+        # even before migration 0004 has been applied to the Lite-facing DB.
+        'site':         getattr(r, 'site',         '') or '',
+        'working_site': getattr(r, 'working_site', '') or '',
         # Presence of a record == locked. Explicit flag so SPIM Lite can
         # render the lock state without inferring it from `source`.
         'locked': True,
@@ -670,6 +769,53 @@ def mobile_machines(request):
     qs  = MachineLocation.objects.filter(admin_id=emp.admin_id).order_by('name')
     machines = [{'id': m.id, 'machine_no': m.name} for m in qs]
     return JsonResponse({'success': True, 'machines': machines})
+
+
+@mobile_auth_required
+@require_http_methods(['GET'])
+def mobile_sites(request):
+    """
+    Return every site known to this employee's tenant (Mod 2/3).
+
+    Source list is the union of:
+      * `branches.LocationSite.name` for the tenant (admin-managed registry
+        used by the Suite's Site / Working Site dropdowns).
+      * Distinct `Employee.site` values currently configured for the tenant.
+      * The employee's own `site` field — guarantees the dropdown always
+        contains their default even when the admin hasn't catalogued it yet.
+
+    SPIM Lite calls this once at attendance-screen load time to populate
+    the Site dropdown that drives `site` in the mobile_attendance POST.
+    """
+    emp = request.employee
+    sites = set()
+
+    try:
+        from branches.models import LocationSite
+        for name in LocationSite.objects.filter(admin_id=emp.admin_id).values_list('name', flat=True):
+            n = (name or '').strip()
+            if n:
+                sites.add(n)
+    except Exception as exc:
+        _log.warning('mobile_sites: LocationSite lookup failed for emp=%s err=%s', emp.pk, exc)
+
+    try:
+        for name in Employee.objects.filter(admin_id=emp.admin_id).values_list('site', flat=True):
+            n = (name or '').strip()
+            if n:
+                sites.add(n)
+    except Exception as exc:
+        _log.warning('mobile_sites: Employee.site sweep failed for emp=%s err=%s', emp.pk, exc)
+
+    own = (emp.site or '').strip()
+    if own:
+        sites.add(own)
+
+    return JsonResponse({
+        'success': True,
+        'sites':   sorted(sites),
+        'default': own,
+    })
 
 
 @mobile_auth_required

@@ -21,7 +21,15 @@ class AttendanceRecord(models.Model):
     date = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='present')
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='admin')
-    
+
+    # Site / Working Site per attendance record. Distinct from the Employee
+    # model's `site` field (which is the employee's home site) — this is the
+    # site they actually worked from on this specific date, plus the
+    # "working site" (granular field-level location) that can vary daily.
+    # Both writable from SPIM Lite when employee marks attendance.
+    site         = models.CharField(max_length=150, blank=True, default='')
+    working_site = models.CharField(max_length=200, blank=True, default='')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
