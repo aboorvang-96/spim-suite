@@ -149,7 +149,20 @@ def income_list(request):
 
     from categories.models import IncomeCategory
     categories = IncomeCategory.objects.filter(created_by__admin_id=get_admin_id(request.user))
-    incomes_list = list(incomes)
+
+    # Defensive fetch: if migration 0005 (from_account / to_account /
+    # remarks) hasn't been applied on this DB yet, the default `list(incomes)`
+    # would 500 because the SELECT includes columns that don't exist.
+    # Falling back to a deferred fetch + stubbed values in __dict__ prevents
+    # the template from triggering lazy loads that would also fail.
+    _NEW_INCOME_FIELDS = ('from_account', 'to_account', 'remarks')
+    try:
+        incomes_list = list(incomes)
+    except Exception:
+        incomes_list = list(incomes.defer(*_NEW_INCOME_FIELDS))
+        for _i in incomes_list:
+            for _f in _NEW_INCOME_FIELDS:
+                _i.__dict__[_f] = ''
     total = sum(i.amount for i in incomes_list)
     count = len(incomes_list)
     average = total / count if count else 0
@@ -296,15 +309,26 @@ def _group_incomes_by_site(incomes, user):
     # Build the site → debit map in a single sweep over expense Transactions
     # for this tenant. Empty/None location_site rows are folded into the
     # "(No Site)" bucket so admins can still see them.
-    if is_admin_user(user):
-        expense_qs = FinanceTransaction.objects.filter(admin_id=admin_id, type='expense')
-    else:
-        expense_qs = FinanceTransaction.objects.filter(user=user, type='expense')
+    #
+    # Defensive: the cross-module expense query is wrapped in try/except so
+    # a transient Transaction-side failure (e.g. mid-deploy when one
+    # migration has run and the other hasn't) degrades to an empty debit
+    # map instead of 500-ing the Income page. `.only(...)` skips the new
+    # `expense_category` column entirely so the SELECT works even if the
+    # column hasn't been added yet on the Transaction table.
     debit_map = {}
-    for e in expense_qs:
-        site = (e.location_site or '').strip()
-        key  = site.lower()
-        debit_map[key] = debit_map.get(key, _D('0')) + (e.amount or _D('0'))
+    try:
+        if is_admin_user(user):
+            expense_qs = FinanceTransaction.objects.filter(admin_id=admin_id, type='expense')
+        else:
+            expense_qs = FinanceTransaction.objects.filter(user=user, type='expense')
+        expense_qs = expense_qs.only('amount', 'location_site', 'date')
+        for e in expense_qs:
+            site = (e.location_site or '').strip()
+            key  = site.lower()
+            debit_map[key] = debit_map.get(key, _D('0')) + (e.amount or _D('0'))
+    except Exception:
+        debit_map = {}
 
     groups = {}
     for i in incomes:

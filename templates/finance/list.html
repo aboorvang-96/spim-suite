@@ -592,7 +592,7 @@
                                         <td>{{ t.payment_by|default:"-" }}</td>
                                         <td>{{ t.vendor|default:"-" }}</td>
                                         <td class="debit">-₹{{ t.amount|floatformat:2 }}</td>
-                                        <td>{{ t.get_expense_category_display|default:t.category.name|default:"-" }}</td>
+                                        <td>{% if t.expense_category %}{{ t.get_expense_category_display }}{% elif t.category %}{{ t.category.name }}{% else %}-{% endif %}</td>
                                         <td>{{ t.description|default:"-"|truncatechars:40 }}</td>
                                         <td style="text-align:center;">
                                             <button type="button" class="btn-action-mini edit" data-edit-expense="{{ t.pk }}">Edit</button>

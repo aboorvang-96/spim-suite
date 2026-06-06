@@ -32,30 +32,44 @@ def _shared_accounts_json(user):
 def _balance_by_combo_expense(user):
     """Return balance per (Income Source, Account) for the expense page.
     Keys are normalised to lower-case so matching is case-insensitive; the display
-    values ('source', 'account') keep the original casing from the income record."""
-    from income.models import Income
+    values ('source', 'account') keep the original casing from the income record.
+
+    Defensive: each cross-module query is wrapped + uses `.only(...)` so a
+    transient migration mismatch on either side doesn't 500 the page.
+    """
     admin_id = get_admin_id(user)
-    income_qs  = Income.objects.filter(admin_id=admin_id)
-    expense_qs = Transaction.objects.filter(admin_id=admin_id, type='expense')
-
     combo_map = {}
-    for i in income_qs:
-        source  = (i.payment_by or '').strip()
-        account = (i.payment_mode or '').strip()
-        if source and account:
-            k = f"{source.lower()}|||{account.lower()}"
-            if k not in combo_map:
-                combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
-            combo_map[k]['income'] += float(i.amount)
 
-    for e in expense_qs:
-        source  = (e.income_source or '').strip()
-        account = (e.payment_mode or '').strip()
-        if source and account:
-            k = f"{source.lower()}|||{account.lower()}"
-            if k not in combo_map:
-                combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
-            combo_map[k]['expense'] += float(e.amount)
+    try:
+        from income.models import Income
+        income_qs = Income.objects.filter(admin_id=admin_id).only(
+            'amount', 'payment_by', 'payment_mode',
+        )
+        for i in income_qs:
+            source  = (i.payment_by or '').strip()
+            account = (i.payment_mode or '').strip()
+            if source and account:
+                k = f"{source.lower()}|||{account.lower()}"
+                if k not in combo_map:
+                    combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
+                combo_map[k]['income'] += float(i.amount)
+    except Exception:
+        pass
+
+    try:
+        expense_qs = Transaction.objects.filter(admin_id=admin_id, type='expense').only(
+            'amount', 'income_source', 'payment_mode',
+        )
+        for e in expense_qs:
+            source  = (e.income_source or '').strip()
+            account = (e.payment_mode or '').strip()
+            if source and account:
+                k = f"{source.lower()}|||{account.lower()}"
+                if k not in combo_map:
+                    combo_map[k] = {'source': source, 'account': account, 'income': 0, 'expense': 0}
+                combo_map[k]['expense'] += float(e.amount)
+    except Exception:
+        pass
 
     result = []
     for v in combo_map.values():
@@ -83,10 +97,14 @@ def _group_expenses_by_site(expenses, user):
 
     Sites that have income but zero expense are still surfaced so the
     admin can see the credit balance even before any expense is logged.
+
+    Defensive: the cross-module Income query is wrapped in try/except so a
+    transient Income-side failure (e.g. mid-deploy when one migration has
+    run and the other hasn't) degrades to an empty credit map instead of
+    blowing up the entire Expense page.
     """
     import datetime as _dt
     from decimal import Decimal as _D
-    from income.models import Income
     from accounts.views import get_admin_id
     admin_id = get_admin_id(user)
 
@@ -94,18 +112,28 @@ def _group_expenses_by_site(expenses, user):
     # single sweep so site_card render stays O(N) over expenses + incomes.
     credit_map  = {}
     site_disp   = {}
-    income_qs   = Income.objects.filter(admin_id=admin_id)
     income_dates = {}
-    for i in income_qs:
-        site = (i.location_site or '').strip()
-        key  = site.lower()
-        credit_map[key] = credit_map.get(key, _D('0')) + (i.amount or _D('0'))
-        if key not in site_disp or not site_disp[key]:
-            site_disp[key] = site or '(No Site)'
-        if i.date:
-            prev = income_dates.get(key)
-            if prev is None or i.date > prev:
-                income_dates[key] = i.date
+    try:
+        from income.models import Income
+        income_qs = Income.objects.filter(admin_id=admin_id).only(
+            'amount', 'location_site', 'date',
+        )
+        for i in income_qs:
+            site = (i.location_site or '').strip()
+            key  = site.lower()
+            credit_map[key] = credit_map.get(key, _D('0')) + (i.amount or _D('0'))
+            if key not in site_disp or not site_disp[key]:
+                site_disp[key] = site or '(No Site)'
+            if i.date:
+                prev = income_dates.get(key)
+                if prev is None or i.date > prev:
+                    income_dates[key] = i.date
+    except Exception:
+        # Income table unavailable (e.g. migration not yet applied). Render
+        # the Expense page with zero credit rather than 500-ing.
+        credit_map  = {}
+        site_disp   = {}
+        income_dates = {}
 
     groups = {}
     for e in expenses:
@@ -290,7 +318,19 @@ def transaction_list(request):
     balance_combos = _balance_by_combo_expense(request.user)
     # Keyed by lower-case (source, account) so lookup is case-insensitive.
     combo_map = {(c['source'].lower(), c['account'].lower()): c for c in balance_combos}
-    transactions_list = list(qs[:200])
+
+    # Defensive fetch: if migration 0008 (expense_category) hasn't been
+    # applied on this DB yet, the default `list(qs[:200])` would 500 because
+    # the SELECT includes a column that doesn't exist. Falling back to a
+    # deferred fetch + a stubbed value in __dict__ prevents the template
+    # from triggering a lazy load that would also fail.
+    try:
+        transactions_list = list(qs[:200])
+    except Exception:
+        transactions_list = list(qs.defer('expense_category')[:200])
+        for _t in transactions_list:
+            _t.__dict__['expense_category'] = ''
+
     for t in transactions_list:
         src = (t.income_source or '').strip().lower()
         acc = (t.payment_mode or '').strip().lower()
