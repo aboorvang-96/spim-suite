@@ -29,9 +29,23 @@ class Transaction(models.Model):
         ('upi', 'UPI/Online'),
     )
 
+    # Fixed-choice category for the site-based Expense view (Income/Expense
+    # restructure). Distinct from the flexible Category FK below so existing
+    # category data is preserved — this enum is only read/written by the
+    # site-grouped Expense detail panel and its Add/Edit modal.
+    EXPENSE_CATEGORY_CHOICES = (
+        ('food',   'Food'),
+        ('fuel',   'Fuel'),
+        ('ticket', 'Ticket'),
+        ('travel', 'Travel'),
+        ('other',  'Other/Misc'),
+    )
+
     user         = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
     type         = models.CharField(max_length=10, choices=TYPE)
     category     = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True)
+    # New fixed-choice category for the site-based Expense detail panel.
+    expense_category = models.CharField(max_length=20, choices=EXPENSE_CATEGORY_CHOICES, blank=True, default='')
     amount       = models.DecimalField(max_digits=12, decimal_places=2)
     description  = models.CharField(max_length=300, blank=True)
     date         = models.DateField()

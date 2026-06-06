@@ -25,6 +25,15 @@ class Income(models.Model):
     income_type = models.CharField(max_length=100, blank=True, default='')
     location_site = models.CharField(max_length=200, blank=True, default='')
     payment_by = models.CharField(max_length=200, blank=True, default='')
+    # New fields for site-based Income view (Income/Expense restructure).
+    # `from_account` / `to_account` model the "From Account" / "To Account"
+    # columns in the site detail panel — they sit alongside (not replacing)
+    # the existing `payment_mode` "Account" field. `remarks` is a short
+    # note shown in the detail panel separately from `description`, which
+    # remains the longer free-text "Notes / Remarks" body.
+    from_account = models.CharField(max_length=200, blank=True, default='')
+    to_account   = models.CharField(max_length=200, blank=True, default='')
+    remarks      = models.CharField(max_length=500, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

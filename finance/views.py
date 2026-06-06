@@ -71,6 +71,97 @@ def _is_ajax(request):
     )
 
 
+def _group_expenses_by_site(expenses, user):
+    """
+    Site-based card view for the Expense page (Income/Expense restructure).
+
+    Groups expense Transactions by `location_site` (case-insensitive). For
+    each site returns credit (sum of Income amounts for the SAME site —
+    pulled live from income.Income, never duplicated), debit (sum of
+    Transaction amounts), and balance = credit - debit. Sort order: most
+    recent expense activity first.
+
+    Sites that have income but zero expense are still surfaced so the
+    admin can see the credit balance even before any expense is logged.
+    """
+    import datetime as _dt
+    from decimal import Decimal as _D
+    from income.models import Income
+    from accounts.views import get_admin_id
+    admin_id = get_admin_id(user)
+
+    # Credit map: site → total income amount for that tenant. Built in a
+    # single sweep so site_card render stays O(N) over expenses + incomes.
+    credit_map  = {}
+    site_disp   = {}
+    income_qs   = Income.objects.filter(admin_id=admin_id)
+    income_dates = {}
+    for i in income_qs:
+        site = (i.location_site or '').strip()
+        key  = site.lower()
+        credit_map[key] = credit_map.get(key, _D('0')) + (i.amount or _D('0'))
+        if key not in site_disp or not site_disp[key]:
+            site_disp[key] = site or '(No Site)'
+        if i.date:
+            prev = income_dates.get(key)
+            if prev is None or i.date > prev:
+                income_dates[key] = i.date
+
+    groups = {}
+    for e in expenses:
+        site = (getattr(e, 'location_site', None) or '').strip()
+        key  = site.lower()
+        g = groups.get(key)
+        if g is None:
+            g = {
+                'site':         site or site_disp.get(key) or '(No Site)',
+                'site_key':     key,
+                'credit':       credit_map.get(key, _D('0')),
+                'debit':        _D('0'),
+                'balance':      _D('0'),
+                'count':        0,
+                'latest_date':  e.date,
+                'transactions': [],
+            }
+            groups[key] = g
+        g['debit'] += (e.amount or _D('0'))
+        g['count'] += 1
+        g['transactions'].append(e)
+        if e.date and (g['latest_date'] is None or e.date > g['latest_date']):
+            g['latest_date'] = e.date
+            g['site']        = site or g['site']
+
+    # Surface income-only sites (credit > 0, no expense yet) so the card
+    # list reflects every site the tenant is tracking — admin still needs
+    # to see the positive balance.
+    for key, credit in credit_map.items():
+        if key in groups:
+            continue
+        groups[key] = {
+            'site':         site_disp.get(key) or '(No Site)',
+            'site_key':     key,
+            'credit':       credit,
+            'debit':        _D('0'),
+            'balance':      credit,
+            'count':        0,
+            'latest_date':  income_dates.get(key),
+            'transactions': [],
+        }
+
+    for g in groups.values():
+        g['balance'] = g['credit'] - g['debit']
+        g['transactions'].sort(
+            key=lambda x: (x.date or _dt.date.min),
+            reverse=True,
+        )
+
+    return sorted(
+        groups.values(),
+        key=lambda g: (g['latest_date'] or _dt.date.min),
+        reverse=True,
+    )
+
+
 def _group_expenses_by_account(qs):
     """
     Group an already-filtered Transaction queryset by `payment_mode` (the
@@ -150,6 +241,11 @@ def _expense_to_dict(t):
         'amount_display': '{:,.2f}'.format(float(t.amount)),
         'category': t.category.name if t.category else 'General',
         'category_id': t.category_id,
+        # Fixed-choice category for the site-detail panel (Income/Expense
+        # restructure). Stored on the row as a code ('food', 'fuel', …);
+        # the display label is resolved via Transaction.get_expense_category_display().
+        'expense_category':         getattr(t, 'expense_category', '') or '',
+        'expense_category_display': t.get_expense_category_display() if getattr(t, 'expense_category', '') else '',
         'expense_type': t.purpose or '',
         'location': t.location_site or '',
         'payment_by': t.payment_by or '',
@@ -220,15 +316,17 @@ def transaction_list(request):
         'incomeSource': t.income_source or '',
     } for t in transactions_list])
 
-    # Group the filtered transactions by Account for the new
-    # one-card-per-account list view. Header summary / filters /
-    # add-edit-delete URLs are intentionally unchanged.
+    # Group the filtered transactions by Account (legacy) and Site (new
+    # site-based card view, Income/Expense restructure). The site card uses
+    # live Income totals as Credit — never duplicated.
     accounts_grouped = _group_expenses_by_account(transactions_list)
+    sites_grouped    = _group_expenses_by_site(transactions_list, request.user)
 
     return render(request, 'finance/list.html', {
         'transactions':        transactions_list,
         'transactions_json':   transactions_json,
         'accounts_grouped':    accounts_grouped,
+        'sites_grouped':       sites_grouped,
         'total_expense':       total_expense,
         'this_month_expense':  this_month_expense,
         'expense_count':       expense_count,

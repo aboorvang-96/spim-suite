@@ -17,12 +17,12 @@ class FlexibleModelChoiceField(forms.ModelChoiceField):
 class TransactionForm(forms.ModelForm):
     class Meta:
         model  = Transaction
-        fields = ['date', 'type', 'category', 'amount', 'location_site', 'payment_by', 'vendor', 'purpose', 'payment_mode', 'income_source', 'description']
+        fields = ['date', 'type', 'category', 'expense_category', 'amount', 'location_site', 'payment_by', 'vendor', 'purpose', 'payment_mode', 'income_source', 'description']
         widgets = {
             'date':        forms.DateInput(attrs={'type': 'date'}),
-            'description': forms.Textarea(attrs={'placeholder': 'Notes / Remarks', 'rows': 3}),
+            'description': forms.Textarea(attrs={'placeholder': 'Remarks', 'rows': 3}),
             'location_site': forms.TextInput(attrs={'placeholder': 'Location / Site'}),
-            'vendor':      forms.TextInput(attrs={'placeholder': 'Payment To'}),
+            'vendor':      forms.TextInput(attrs={'placeholder': 'To'}),
             'payment_by':  forms.TextInput(attrs={'placeholder': 'From'}),
             'purpose':     forms.TextInput(attrs={'placeholder': 'Expense Type'}),
         }
@@ -30,10 +30,11 @@ class TransactionForm(forms.ModelForm):
             'type': 'Type',
             'location_site': 'Location / Site',
             'payment_by': 'From',
-            'vendor': 'Payment To',
+            'vendor': 'To',
             'purpose': 'Expense Type',
             'payment_mode': 'Account',
-            'description': 'Notes / Remarks',
+            'description': 'Remarks',
+            'expense_category': 'Category',
         }
 
     def __init__(self, user, *args, **kwargs):
@@ -52,6 +53,10 @@ class TransactionForm(forms.ModelForm):
             widget=forms.TextInput(attrs={'placeholder': 'Account'}),
             label='Account',
         )
+        # Fixed-choice expense category (Income/Expense restructure) — blank is
+        # a valid value (admin may leave it unset), so explicitly mark optional.
+        if 'expense_category' in self.fields:
+            self.fields['expense_category'].required = False
         # location_site, payment_by, vendor, purpose are blank=True on the model,
         # so they're already optional at the form level.
 

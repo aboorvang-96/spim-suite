@@ -415,100 +415,179 @@
   })();
   </script>
 
-  <!-- 4. INCOME LIST -->
+  <!-- 4. INCOME LIST — Site-based cards (Income/Expense restructure).
+       One card per location_site, showing total Credit, total Debit
+       (pulled live from expense Transactions for the same site), and
+       Balance. Click "View" → expands a table-style detail panel listing
+       every income row for that site with the new column layout. -->
+  <style>
+    /* Site-card additions — scoped to keep existing styling untouched */
+    .site-stat-row {
+      display: grid !important; grid-template-columns: 1fr 1fr 1fr !important;
+      gap: 10px !important; margin-bottom: 4px !important;
+    }
+    .site-stat {
+      background: #f8fafc !important; border: 1px solid #e2e8f0 !important;
+      border-radius: 10px !important; padding: 10px 12px !important;
+      display: flex !important; flex-direction: column !important; gap: 2px !important;
+    }
+    .site-stat .lbl {
+      font-size: 9px !important; font-weight: 900 !important; color: #94a3b8 !important;
+      text-transform: uppercase !important; letter-spacing: 0.08em !important;
+    }
+    .site-stat .val { font-size: 15px !important; font-weight: 900 !important; }
+    .site-stat .val.credit  { color: #10b981 !important; }
+    .site-stat .val.debit   { color: #ef4444 !important; }
+    .site-stat .val.bal-pos { color: #10b981 !important; }
+    .site-stat .val.bal-neg { color: #ef4444 !important; }
+    .site-card-title {
+      font-size: 18px !important; font-weight: 900 !important; color: #0f172a !important;
+      letter-spacing: -0.02em !important; margin: 0 !important;
+    }
+    .site-detail-table {
+      width: 100% !important; border-collapse: collapse !important;
+      font-size: 12px !important; margin-top: 8px !important;
+    }
+    .site-detail-table th {
+      background: #f8fafc !important; padding: 8px 10px !important;
+      font-size: 10px !important; font-weight: 800 !important; color: #64748b !important;
+      text-transform: uppercase !important; letter-spacing: 0.04em !important;
+      border-bottom: 2px solid #e2e8f0 !important; text-align: left !important;
+      white-space: nowrap !important;
+    }
+    .site-detail-table td {
+      padding: 8px 10px !important; border-bottom: 1px solid #f1f5f9 !important;
+      color: #334155 !important; vertical-align: middle !important;
+    }
+    .site-detail-table td.num { text-align: right !important; font-weight: 700 !important; color: #10b981 !important; }
+    .site-detail-actions {
+      display: flex !important; justify-content: flex-end !important;
+      gap: 10px !important; padding: 12px !important;
+      border-top: 1px solid #f1f5f9 !important; background: #fafbfc !important;
+    }
+    .site-detail-wrap {
+      border: 1px solid #e2e8f0 !important; border-radius: 10px !important;
+      margin-top: 12px !important; overflow: hidden !important; background: #fff !important;
+    }
+    .btn-action-mini {
+      height: 28px !important; padding: 0 10px !important; font-size: 10px !important;
+      font-weight: 900 !important; text-transform: uppercase !important;
+      letter-spacing: 0.05em !important; border-radius: 5px !important;
+      background: #fff !important; border: 1.5px solid #e2e8f0 !important;
+      color: #64748b !important; cursor: pointer !important;
+    }
+    .btn-action-mini.edit:hover   { border-color: #2563eb !important; color: #2563eb !important; background: #eff6ff !important; }
+    .btn-action-mini.delete:hover { border-color: #ef4444 !important; color: #ef4444 !important; background: #fef2f2 !important; }
+  </style>
   <section class="income-list-v5">
     <div class="income-grid-v5" id="incomeGrid">
-      {% for group in accounts_grouped %}
-      <div class="income-card-v5" data-account-key="{{ group.account_key }}" data-income-count="{{ group.count }}">
-        <!-- LATEST DATE & TOTAL AMOUNT -->
-        <div class="card-top-row-v5">
-          <div class="data-point-v5">
-            <span class="label">Latest Date</span>
-            <span class="value">{{ group.latest_date|date:"d M, Y" }}</span>
+      {% for group in sites_grouped %}
+      <div class="income-card-v5" data-site-key="{{ group.site_key }}" data-income-count="{{ group.count }}">
+        <!-- SITE HEADER -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
+          <h3 class="site-card-title">{{ group.site }}</h3>
+          {% if group.latest_date %}
+          <span style="font-size:11px;color:#94a3b8;font-weight:700;">{{ group.latest_date|date:"d M, Y" }}</span>
+          {% endif %}
+        </div>
+        <!-- CREDIT / DEBIT / BALANCE -->
+        <div class="site-stat-row">
+          <div class="site-stat">
+            <span class="lbl">Credit</span>
+            <span class="val credit">+₹{{ group.credit|floatformat:2 }}</span>
           </div>
-          <div class="data-point-v5" style="text-align:right;">
-            <span class="label">Total Amount</span>
-            <span class="value amount">+₹{{ group.total|floatformat:2 }}</span>
+          <div class="site-stat">
+            <span class="lbl">Debit</span>
+            <span class="val debit">-₹{{ group.debit|floatformat:2 }}</span>
+          </div>
+          <div class="site-stat">
+            <span class="lbl">Balance</span>
+            <span class="val {% if group.balance >= 0 %}bal-pos{% else %}bal-neg{% endif %}">
+              {% if group.balance >= 0 %}+{% endif %}₹{{ group.balance|floatformat:2 }}
+            </span>
           </div>
         </div>
-        <!-- ACCOUNT & TRANSACTION COUNT -->
-        <div class="card-top-row-v5" style="border:none;">
-          <div class="data-point-v5">
-            <span class="label">Account</span>
-            <span class="value">{{ group.account }}</span>
-          </div>
-          <div class="data-point-v5" style="text-align:right;">
-            <span class="label">Transactions</span>
-            <span class="value">{{ group.count }} Transaction{{ group.count|pluralize }}</span>
-          </div>
-        </div>
-        <!-- ACTIONS: only View on the summary card -->
+        <!-- ACTIONS -->
         <div class="card-actions-v5">
-          <button type="button" class="btn-action-v5 edit" data-view-account="{{ group.account_key }}">View</button>
+          <button type="button" class="btn-action-v5 edit" data-view-site="{{ group.site_key }}">View</button>
         </div>
-        <!-- DETAIL PANEL — hidden by default, toggled by the View button.
-             Each row carries the same data-* attrs the existing edit handler
-             reads (income variant), so prefillFormFromCard() still works. -->
-        <div class="account-detail-panel" data-detail-for="{{ group.account_key }}" hidden
-             style="border-top:1px solid #f1f5f9; margin-top:12px; padding-top:12px;">
-          {% for i in group.transactions %}
-          <div class="account-detail-row"
-               data-income-id="{{ i.pk }}"
-               data-date="{{ i.date|date:'Y-m-d' }}"
-               data-amount="{{ i.amount|stringformat:'s' }}"
-               data-income-type="{{ i.income_type|default_if_none:'' }}"
-               data-payment-by="{{ i.payment_by|default_if_none:'' }}"
-               data-location-site="{{ i.location_site|default_if_none:'' }}"
-               data-payment-mode="{{ i.payment_mode|default_if_none:'' }}"
-               data-description="{{ i.description|default_if_none:'' }}"
-               {% if not forloop.first %}style="border-top:1px solid #f1f5f9; margin-top:12px; padding-top:12px;"{% endif %}>
-            <div class="card-top-row-v5">
-              <div class="data-point-v5">
-                <span class="label">Date</span>
-                <span class="value">{{ i.date|date:"d M, Y" }}</span>
-              </div>
-              <div class="data-point-v5" style="text-align:right;">
-                <span class="label">Amount</span>
-                <span class="value amount">+₹{{ i.amount|floatformat:2 }}</span>
-              </div>
+        <!-- DETAIL PANEL — table layout with new column structure.
+             Date | From Account | To Account | Description | Income Source |
+             Amount | Remarks | Edit | Delete -->
+        <div class="site-detail-panel" data-detail-for="{{ group.site_key }}" hidden>
+          {% if group.transactions %}
+          <div class="site-detail-wrap">
+            <div style="overflow-x:auto;">
+              <table class="site-detail-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>From Account</th>
+                    <th>To Account</th>
+                    <th>Description</th>
+                    <th>Income Source</th>
+                    <th style="text-align:right;">Amount</th>
+                    <th>Remarks</th>
+                    <th style="text-align:center;">Edit</th>
+                    <th style="text-align:center;">Delete</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for i in group.transactions %}
+                  <tr class="account-detail-row"
+                      data-income-id="{{ i.pk }}"
+                      data-date="{{ i.date|date:'Y-m-d' }}"
+                      data-amount="{{ i.amount|stringformat:'s' }}"
+                      data-income-type="{{ i.income_type|default_if_none:'' }}"
+                      data-payment-by="{{ i.payment_by|default_if_none:'' }}"
+                      data-location-site="{{ i.location_site|default_if_none:'' }}"
+                      data-payment-mode="{{ i.payment_mode|default_if_none:'' }}"
+                      data-from-account="{{ i.from_account|default_if_none:'' }}"
+                      data-to-account="{{ i.to_account|default_if_none:'' }}"
+                      data-remarks="{{ i.remarks|default_if_none:'' }}"
+                      data-description="{{ i.description|default_if_none:'' }}">
+                    <td>{{ i.date|date:"d M, Y" }}</td>
+                    <td>{{ i.from_account|default:"-" }}</td>
+                    <td>{{ i.to_account|default:"-" }}</td>
+                    <td>{{ i.description|default:"-"|truncatechars:60 }}</td>
+                    <td>{{ i.payment_by|default:"-" }}</td>
+                    <td class="num">+₹{{ i.amount|floatformat:2 }}</td>
+                    <td>{{ i.remarks|default:"-"|truncatechars:40 }}</td>
+                    <td style="text-align:center;">
+                      <button type="button" class="btn-action-mini edit" data-edit-income="{{ i.pk }}">Edit</button>
+                    </td>
+                    <td style="text-align:center;">
+                      <form method="post" action="{% url 'income:delete' i.pk %}" class="m-0" onsubmit="return confirm('Confirm deletion of this income?')">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-action-mini delete">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
             </div>
-            <div class="card-top-row-v5" style="border:none;">
-              <div class="data-point-v5">
-                <span class="label">Income Type</span>
-                <span class="value">{{ i.income_type|default:"-" }}</span>
-              </div>
-              <div class="data-point-v5" style="text-align:right;">
-                <span class="label">Income Source</span>
-                <span class="value">{{ i.payment_by|default:"-" }}</span>
-              </div>
-            </div>
-            <div class="card-top-row-v5" style="border:none; padding-top:0;">
-              <div class="data-point-v5">
-                <span class="label">Payment To</span>
-                <span class="value">{{ i.location_site|default:"-" }}</span>
-              </div>
-              <div class="data-point-v5" style="text-align:right;">
-                <span class="label">Category</span>
-                <span class="value">{{ i.category.name|default:"Uncategorized" }}</span>
-              </div>
-            </div>
-            {% if i.description %}
-            <div class="notes-box-v5">"{{ i.description }}"</div>
-            {% endif %}
-            <div class="card-actions-v5">
-              <button type="button" class="btn-action-v5 edit" data-edit-income="{{ i.pk }}">Edit</button>
-              <form method="post" action="{% url 'income:delete' i.pk %}" class="m-0" onsubmit="return confirm('Confirm deletion of this income?')">
-                {% csrf_token %}
-                <button type="submit" class="btn-action-v5 delete">Delete</button>
-              </form>
+            <div class="site-detail-actions">
+              <button type="button" class="btn-v5 btn-primary-v5" data-add-income-site="{{ group.site }}">
+                + Add Income
+              </button>
             </div>
           </div>
-          {% endfor %}
+          {% else %}
+          <div class="site-detail-wrap" style="padding:18px;text-align:center;color:#94a3b8;font-size:12px;">
+            No income entries yet for this site.
+            <div class="site-detail-actions" style="border-top:1px solid #f1f5f9;background:transparent;margin-top:14px;">
+              <button type="button" class="btn-v5 btn-primary-v5" data-add-income-site="{{ group.site }}">
+                + Add Income
+              </button>
+            </div>
+          </div>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
       <div id="incomeEmptyState" class="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100"
-           style="{% if accounts_grouped %}display:none;{% endif %}">
+           style="{% if sites_grouped %}display:none;{% endif %}">
         <p class="text-slate-400 font-black uppercase text-xs tracking-[0.2em]">No income entries found</p>
       </div>
     </div>
@@ -660,10 +739,28 @@
           </div>
         </div>
 
-        <!-- Row 5: Notes (full-width) -->
+        <!-- Row 4: From Account | To Account (Income/Expense restructure) -->
+        <div class="form-row">
+          <div>
+            <label class="field-label" for="incFromAccountInput">From Account</label>
+            <input id="incFromAccountInput" type="text" name="from_account" class="form-input" placeholder="From Account" />
+          </div>
+          <div>
+            <label class="field-label" for="incToAccountInput">To Account</label>
+            <input id="incToAccountInput" type="text" name="to_account" class="form-input" placeholder="To Account" />
+          </div>
+        </div>
+
+        <!-- Row 5: Description (full-width) -->
         <div>
-          <label class="field-label" for="incNotesInput">Notes / Remarks</label>
-          <textarea id="incNotesInput" name="description" class="form-input" rows="3" placeholder="Remarks, notes, or explanations..."></textarea>
+          <label class="field-label" for="incNotesInput">Description</label>
+          <textarea id="incNotesInput" name="description" class="form-input" rows="2" placeholder="Description of the income..."></textarea>
+        </div>
+
+        <!-- Row 6: Remarks (full-width, short text) -->
+        <div>
+          <label class="field-label" for="incRemarksInput">Remarks</label>
+          <input id="incRemarksInput" type="text" name="remarks" class="form-input" placeholder="Remarks (optional)" />
         </div>
 
         <div class="modal-actions">
@@ -714,6 +811,9 @@
     const paymentBySelectEl = document.getElementById('incPaymentBySelect');
     const incomeTypeSelectEl = document.getElementById('incomeTypeSelect');
     const locationSelectEl = document.getElementById('incLocationSelect');
+    const fromAccountInput = document.getElementById('incFromAccountInput');
+    const toAccountInput   = document.getElementById('incToAccountInput');
+    const remarksInput     = document.getElementById('incRemarksInput');
     const incomeGrid = document.getElementById('incomeGrid');
     const emptyState = document.getElementById('incomeEmptyState');
     const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
@@ -752,6 +852,9 @@
       addForm.reset();
       if (editIdInput) editIdInput.value = '';
       if (dateInput) dateInput.value = todayISO();
+      if (fromAccountInput) fromAccountInput.value = '';
+      if (toAccountInput)   toAccountInput.value   = '';
+      if (remarksInput)     remarksInput.value     = '';
       [accountSelectEl, paymentBySelectEl, incomeTypeSelectEl, locationSelectEl]
         .forEach(s => { if (s) s.selectedIndex = 0; });
       setEditMode(false);
@@ -762,6 +865,9 @@
       if (dateInput) dateInput.value = card.dataset.date || '';
       if (amountInput) amountInput.value = card.dataset.amount || '';
       if (notesInput) notesInput.value = card.dataset.description || '';
+      if (fromAccountInput) fromAccountInput.value = card.dataset.fromAccount || '';
+      if (toAccountInput)   toAccountInput.value   = card.dataset.toAccount   || '';
+      if (remarksInput)     remarksInput.value     = card.dataset.remarks     || '';
       setSelectValue(accountSelectEl, card.dataset.paymentMode);
       setSelectValue(paymentBySelectEl, card.dataset.paymentBy);
       setSelectValue(incomeTypeSelectEl, card.dataset.incomeType);
@@ -916,12 +1022,13 @@
     // row carrying the attrs. The "View" button toggles the inline panel.
     if (incomeGrid) {
       incomeGrid.addEventListener('click', function (e) {
-        const viewBtn = e.target.closest('[data-view-account]');
+        // "View" toggles the site detail panel
+        const viewBtn = e.target.closest('[data-view-site]');
         if (viewBtn) {
           e.preventDefault();
           const card = viewBtn.closest('.income-card-v5');
           if (!card) return;
-          const panel = card.querySelector('.account-detail-panel');
+          const panel = card.querySelector('.site-detail-panel');
           if (!panel) return;
           if (panel.hasAttribute('hidden')) {
             panel.removeAttribute('hidden');
@@ -932,6 +1039,22 @@
           }
           return;
         }
+
+        // "+ Add Income" inside the detail panel — prefill Location/Site
+        // with the site name from the surrounding card so the new row
+        // lands in the same bucket.
+        const addBtn = e.target.closest('[data-add-income-site]');
+        if (addBtn) {
+          e.preventDefault();
+          resetFormForAdd();
+          const siteName = addBtn.dataset.addIncomeSite || '';
+          if (siteName && siteName !== '(No Site)') {
+            setSelectValue(locationSelectEl, siteName);
+          }
+          openModal(false);
+          return;
+        }
+
         const editBtn = e.target.closest('[data-edit-income]');
         if (!editBtn) return;
         e.preventDefault();

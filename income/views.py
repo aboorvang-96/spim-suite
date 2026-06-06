@@ -177,14 +177,17 @@ def income_list(request):
         acc = (i.payment_mode or '').strip().lower()
         i.combo_data = combo_map.get((src, acc)) if (src and acc) else None
 
-    # Group the filtered incomes by Account for the new
-    # one-card-per-account list view. Header summary / filters /
-    # add-edit-delete URLs are intentionally unchanged.
+    # Group the filtered incomes by Account for the legacy view (kept so
+    # existing template code paths keep working). The NEW site-based card
+    # view (Income/Expense restructure) is `sites_grouped` — one card per
+    # location_site, with cross-module credit/debit/balance figures.
     accounts_grouped = _group_incomes_by_account(incomes_list)
+    sites_grouped    = _group_incomes_by_site(incomes_list, request.user)
 
     return render(request, 'income/list.html', {
         'incomes':          incomes_list,
         'accounts_grouped': accounts_grouped,
+        'sites_grouped':    sites_grouped,
         'categories':       categories,
         'total':            total,
         'count':            count,
@@ -273,6 +276,95 @@ def _group_incomes_by_account(qs):
     )
 
 
+def _group_incomes_by_site(incomes, user):
+    """
+    Site-based card view (Income/Expense restructure).
+
+    Groups incomes by `location_site` (case-insensitive). For each site
+    returns a dict with credit (sum of Income amounts for that site),
+    debit (sum of expense Transaction amounts for the SAME site), and
+    balance = credit - debit. The expense lookup is scoped to the same
+    admin_id (tenant) so cross-tenant data never bleeds in.
+
+    Sort order: most recent activity first (latest income date).
+    """
+    import datetime as _dt
+    from decimal import Decimal as _D
+    from accounts.views import get_admin_id, is_admin_user
+    admin_id = get_admin_id(user)
+
+    # Build the site → debit map in a single sweep over expense Transactions
+    # for this tenant. Empty/None location_site rows are folded into the
+    # "(No Site)" bucket so admins can still see them.
+    if is_admin_user(user):
+        expense_qs = FinanceTransaction.objects.filter(admin_id=admin_id, type='expense')
+    else:
+        expense_qs = FinanceTransaction.objects.filter(user=user, type='expense')
+    debit_map = {}
+    for e in expense_qs:
+        site = (e.location_site or '').strip()
+        key  = site.lower()
+        debit_map[key] = debit_map.get(key, _D('0')) + (e.amount or _D('0'))
+
+    groups = {}
+    for i in incomes:
+        site = (getattr(i, 'location_site', None) or '').strip()
+        key  = site.lower()
+        g = groups.get(key)
+        if g is None:
+            g = {
+                'site':         site or '(No Site)',
+                'site_key':     key,
+                'credit':       _D('0'),
+                'debit':        debit_map.get(key, _D('0')),
+                'balance':      _D('0'),
+                'count':        0,
+                'latest_date':  i.date,
+                'transactions': [],
+            }
+            groups[key] = g
+        g['credit'] += (i.amount or _D('0'))
+        g['count']  += 1
+        g['transactions'].append(i)
+        if i.date and (g['latest_date'] is None or i.date > g['latest_date']):
+            g['latest_date'] = i.date
+            g['site']        = site or '(No Site)'
+
+    # Also surface sites that have expenses but zero income — admin still
+    # needs to see those in the site card list.
+    for key, debit in debit_map.items():
+        if key in groups:
+            continue
+        # Re-derive a display name from the most recent expense row of this site
+        site_disp = ''
+        latest = expense_qs.filter(location_site__iexact=key).order_by('-date').first()
+        if latest:
+            site_disp = (latest.location_site or '').strip() or '(No Site)'
+        groups[key] = {
+            'site':         site_disp or '(No Site)',
+            'site_key':     key,
+            'credit':       _D('0'),
+            'debit':        debit,
+            'balance':      _D('0'),
+            'count':        0,
+            'latest_date':  latest.date if latest else None,
+            'transactions': [],
+        }
+
+    for g in groups.values():
+        g['balance'] = g['credit'] - g['debit']
+        g['transactions'].sort(
+            key=lambda x: (x.date or _dt.date.min),
+            reverse=True,
+        )
+
+    return sorted(
+        groups.values(),
+        key=lambda g: (g['latest_date'] or _dt.date.min),
+        reverse=True,
+    )
+
+
 def _income_to_dict(i):
     return {
         'id': i.pk,
@@ -285,6 +377,10 @@ def _income_to_dict(i):
         'payment_by': i.payment_by or '',
         'payment_mode': i.payment_mode or '',
         'description': i.description or '',
+        # New site-detail fields (Income/Expense restructure).
+        'from_account': getattr(i, 'from_account', '') or '',
+        'to_account':   getattr(i, 'to_account',   '') or '',
+        'remarks':      getattr(i, 'remarks',      '') or '',
         'edit_url': f'/income/{i.pk}/edit/',
         'delete_url': f'/income/{i.pk}/delete/',
     }

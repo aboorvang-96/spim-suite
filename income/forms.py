@@ -8,18 +8,26 @@ class IncomeForm(forms.ModelForm):
         fields = [
             'amount', 'date', 'description',
             'payment_mode', 'income_type', 'location_site', 'payment_by',
+            # New site-detail fields (Income/Expense restructure).
+            'from_account', 'to_account', 'remarks',
         ]
         widgets = {
             'amount':      forms.NumberInput(attrs={'class': 'form-input', 'placeholder': '0.00', 'step': '0.01', 'min': '0'}),
             'date':        forms.DateInput(attrs={'class': 'form-input', 'type': 'date'}),
-            'description': forms.Textarea(attrs={'class': 'form-input', 'rows': 3, 'placeholder': 'Notes / Remarks'}),
+            'description': forms.Textarea(attrs={'class': 'form-input', 'rows': 3, 'placeholder': 'Description'}),
+            'remarks':     forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'Remarks (optional)'}),
+            'from_account': forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'From Account'}),
+            'to_account':   forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'To Account'}),
         }
         labels = {
             'payment_mode':  'Account',
             'income_type':   'Income Type',
             'location_site': 'Location / Site',
             'payment_by':    'Income Source',
-            'description':   'Notes / Remarks',
+            'description':   'Description',
+            'from_account':  'From Account',
+            'to_account':    'To Account',
+            'remarks':       'Remarks',
         }
 
     def __init__(self, user=None, *args, **kwargs):
