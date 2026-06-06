@@ -1243,10 +1243,16 @@
     }
 
     async function generateBulkZip() {
+        const generated = salaryData.filter(s => s.is_payslip_generated);
+        if (generated.length === 0) {
+            showToast("Please generate payslips first using the 'Generate Payslip' button.", "error");
+            return;
+        }
+
         const zip = new JSZip();
         showToast("Preparing ZIP package...", "info");
 
-        salaryData.forEach(s => {
+        generated.forEach(s => {
             const doc = renderPayslipPDF(s);
             const empIdDisplay = (s.employee_id || '');
             const pdfBlob = doc.output('blob');
@@ -1258,7 +1264,7 @@
         link.href = URL.createObjectURL(content);
         link.download = `Bulk_Payslips_${document.getElementById('f-month').value}.zip`;
         link.click();
-        showToast("ZIP downloaded successfully");
+        showToast(`ZIP downloaded — ${generated.length} payslip(s)`);
     }
 
     function downloadPayslip(id) {

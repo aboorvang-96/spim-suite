@@ -561,7 +561,11 @@ def mobile_worklogs(request):
     if request.method == 'POST':
         data        = _json_body(request)
         machine_no  = (data.get('machine_no') or '').strip()
-        status_val  = (data.get('status')     or '').strip()
+        # Accept multiple field names for work status: SPIM Lite may send
+        # 'status' (original spec), 'work_status', or 'work_details' (the
+        # DB column name mirrored in GET responses). Fall through in priority
+        # order so whichever the client sends is captured.
+        status_val  = (data.get('status') or data.get('work_status') or data.get('work_details') or '').strip()
         remarks_val = (data.get('remarks')    or '').strip()
         tmp_val     = data.get('tmp')
         date_str    = (data.get('date')       or '').strip() or date.today().isoformat()
