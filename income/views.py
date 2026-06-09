@@ -12,6 +12,26 @@ from branches.models import LocationSite
 from finance.models import Source, Transaction as FinanceTransaction
 
 
+# Fixed 8-slot accent palette — same colours / ordering as
+# finance.views.SITE_ACCENT_PALETTE so the same site renders with the same
+# border accent in both the Expense Manager and Income module cards.
+SITE_ACCENT_PALETTE = [
+    '#2563eb', '#10b981', '#f59e0b', '#ef4444',
+    '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16',
+]
+
+
+def _site_color_index(name):
+    """Stable 0..7 slot from a site name for the card border accent."""
+    n = (name or '').strip().lower()
+    if not n:
+        return 0
+    total = 0
+    for ch in n:
+        total += ord(ch)
+    return total % len(SITE_ACCENT_PALETTE)
+
+
 def _location_sites_json(user):
     admin_id = get_admin_id(user)
     names = list(LocationSite.objects.filter(admin_id=admin_id).values_list('name', flat=True))
@@ -197,11 +217,13 @@ def income_list(request):
     accounts_grouped = _group_incomes_by_account(incomes_list)
     sites_grouped    = _group_incomes_by_site(incomes_list, request.user)
 
+    from django.utils import timezone as _tz
     return render(request, 'income/list.html', {
         'incomes':          incomes_list,
         'accounts_grouped': accounts_grouped,
         'sites_grouped':    sites_grouped,
         'categories':       categories,
+        'current_month':    _tz.now().strftime('%Y-%m'),
         'total':            total,
         'count':            count,
         'average':          average,
@@ -300,15 +322,20 @@ def _group_incomes_by_site(incomes, user):
     admin_id (tenant) so cross-tenant data never bleeds in.
 
     Sort order: most recent activity first (latest income date).
+
+    Also builds the per-site monthly breakdown (credit/debit/balance keyed
+    by 'YYYY-MM') and a `month_options` list for the card-level month
+    dropdown (Issue 5 — replace the static latest_date span).
     """
     import datetime as _dt
     from decimal import Decimal as _D
     from accounts.views import get_admin_id, is_admin_user
     admin_id = get_admin_id(user)
 
-    # Build the site → debit map in a single sweep over expense Transactions
-    # for this tenant. Empty/None location_site rows are folded into the
-    # "(No Site)" bucket so admins can still see them.
+    # Build the site → debit map (overall + per-month) in a single sweep
+    # over expense Transactions for this tenant. Empty/None location_site
+    # rows are folded into the "(No Site)" bucket so admins can still see
+    # them.
     #
     # Defensive: the cross-module expense query is wrapped in try/except so
     # a transient Transaction-side failure (e.g. mid-deploy when one
@@ -317,6 +344,8 @@ def _group_incomes_by_site(incomes, user):
     # `expense_category` column entirely so the SELECT works even if the
     # column hasn't been added yet on the Transaction table.
     debit_map = {}
+    debit_by_month = {}
+    expense_qs = None
     try:
         if is_admin_user(user):
             expense_qs = FinanceTransaction.objects.filter(admin_id=admin_id, type='expense')
@@ -327,10 +356,17 @@ def _group_incomes_by_site(incomes, user):
             site = (e.location_site or '').strip()
             key  = site.lower()
             debit_map[key] = debit_map.get(key, _D('0')) + (e.amount or _D('0'))
+            if e.date:
+                mkey = e.date.strftime('%Y-%m')
+                dm = debit_by_month.setdefault(key, {})
+                dm[mkey] = dm.get(mkey, _D('0')) + (e.amount or _D('0'))
     except Exception:
         debit_map = {}
+        debit_by_month = {}
+        expense_qs = None
 
     groups = {}
+    credit_by_month = {}
     for i in incomes:
         site = (getattr(i, 'location_site', None) or '').strip()
         key  = site.lower()
@@ -350,6 +386,10 @@ def _group_incomes_by_site(incomes, user):
         g['credit'] += (i.amount or _D('0'))
         g['count']  += 1
         g['transactions'].append(i)
+        if i.date:
+            mkey = i.date.strftime('%Y-%m')
+            cm = credit_by_month.setdefault(key, {})
+            cm[mkey] = cm.get(mkey, _D('0')) + (i.amount or _D('0'))
         if i.date and (g['latest_date'] is None or i.date > g['latest_date']):
             g['latest_date'] = i.date
             g['site']        = site or '(No Site)'
@@ -361,7 +401,12 @@ def _group_incomes_by_site(incomes, user):
             continue
         # Re-derive a display name from the most recent expense row of this site
         site_disp = ''
-        latest = expense_qs.filter(location_site__iexact=key).order_by('-date').first()
+        latest = None
+        if expense_qs is not None:
+            try:
+                latest = expense_qs.filter(location_site__iexact=key).order_by('-date').first()
+            except Exception:
+                latest = None
         if latest:
             site_disp = (latest.location_site or '').strip() or '(No Site)'
         groups[key] = {
@@ -375,12 +420,50 @@ def _group_incomes_by_site(incomes, user):
             'transactions': [],
         }
 
+    today = _dt.date.today()
+    current_month = today.strftime('%Y-%m')
+    month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
     for g in groups.values():
         g['balance'] = g['credit'] - g['debit']
         g['transactions'].sort(
             key=lambda x: (x.date or _dt.date.min),
             reverse=True,
         )
+        # Per-site monthly breakdown — fed to the card via data-monthly so
+        # the card's month dropdown can repaint the Credit/Debit/Balance
+        # tiles without a round-trip.
+        ck = g['site_key']
+        cm = credit_by_month.get(ck, {})
+        dm = debit_by_month.get(ck, {})
+        all_months = set(cm.keys()) | set(dm.keys())
+        all_months.add(current_month)
+        monthly = {}
+        for m in all_months:
+            c = cm.get(m, _D('0'))
+            d = dm.get(m, _D('0'))
+            monthly[m] = {
+                'credit':  float(c),
+                'debit':   float(d),
+                'balance': float(c - d),
+            }
+        g['monthly_json'] = json.dumps(monthly)
+        g['totals_json']  = json.dumps({
+            'credit':  float(g['credit']),
+            'debit':   float(g['debit']),
+            'balance': float(g['balance']),
+        })
+        opts = []
+        for m in sorted(all_months, reverse=True):
+            try:
+                y, mo = m.split('-')
+                label = '{} {}'.format(month_names[int(mo) - 1], y)
+            except Exception:
+                label = m
+            opts.append({'key': m, 'label': label})
+        g['month_options'] = opts
+        # Per-site accent for the card border (Issue 4 — color palette).
+        g['color_index'] = _site_color_index(g['site'])
 
     return sorted(
         groups.values(),

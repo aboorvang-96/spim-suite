@@ -284,33 +284,30 @@
             <p class="card-value">{{ expense_count }}</p>
         </div>
 
-        <!-- BALANCE SUMMARY CARD -->
-        {% if balance_data %}
+        <!-- BALANCE SUMMARY CARD — Issue 2: values are pulled from the same
+             tenant-wide totals that power the "Total Expenses" card above
+             (total_expense) and the matching total_income aggregate, so all
+             three numbers stay consistent on a single render. -->
         <div class="summary-card-v5" style="position: relative;">
             <div class="card-header">
                 <svg class="text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                 <span>Balance Summary</span>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 12px;">
-                {% with first_combo=balance_data|first %}
                 <div>
                     <div style="font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Total Income</div>
-                    <div style="font-size: 14px; font-weight: 800; color: #10b981;">+₹{{ first_combo.income|floatformat:0 }}</div>
+                    <div style="font-size: 14px; font-weight: 800; color: #10b981;">+₹{{ total_income|floatformat:0 }}</div>
                 </div>
                 <div>
                     <div style="font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Total Expense</div>
-                    <div style="font-size: 14px; font-weight: 800; color: #ef4444;">-₹{{ first_combo.expense|floatformat:0 }}</div>
+                    <div style="font-size: 14px; font-weight: 800; color: #ef4444;">-₹{{ total_expense|floatformat:0 }}</div>
                 </div>
-                {% endwith %}
             </div>
             <div style="border-top: 1px solid #f1f5f9; padding-top: 8px; margin-top: 8px;">
                 <div style="font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Net Balance</div>
-                {% with first_combo=balance_data|first %}
-                <div style="font-size: 16px; font-weight: 800; {% if first_combo.balance >= 0 %}color: #10b981;{% else %}color: #ef4444;{% endif %}">₹{{ first_combo.balance|floatformat:0 }}</div>
-                {% endwith %}
+                <div style="font-size: 16px; font-weight: 800; {% if net_balance >= 0 %}color: #10b981;{% else %}color: #ef4444;{% endif %}">{% if net_balance >= 0 %}+{% endif %}₹{{ net_balance|floatformat:0 }}</div>
             </div>
         </div>
-        {% endif %}
     </section>
 
     <!-- FILTER BAR: Search | Account | Month | Income Source | Category | Apply | Clear -->
@@ -557,14 +554,17 @@
         margin: 0 4px !important;
       }
       .site-filter-hidden { display: none !important; }
-      /* Compact card-level month dropdown — auto-width, capped at ~160px,
-         right-aligned, and explicitly prevented from stretching the card
-         header row (some global form-input styles set width:100%). */
-      .card-month-picker {
+      /* Compact card-level month dropdown — auto-width, capped at 130px,
+         right-aligned and forced inline so the card title + dropdown stay
+         on one line. Beats any global form-input width:100% rule via the
+         attribute selector + !important. */
+      .card-month-picker,
+      select.card-month-picker {
         width: auto !important;
-        max-width: 160px !important;
+        max-width: 130px !important;
         min-width: 0 !important;
         flex: 0 0 auto !important;
+        display: inline-block !important;
         font-size: 11px !important;
         font-weight: 700 !important;
         color: #334155 !important;
@@ -576,6 +576,25 @@
         line-height: 1 !important;
         box-sizing: border-box !important;
       }
+      /* Card header row — keep the title and month dropdown on one line. */
+      .expense-card-v5 .site-card-header-row { flex-wrap: nowrap !important; }
+      .expense-card-v5 .site-card-header-row .site-card-title {
+        flex: 1 1 auto !important; min-width: 0 !important;
+        overflow: hidden !important; text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+
+      /* Per-site accent border (Issue 4 — color palette). Index assigned in
+         the view by hashing the site name so the same site always renders
+         with the same accent across Expense and Income modules. */
+      .expense-card-v5.site-color-0 { border-left: 4px solid #2563eb !important; }
+      .expense-card-v5.site-color-1 { border-left: 4px solid #10b981 !important; }
+      .expense-card-v5.site-color-2 { border-left: 4px solid #f59e0b !important; }
+      .expense-card-v5.site-color-3 { border-left: 4px solid #ef4444 !important; }
+      .expense-card-v5.site-color-4 { border-left: 4px solid #8b5cf6 !important; }
+      .expense-card-v5.site-color-5 { border-left: 4px solid #06b6d4 !important; }
+      .expense-card-v5.site-color-6 { border-left: 4px solid #ec4899 !important; }
+      .expense-card-v5.site-color-7 { border-left: 4px solid #84cc16 !important; }
       /* Inline-edit From / To combobox inputs (Credit From / To columns) */
       .site-detail-table tr.is-editing td.cell-from,
       .site-detail-table tr.is-editing td.cell-to { background: #fffbeb !important; }
@@ -585,14 +604,14 @@
     <section class="expense-list-v5">
         <div class="expense-grid-v5" id="expenseGrid">
             {% for group in sites_grouped %}
-            <div class="expense-card-v5" data-site-key="{{ group.site_key }}"
+            <div class="expense-card-v5 site-color-{{ group.color_index }}" data-site-key="{{ group.site_key }}"
                  data-site-credit="{{ group.credit|stringformat:'s' }}"
                  data-expense-count="{{ group.count }}"
                  data-monthly='{{ group.monthly_json }}'
                  data-totals='{{ group.totals_json }}'
                  data-current-month="{{ current_month }}">
                 <!-- SITE HEADER -->
-                <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
+                <div class="site-card-header-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
                     <h3 class="site-card-title">{{ group.site }}</h3>
                     <select class="card-month-picker" title="View totals for a specific month">
                         <option value="all">All Months</option>

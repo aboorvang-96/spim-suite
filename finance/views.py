@@ -85,6 +85,26 @@ def _is_ajax(request):
     )
 
 
+# Fixed 8-slot accent palette — assigned per site by hashing the site name so
+# the same site always renders with the same border accent in both the Expense
+# Manager and Income module cards. Kept readable on the light theme.
+SITE_ACCENT_PALETTE = [
+    '#2563eb', '#10b981', '#f59e0b', '#ef4444',
+    '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16',
+]
+
+
+def _site_color_index(name):
+    """Stable 0..7 slot from a site name for the card border accent."""
+    n = (name or '').strip().lower()
+    if not n:
+        return 0
+    total = 0
+    for ch in n:
+        total += ord(ch)
+    return total % len(SITE_ACCENT_PALETTE)
+
+
 def _group_expenses_by_site(expenses, user):
     """
     Site-based card view for the Expense page (Income/Expense restructure).
@@ -245,6 +265,8 @@ def _group_expenses_by_site(expenses, user):
                 label = m
             opts.append({'key': m, 'label': label})
         g['month_options'] = opts
+        # Per-site accent for the card border (Issue 4 — color palette).
+        g['color_index'] = _site_color_index(g['site'])
 
     return sorted(
         groups.values(),
@@ -370,6 +392,16 @@ def transaction_list(request):
 
     total_expense = qs.aggregate(t=Sum('amount'))['t'] or 0
 
+    # Total Income across the same tenant — feeds the Balance Summary box
+    # so its numbers stay consistent with the Total Expenses card above.
+    # Defensive: a transient Income-side schema mismatch falls back to 0.
+    try:
+        from income.models import Income as _Income
+        total_income = _Income.objects.filter(admin_id=admin_id).aggregate(t=Sum('amount'))['t'] or 0
+    except Exception:
+        total_income = 0
+    net_balance = (total_income or 0) - (total_expense or 0)
+
     now = timezone.now()
     this_month_qs = Transaction.objects.filter(
         admin_id=admin_id, type='expense',
@@ -445,6 +477,8 @@ def transaction_list(request):
         'accounts_grouped':    accounts_grouped,
         'sites_grouped':       sites_grouped,
         'total_expense':       total_expense,
+        'total_income':        total_income,
+        'net_balance':         net_balance,
         'this_month_expense':  this_month_expense,
         'expense_count':       expense_count,
         'categories':          Category.objects.filter(admin_id=admin_id, type='expense'),

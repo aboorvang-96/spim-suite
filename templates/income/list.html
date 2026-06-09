@@ -444,6 +444,44 @@
       font-size: 18px !important; font-weight: 900 !important; color: #0f172a !important;
       letter-spacing: -0.02em !important; margin: 0 !important;
     }
+    /* Compact card-level month dropdown — mirrors the Expense card picker
+       (Issue 5). Capped at 130px, forced inline so the title + dropdown
+       stay on one line regardless of any global form-input width:100%. */
+    .card-month-picker,
+    select.card-month-picker {
+      width: auto !important;
+      max-width: 130px !important;
+      min-width: 0 !important;
+      flex: 0 0 auto !important;
+      display: inline-block !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      color: #334155 !important;
+      background: #fff !important;
+      border: 1px solid #e2e8f0 !important;
+      border-radius: 6px !important;
+      padding: 3px 22px 3px 8px !important;
+      height: 28px !important;
+      line-height: 1 !important;
+      box-sizing: border-box !important;
+    }
+    .income-card-v5 .site-card-header-row { flex-wrap: nowrap !important; }
+    .income-card-v5 .site-card-header-row .site-card-title {
+      flex: 1 1 auto !important; min-width: 0 !important;
+      overflow: hidden !important; text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+    /* Per-site accent border (Issue 4 — color palette). Same palette and
+       hashing order as the Expense Manager so the same site renders with
+       the same accent across both modules. */
+    .income-card-v5.site-color-0 { border-left: 4px solid #2563eb !important; }
+    .income-card-v5.site-color-1 { border-left: 4px solid #10b981 !important; }
+    .income-card-v5.site-color-2 { border-left: 4px solid #f59e0b !important; }
+    .income-card-v5.site-color-3 { border-left: 4px solid #ef4444 !important; }
+    .income-card-v5.site-color-4 { border-left: 4px solid #8b5cf6 !important; }
+    .income-card-v5.site-color-5 { border-left: 4px solid #06b6d4 !important; }
+    .income-card-v5.site-color-6 { border-left: 4px solid #ec4899 !important; }
+    .income-card-v5.site-color-7 { border-left: 4px solid #84cc16 !important; }
     .site-detail-table {
       width: 100% !important; border-collapse: collapse !important;
       font-size: 12px !important; margin-top: 8px !important;
@@ -482,13 +520,22 @@
   <section class="income-list-v5">
     <div class="income-grid-v5" id="incomeGrid">
       {% for group in sites_grouped %}
-      <div class="income-card-v5" data-site-key="{{ group.site_key }}" data-income-count="{{ group.count }}">
-        <!-- SITE HEADER -->
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
+      <div class="income-card-v5 site-color-{{ group.color_index }}" data-site-key="{{ group.site_key }}"
+           data-income-count="{{ group.count }}"
+           data-monthly='{{ group.monthly_json }}'
+           data-totals='{{ group.totals_json }}'
+           data-current-month="{{ current_month }}">
+        <!-- SITE HEADER — compact month dropdown replaces the static date
+             (Issue 5). Changing the month repaints the Credit/Debit/Balance
+             tiles via the per-site monthly breakdown in data-monthly. -->
+        <div class="site-card-header-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
           <h3 class="site-card-title">{{ group.site }}</h3>
-          {% if group.latest_date %}
-          <span style="font-size:11px;color:#94a3b8;font-weight:700;">{{ group.latest_date|date:"d M, Y" }}</span>
-          {% endif %}
+          <select class="card-month-picker" title="View totals for a specific month">
+            <option value="all">All Months</option>
+            {% for m in group.month_options %}
+            <option value="{{ m.key }}"{% if m.key == current_month %} selected{% endif %}>{{ m.label }}</option>
+            {% endfor %}
+          </select>
         </div>
         <!-- CREDIT / DEBIT / BALANCE -->
         <div class="site-stat-row">
@@ -1020,7 +1067,57 @@
     // .account-detail-row inside the account card's detail panel, not on
     // the .income-card-v5 itself. The [data-income-id] selector finds the
     // row carrying the attrs. The "View" button toggles the inline panel.
+    // ── Card-level month dropdown (Issue 5) ─────────────────────────
+    // Repaints the Credit/Debit/Balance tiles from the per-site monthly
+    // breakdown JSON (data-monthly). 'all' falls back to the all-time
+    // totals (data-totals).
+    function _incFmtTile(n) {
+      const v = Math.abs(parseFloat(n) || 0).toFixed(2);
+      return v;
+    }
+    function applyIncomeCardMonthly(card, monthKey) {
+      let monthly = {};
+      let totals  = { credit: 0, debit: 0, balance: 0 };
+      try { monthly = JSON.parse(card.dataset.monthly || '{}'); } catch (_) {}
+      try { totals  = JSON.parse(card.dataset.totals  || '{}'); } catch (_) {}
+      let credit, debit, balance;
+      if (!monthKey || monthKey === 'all') {
+        credit  = parseFloat(totals.credit)  || 0;
+        debit   = parseFloat(totals.debit)   || 0;
+        balance = parseFloat(totals.balance) || 0;
+      } else {
+        const m = monthly[monthKey] || {};
+        credit  = parseFloat(m.credit)  || 0;
+        debit   = parseFloat(m.debit)   || 0;
+        balance = (parseFloat(m.balance) || (credit - debit));
+      }
+      const creditEl  = card.querySelector('.site-stat .val.credit');
+      const debitEl   = card.querySelector('.site-stat .val.debit');
+      const balanceEl = card.querySelector('.site-stat .val.bal-pos, .site-stat .val.bal-neg');
+      if (creditEl) creditEl.textContent = '+₹' + _incFmtTile(credit);
+      if (debitEl)  debitEl.textContent  = '-₹' + _incFmtTile(debit);
+      if (balanceEl) {
+        balanceEl.textContent = (balance >= 0 ? '+' : '-') + '₹' + _incFmtTile(balance);
+        balanceEl.classList.remove('bal-pos', 'bal-neg');
+        balanceEl.classList.add(balance >= 0 ? 'bal-pos' : 'bal-neg');
+      }
+    }
     if (incomeGrid) {
+      // Initial paint so the default-selected current month is reflected in
+      // each card's tiles on first render.
+      incomeGrid.querySelectorAll('.income-card-v5').forEach(function (card) {
+        const sel = card.querySelector('.card-month-picker');
+        if (sel) applyIncomeCardMonthly(card, sel.value || '');
+      });
+
+      incomeGrid.addEventListener('change', function (e) {
+        const target = e.target;
+        if (target && target.classList && target.classList.contains('card-month-picker')) {
+          const card = target.closest('.income-card-v5');
+          if (card) applyIncomeCardMonthly(card, target.value || '');
+        }
+      });
+
       incomeGrid.addEventListener('click', function (e) {
         // "View" toggles the site detail panel
         const viewBtn = e.target.closest('[data-view-site]');

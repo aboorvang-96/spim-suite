@@ -23,20 +23,9 @@
     <link rel="icon" type="image/png" sizes="192x192" href="{% static 'pwa/icons/icon-192.png' %}">
     <link rel="icon" type="image/png" sizes="512x512" href="{% static 'pwa/icons/icon-512.png' %}">
 
-    <!-- Theme variables (overridden by selected theme) -->
-    <style id="spim-theme-vars">
-        :root[data-theme="navy-gold"]   { --spim-primary: #1a2f5e; --spim-accent: #c9a84c; --spim-bg: #f4f6fa; --spim-text: #1e293b; --spim-surface: #ffffff; }
-        :root[data-theme="gold-bronze"] { --spim-primary: #3d2800; --spim-accent: #e8c97a; --spim-bg: #fdf8ec; --spim-text: #3d2800; --spim-surface: #fffaf0; }
-        :root[data-theme="light"]       { --spim-primary: #f4f6fa; --spim-accent: #1a2f5e; --spim-bg: #ffffff; --spim-text: #0f172a; --spim-surface: #ffffff; }
-        :root[data-theme="dark"]        { --spim-primary: #1a1a1a; --spim-accent: #c9a84c; --spim-bg: #0f172a; --spim-text: #e2e8f0; --spim-surface: #1e293b; }
-        :root { --spim-primary: #1a2f5e; --spim-accent: #c9a84c; --spim-bg: #f8fafc; --spim-text: #1e293b; --spim-surface: #ffffff; }
-
-        /* Make the selected theme visible across the whole app. Scoped to
-           body so individual modules don't need to opt in. */
-        body { background: var(--spim-bg) !important; color: var(--spim-text); transition: background-color 0.2s ease, color 0.2s ease; }
-        :root[data-theme="dark"] .card,
-        :root[data-theme="dark"] .expense-card-v5,
-        :root[data-theme="dark"] .summary-card-v5 { background: var(--spim-surface) !important; color: var(--spim-text) !important; }
+    <!-- Single light theme — accent variables kept for the PWA install button. -->
+    <style id="spim-install-btn-vars">
+        :root { --spim-primary: #1a2f5e; --spim-accent: #c9a84c; }
 
         /* Floating Install button */
         #spim-install-btn {
@@ -51,43 +40,6 @@
         #spim-install-btn:hover { transform: translateY(-2px); box-shadow: 0 14px 36px rgba(0,0,0,0.3); }
         #spim-install-btn.show { display: inline-flex; }
         #spim-install-btn svg { width: 18px; height: 18px; }
-
-        /* Theme selector — top-right of the navbar (moved out of the sidebar
-           bottom so it no longer overlaps the logout / user-type section).
-           Compact icon-only button; panel drops down beneath it. */
-        #spim-theme-toggle {
-            position: fixed; top: 14px; right: 18px; z-index: 9999;
-            width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
-            background: var(--spim-primary); color: var(--spim-accent);
-            box-shadow: 0 4px 14px rgba(0,0,0,0.18);
-            display: inline-flex; align-items: center; justify-content: center;
-        }
-        #spim-theme-toggle svg { width: 18px; height: 18px; }
-        #spim-theme-panel {
-            position: fixed; top: 60px; right: 18px; z-index: 9999;
-            background: #ffffff; color: #1a2f5e;
-            border-radius: 14px; padding: 12px; min-width: 220px;
-            box-shadow: 0 18px 40px rgba(0,0,0,0.18);
-            border: 1px solid rgba(0,0,0,0.06);
-            display: none; font-family: 'Inter', sans-serif;
-        }
-        #spim-theme-panel.show { display: block; }
-        #spim-theme-panel h6 {
-            font-family: 'Outfit', sans-serif; font-size: 11px; letter-spacing: 2px;
-            color: #6b7280; text-transform: uppercase; margin: 4px 6px 8px; font-weight: 700;
-        }
-        .spim-theme-option {
-            display: flex; align-items: center; gap: 10px; width: 100%;
-            padding: 8px 10px; border-radius: 8px; border: none; cursor: pointer;
-            background: transparent; text-align: left; font-size: 13px; color: #1f2937;
-        }
-        .spim-theme-option:hover { background: #f3f4f6; }
-        .spim-theme-option.active { background: #eef2ff; font-weight: 600; }
-        .spim-swatch {
-            width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
-            border: 1px solid rgba(0,0,0,0.08);
-            background: linear-gradient(135deg, var(--p) 50%, var(--a) 50%);
-        }
     </style>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -97,16 +49,6 @@
     <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260507b">
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-
-    <script>
-        // Apply saved theme as early as possible to avoid flash
-        (function() {
-            try {
-                var t = localStorage.getItem('spim-theme') || 'navy-gold';
-                document.documentElement.setAttribute('data-theme', t);
-            } catch (e) {}
-        })();
-    </script>
 
     {% block head %}{% endblock %}
 </head>
@@ -306,11 +248,6 @@
         </svg>
         Install App
     </button>
-
-    <!-- Theme selector — only rendered on the Dashboard page (dashboard/index.html).
-         The early-load script above still reads localStorage and applies
-         data-theme on every page, so the persisted theme stays in effect
-         site-wide; only the toggle UI is dashboard-scoped. -->
 
     <script>
         // ─── PWA install prompt ──────────────────────────────────────
