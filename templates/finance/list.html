@@ -1727,6 +1727,84 @@
       return isNaN(n) ? 0 : n;
     }
 
+    // ── Credit From / Credit To option cache ──────────────────────────
+    // Seeded from the server-rendered <datalist> elements (which carry
+    // every saved value for this tenant). New values typed via the
+    // "+ Add new..." flow are pushed in on Save so subsequent Edits see
+    // them immediately without a page reload.
+    const CreditOptions = (function () {
+      function seed(id) {
+        const dl = document.getElementById(id);
+        if (!dl) return [];
+        return Array.from(dl.querySelectorAll('option'))
+          .map(o => (o.value || '').trim())
+          .filter(Boolean);
+      }
+      return {
+        from: seed('datalist-credit-from'),
+        to:   seed('datalist-credit-to'),
+        push: function (field, val) {
+          val = (val || '').trim();
+          if (!val) return;
+          const arr = this[field];
+          if (arr && arr.indexOf(val) === -1) arr.push(val);
+        },
+      };
+    })();
+    function _escHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    // Build the <select> markup for a Credit From / Credit To cell. If the
+    // current value isn't already in the options list (legacy data), it's
+    // injected as the selected option so the dropdown reflects the saved
+    // value. The sentinel "+ Add new..." sits at the bottom.
+    function buildCreditSelect(field, currentVal) {
+      const cls = field === 'from' ? 'row-from from-input' : 'row-to to-input';
+      const list = (CreditOptions[field] || []).slice().sort(function (a, b) {
+        return a.toLowerCase().localeCompare(b.toLowerCase());
+      });
+      const cur = (currentVal || '').trim();
+      if (cur && list.indexOf(cur) === -1) list.unshift(cur);
+      let html = '<select class="site-row-input ' + cls + '" data-credit-field="' + field + '">';
+      html += '<option value="">Select or add new...</option>';
+      list.forEach(function (v) {
+        const sel = v === cur ? ' selected' : '';
+        html += '<option value="' + _escHtml(v) + '"' + sel + '>' + _escHtml(v) + '</option>';
+      });
+      html += '<option value="__ADD_NEW__" class="row-add-new-opt">+ Add new...</option>';
+      html += '</select>';
+      return html;
+    }
+    // Swap the <select> for a text input when the user picks "+ Add new...".
+    // A small × revert button is appended so the user can drop back to the
+    // dropdown without canceling the entire row edit.
+    function swapToCreditInput(selectEl) {
+      const field = selectEl.dataset.creditField || 'from';
+      const cls = field === 'from' ? 'row-from from-input' : 'row-to to-input';
+      const wrap = document.createElement('span');
+      wrap.style.display = 'inline-flex';
+      wrap.style.gap = '4px';
+      wrap.style.width = '100%';
+      wrap.style.alignItems = 'center';
+      wrap.innerHTML =
+        '<input type="text" class="site-row-input ' + cls + '" data-credit-field="' + field + '" placeholder="Type new value..." value="" autofocus>' +
+        '<button type="button" class="btn-action-mini row-credit-revert" data-credit-field="' + field + '" title="Use dropdown instead" style="padding:0 6px;">&times;</button>';
+      selectEl.parentNode.replaceChild(wrap, selectEl);
+      const inp = wrap.querySelector('input');
+      if (inp) inp.focus();
+    }
+    function revertToCreditSelect(revertBtn) {
+      const field = revertBtn.dataset.creditField || 'from';
+      const wrap  = revertBtn.parentNode;
+      const td    = wrap && wrap.parentNode;
+      if (!td) return;
+      // Restore the dropdown with no current value (the previous text was
+      // unsaved — reverting clears it so the user can pick again).
+      td.innerHTML = buildCreditSelect(field, '');
+    }
+
     // Switch a row from view-mode to inline-edit mode (replace cell text
     // with inputs). Save persists; Cancel restores original DOM.
     function enterRowEdit(row) {
@@ -1744,16 +1822,17 @@
       const dateCell = row.querySelector('.cell-date');
       if (dateCell) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}">`;
 
-      // Credit From / Credit To cells -> datalist-backed combobox inputs.
-      // Suggestions come from the global <datalist> tags rendered once per
-      // page; users can still type any new value, which is persisted on
-      // Save and surfaces in future renders.
-      const fromVal = (row.dataset.paymentBy || '').replace(/"/g, '&quot;');
-      const toVal   = (row.dataset.vendor    || '').replace(/"/g, '&quot;');
+      // Credit From / Credit To cells -> proper <select> dropdowns with an
+      // explicit "+ Add new..." sentinel option. Selecting that sentinel
+      // swaps the <select> for a text input so the user can type a value
+      // that doesn't yet exist (no model changes — stored in the existing
+      // payment_by / vendor CharField columns). Typed values are added to
+      // the in-page cache (CreditOptions) on Save so the next Edit shows
+      // them in the dropdown.
       const fromCell = row.querySelector('.cell-from');
-      if (fromCell) fromCell.innerHTML = `<input type="text" class="site-row-input from-input row-from" list="datalist-credit-from" placeholder="Select or type..." value="${fromVal}">`;
+      if (fromCell) fromCell.innerHTML = buildCreditSelect('from', row.dataset.paymentBy || '');
       const toCell = row.querySelector('.cell-to');
-      if (toCell) toCell.innerHTML = `<input type="text" class="site-row-input to-input row-to" list="datalist-credit-to" placeholder="Select or type..." value="${toVal}">`;
+      if (toCell) toCell.innerHTML = buildCreditSelect('to', row.dataset.vendor || '');
 
       // Category cells -> numeric inputs (only the matching category gets the amount)
       row.querySelectorAll('.cat-cell').forEach(function (td) {
@@ -1794,13 +1873,21 @@
       const date = dateInput ? dateInput.value : (row.dataset.date || '');
       const remarksInput = row.querySelector('.row-remarks');
       const remarks = remarksInput ? remarksInput.value : '';
-      // Credit From / Credit To — datalist-backed combobox inputs accept
-      // both picked-from-list and newly-typed values. Fall back to the
-      // row's stored value if the input is missing (defensive).
-      const fromInput = row.querySelector('.row-from');
-      const toInput   = row.querySelector('.row-to');
-      const paymentBy = fromInput ? fromInput.value.trim() : (row.dataset.paymentBy || '');
-      const vendor    = toInput   ? toInput.value.trim()   : (row.dataset.vendor    || '');
+      // Credit From / Credit To — could be either a <select> (dropdown)
+      // or a text <input> (Add-new mode). Either way we read its .value.
+      // The "__ADD_NEW__" sentinel means the user opened Add-new but didn't
+      // type anything; treat that as a blank value rather than persisting
+      // the sentinel string.
+      function _readCreditField(el, fallback) {
+        if (!el) return fallback || '';
+        let v = (el.value || '').trim();
+        if (v === '__ADD_NEW__') v = '';
+        return v;
+      }
+      const fromEl = row.querySelector('.row-from');
+      const toEl   = row.querySelector('.row-to');
+      const paymentBy = _readCreditField(fromEl, row.dataset.paymentBy);
+      const vendor    = _readCreditField(toEl,   row.dataset.vendor);
 
       let cat = '', amount = 0;
       row.querySelectorAll('.cat-input').forEach(function (inp) {
@@ -1971,6 +2058,11 @@
           // Stamp the location_site dataset so the row stays anchored even
           // if the user later flips Location/Site in the modal.
           if (!row.dataset.locationSite) row.dataset.locationSite = siteName || '';
+          // Add any newly-typed Credit From / Credit To values to the
+          // in-page cache so the next inline Edit shows them as dropdown
+          // options without needing a page reload.
+          CreditOptions.push('from', payload.paymentBy);
+          CreditOptions.push('to',   payload.vendor);
           refreshRowDisplay(row, {
             date:      payload.date,
             amount:    payload.amount,
@@ -2021,8 +2113,49 @@
           const newRow = panel.querySelector('.site-new-row');
           if (!newRow) return;
           newRow.removeAttribute('hidden');
-          newRow.dataset.date = newRow.dataset.date || new Date().toISOString().slice(0, 10);
-          newRow.dataset.description = newRow.dataset.description || '';
+          // Fully reset dataset so values from a previously saved row's
+          // clone (paymentBy / vendor / purpose / categoryId / paymentMode
+          // / incomeSource / amount) never bleed into the fresh new row.
+          newRow.dataset.date            = new Date().toISOString().slice(0, 10);
+          newRow.dataset.amount          = '';
+          newRow.dataset.expenseCategory = '';
+          newRow.dataset.description     = '';
+          newRow.dataset.month           = '';
+          newRow.dataset.paymentBy       = '';
+          newRow.dataset.vendor          = '';
+          newRow.dataset.purpose         = '';
+          newRow.dataset.paymentMode     = '';
+          newRow.dataset.incomeSource    = '';
+          newRow.dataset.categoryId      = '';
+          // Defensive: wipe any leftover cell content from a prior open.
+          newRow.querySelectorAll('.cat-cell').forEach(td => { td.innerHTML = ''; });
+          const _dC = newRow.querySelector('.cell-date');    if (_dC) _dC.innerHTML = '';
+          const _rC = newRow.querySelector('.cell-remarks'); if (_rC) _rC.innerHTML = '';
+          const _fC = newRow.querySelector('.cell-from');    if (_fC) _fC.textContent = '-';
+          const _tC = newRow.querySelector('.cell-to');      if (_tC) _tC.textContent = '-';
+          // Credit cell shows the REMAINING balance for this site (total
+          // credit from income − total debits already recorded). Read from
+          // the card's data-totals JSON; fall back to data-site-credit.
+          const card = panel.closest('.expense-card-v5');
+          let remaining = null;
+          if (card) {
+            try {
+              const totals = JSON.parse(card.dataset.totals || '{}');
+              const credit = parseFloat(totals.credit) || 0;
+              const debit  = parseFloat(totals.debit)  || 0;
+              remaining = credit - debit;
+            } catch (_) {}
+            if (remaining === null) {
+              const fallback = parseFloat(card.dataset.siteCredit);
+              if (!isNaN(fallback)) remaining = fallback;
+            }
+          }
+          const newCreditCell = newRow.querySelector('.credit');
+          if (newCreditCell && remaining !== null) {
+            const sign = remaining >= 0 ? '+' : '-';
+            const fmt = Math.abs(remaining).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            newCreditCell.textContent = sign + '₹' + fmt;
+          }
           enterRowEdit(newRow);
           // Pre-fill location_site from the panel's site name so the saved
           // row stays linked to the same card group.
@@ -2054,6 +2187,15 @@
           return;
         }
 
+        // × revert button next to a Credit From / Credit To Add-new input —
+        // drop the typed value and put the dropdown back in place.
+        const revertBtn = e.target.closest('.row-credit-revert');
+        if (revertBtn) {
+          e.preventDefault();
+          revertToCreditSelect(revertBtn);
+          return;
+        }
+
         // "Cancel" inside an editing row — restore or hide (for new row).
         const rowCancelBtn = e.target.closest('.row-cancel-btn');
         if (rowCancelBtn) {
@@ -2082,6 +2224,18 @@
       expenseGrid.addEventListener('change', function (e) {
         const target = e.target;
         if (!target) return;
+
+        // "+ Add new..." sentinel inside a Credit From / Credit To dropdown:
+        // swap the <select> for a text input so the user can type a value
+        // that isn't in the saved list yet. The typed value is persisted to
+        // payment_by / vendor on Save (no model change).
+        if (target.tagName === 'SELECT'
+            && target.dataset
+            && target.dataset.creditField
+            && target.value === '__ADD_NEW__') {
+          swapToCreditInput(target);
+          return;
+        }
 
         if (target.classList.contains('site-month-picker')) {
           const panel = target.closest('.site-detail-panel');

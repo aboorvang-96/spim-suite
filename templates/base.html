@@ -25,11 +25,18 @@
 
     <!-- Theme variables (overridden by selected theme) -->
     <style id="spim-theme-vars">
-        :root[data-theme="navy-gold"]   { --spim-primary: #1a2f5e; --spim-accent: #c9a84c; }
-        :root[data-theme="gold-bronze"] { --spim-primary: #3d2800; --spim-accent: #e8c97a; }
-        :root[data-theme="light"]       { --spim-primary: #f4f6fa; --spim-accent: #1a2f5e; }
-        :root[data-theme="dark"]        { --spim-primary: #1a1a1a; --spim-accent: #c9a84c; }
-        :root { --spim-primary: #1a2f5e; --spim-accent: #c9a84c; }
+        :root[data-theme="navy-gold"]   { --spim-primary: #1a2f5e; --spim-accent: #c9a84c; --spim-bg: #f4f6fa; --spim-text: #1e293b; --spim-surface: #ffffff; }
+        :root[data-theme="gold-bronze"] { --spim-primary: #3d2800; --spim-accent: #e8c97a; --spim-bg: #fdf8ec; --spim-text: #3d2800; --spim-surface: #fffaf0; }
+        :root[data-theme="light"]       { --spim-primary: #f4f6fa; --spim-accent: #1a2f5e; --spim-bg: #ffffff; --spim-text: #0f172a; --spim-surface: #ffffff; }
+        :root[data-theme="dark"]        { --spim-primary: #1a1a1a; --spim-accent: #c9a84c; --spim-bg: #0f172a; --spim-text: #e2e8f0; --spim-surface: #1e293b; }
+        :root { --spim-primary: #1a2f5e; --spim-accent: #c9a84c; --spim-bg: #f8fafc; --spim-text: #1e293b; --spim-surface: #ffffff; }
+
+        /* Make the selected theme visible across the whole app. Scoped to
+           body so individual modules don't need to opt in. */
+        body { background: var(--spim-bg) !important; color: var(--spim-text); transition: background-color 0.2s ease, color 0.2s ease; }
+        :root[data-theme="dark"] .card,
+        :root[data-theme="dark"] .expense-card-v5,
+        :root[data-theme="dark"] .summary-card-v5 { background: var(--spim-surface) !important; color: var(--spim-text) !important; }
 
         /* Floating Install button */
         #spim-install-btn {
@@ -300,67 +307,12 @@
         Install App
     </button>
 
-    <!-- ══════════ Theme Selector ══════════ -->
-    <button id="spim-theme-toggle" aria-label="Change theme" title="Change theme">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
-        </svg>
-    </button>
-    <div id="spim-theme-panel" role="menu" aria-label="Theme selector">
-        <h6>Choose Theme</h6>
-        <button class="spim-theme-option" data-theme="navy-gold">
-            <span class="spim-swatch" style="--p:#1a2f5e;--a:#c9a84c;"></span> Navy &amp; Gold
-        </button>
-        <button class="spim-theme-option" data-theme="gold-bronze">
-            <span class="spim-swatch" style="--p:#3d2800;--a:#e8c97a;"></span> Gold &amp; Bronze
-        </button>
-        <button class="spim-theme-option" data-theme="light">
-            <span class="spim-swatch" style="--p:#f4f6fa;--a:#1a2f5e;"></span> Light
-        </button>
-        <button class="spim-theme-option" data-theme="dark">
-            <span class="spim-swatch" style="--p:#1a1a1a;--a:#c9a84c;"></span> Dark
-        </button>
-    </div>
+    <!-- Theme selector — only rendered on the Dashboard page (dashboard/index.html).
+         The early-load script above still reads localStorage and applies
+         data-theme on every page, so the persisted theme stays in effect
+         site-wide; only the toggle UI is dashboard-scoped. -->
 
     <script>
-        // ─── Theme selector ───────────────────────────────────────────
-        (function() {
-            var STORAGE_KEY = 'spim-theme';
-            var toggle = document.getElementById('spim-theme-toggle');
-            var panel  = document.getElementById('spim-theme-panel');
-            if (!toggle || !panel) return;
-
-            function applyTheme(name) {
-                document.documentElement.setAttribute('data-theme', name);
-                try { localStorage.setItem(STORAGE_KEY, name); } catch (e) {}
-                panel.querySelectorAll('.spim-theme-option').forEach(function(btn) {
-                    btn.classList.toggle('active', btn.dataset.theme === name);
-                });
-            }
-
-            var current = 'navy-gold';
-            try { current = localStorage.getItem(STORAGE_KEY) || 'navy-gold'; } catch (e) {}
-            applyTheme(current);
-
-            toggle.addEventListener('click', function(e) {
-                e.stopPropagation();
-                panel.classList.toggle('show');
-            });
-
-            panel.querySelectorAll('.spim-theme-option').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    applyTheme(btn.dataset.theme);
-                    panel.classList.remove('show');
-                });
-            });
-
-            document.addEventListener('click', function(e) {
-                if (!panel.contains(e.target) && e.target !== toggle) {
-                    panel.classList.remove('show');
-                }
-            });
-        })();
-
         // ─── PWA install prompt ──────────────────────────────────────
         (function() {
             var installBtn = document.getElementById('spim-install-btn');
