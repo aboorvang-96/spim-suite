@@ -110,9 +110,12 @@ def _group_expenses_by_site(expenses, user):
 
     # Credit map: site → total income amount for that tenant. Built in a
     # single sweep so site_card render stays O(N) over expenses + incomes.
+    # credit_by_month[site_key][YYYY-MM] = Decimal — feeds the card-level
+    # month dropdown so each card can show monthly Credit/Debit/Balance.
     credit_map  = {}
     site_disp   = {}
     income_dates = {}
+    credit_by_month = {}
     try:
         from income.models import Income
         income_qs = Income.objects.filter(admin_id=admin_id).only(
@@ -125,6 +128,9 @@ def _group_expenses_by_site(expenses, user):
             if key not in site_disp or not site_disp[key]:
                 site_disp[key] = site or '(No Site)'
             if i.date:
+                mkey = i.date.strftime('%Y-%m')
+                cb = credit_by_month.setdefault(key, {})
+                cb[mkey] = cb.get(mkey, _D('0')) + (i.amount or _D('0'))
                 prev = income_dates.get(key)
                 if prev is None or i.date > prev:
                     income_dates[key] = i.date
@@ -134,7 +140,9 @@ def _group_expenses_by_site(expenses, user):
         credit_map  = {}
         site_disp   = {}
         income_dates = {}
+        credit_by_month = {}
 
+    debit_by_month = {}
     groups = {}
     for e in expenses:
         site = (getattr(e, 'location_site', None) or '').strip()
@@ -155,6 +163,10 @@ def _group_expenses_by_site(expenses, user):
         g['debit'] += (e.amount or _D('0'))
         g['count'] += 1
         g['transactions'].append(e)
+        if e.date:
+            mkey = e.date.strftime('%Y-%m')
+            db = debit_by_month.setdefault(key, {})
+            db[mkey] = db.get(mkey, _D('0')) + (e.amount or _D('0'))
         if e.date and (g['latest_date'] is None or e.date > g['latest_date']):
             g['latest_date'] = e.date
             g['site']        = site or g['site']
@@ -176,12 +188,50 @@ def _group_expenses_by_site(expenses, user):
             'transactions': [],
         }
 
+    today = _dt.date.today()
+    current_month = today.strftime('%Y-%m')
+    month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
     for g in groups.values():
         g['balance'] = g['credit'] - g['debit']
         g['transactions'].sort(
             key=lambda x: (x.date or _dt.date.min),
             reverse=True,
         )
+        # Per-site monthly breakdown — fed to the card via data-monthly so
+        # the card's month dropdown can repaint the Credit/Debit/Balance
+        # tiles without a round-trip. Includes every month with credit OR
+        # debit activity, plus the current month (default selection).
+        ck = g['site_key']
+        cm = credit_by_month.get(ck, {})
+        dm = debit_by_month.get(ck, {})
+        all_months = set(cm.keys()) | set(dm.keys())
+        all_months.add(current_month)
+        monthly = {}
+        for m in all_months:
+            c = cm.get(m, _D('0'))
+            d = dm.get(m, _D('0'))
+            monthly[m] = {
+                'credit':  float(c),
+                'debit':   float(d),
+                'balance': float(c - d),
+            }
+        g['monthly_json'] = json.dumps(monthly)
+        g['totals_json']  = json.dumps({
+            'credit':  float(g['credit']),
+            'debit':   float(g['debit']),
+            'balance': float(g['balance']),
+        })
+        # Pretty month options for the dropdown — sorted most-recent first.
+        opts = []
+        for m in sorted(all_months, reverse=True):
+            try:
+                y, mo = m.split('-')
+                label = '{} {}'.format(month_names[int(mo) - 1], y)
+            except Exception:
+                label = m
+            opts.append({'key': m, 'label': label})
+        g['month_options'] = opts
 
     return sorted(
         groups.values(),
@@ -379,6 +429,10 @@ def transaction_list(request):
         'income_sources_json':  _shared_sources_json(request.user),
         'accounts_json':        _shared_accounts_json(request.user),
         'balance_data':         balance_combos,
+        # Default selection for the per-card month dropdown (Issue 4) —
+        # the page renders with the current month pre-selected so each card
+        # surfaces this month's Credit/Debit/Balance immediately.
+        'current_month':        timezone.now().strftime('%Y-%m'),
     })
 
 @login_required

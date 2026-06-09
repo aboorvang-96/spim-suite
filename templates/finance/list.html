@@ -563,13 +563,20 @@
             {% for group in sites_grouped %}
             <div class="expense-card-v5" data-site-key="{{ group.site_key }}"
                  data-site-credit="{{ group.credit|stringformat:'s' }}"
-                 data-expense-count="{{ group.count }}">
+                 data-expense-count="{{ group.count }}"
+                 data-monthly='{{ group.monthly_json }}'
+                 data-totals='{{ group.totals_json }}'
+                 data-current-month="{{ current_month }}">
                 <!-- SITE HEADER -->
                 <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
                     <h3 class="site-card-title">{{ group.site }}</h3>
-                    {% if group.latest_date %}
-                    <span style="font-size:11px;color:#94a3b8;font-weight:700;">{{ group.latest_date|date:"d M, Y" }}</span>
-                    {% endif %}
+                    <select class="card-month-picker" title="View totals for a specific month"
+                            style="font-size:11px;font-weight:700;color:#334155;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:3px 6px;">
+                        <option value="all">All Months</option>
+                        {% for m in group.month_options %}
+                        <option value="{{ m.key }}"{% if m.key == current_month %} selected{% endif %}>{{ m.label }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <!-- CREDIT (from Income module) / DEBIT / BALANCE -->
@@ -610,28 +617,6 @@
                                 <select class="month-picker site-month-picker">
                                     <option value="">All months</option>
                                 </select>
-                                <span class="site-toolbar-sep"></span>
-                                <label class="site-toolbar-lbl">From</label>
-                                <input type="date" class="site-toolbar-input site-filter-date-from">
-                                <label class="site-toolbar-lbl">To</label>
-                                <input type="date" class="site-toolbar-input site-filter-date-to">
-                                <select class="site-toolbar-input site-filter-category" style="width:130px;">
-                                    <option value="">All Categories</option>
-                                    <option value="food">Food</option>
-                                    <option value="room">Room</option>
-                                    <option value="diesel">Diesel</option>
-                                    <option value="travel">Travel</option>
-                                    <option value="ticket">Ticket</option>
-                                    <option value="other">Misc./Others</option>
-                                </select>
-                                <input type="text" class="site-toolbar-input site-filter-credit-from"
-                                       placeholder="Credit From" style="width:120px;">
-                                <input type="text" class="site-toolbar-input site-filter-credit-to"
-                                       placeholder="Credit To" style="width:120px;">
-                                <button type="button" class="btn-action-mini site-detail-download"
-                                        style="background:#0f172a;color:#fff;border-color:#0f172a;margin-left:auto;">
-                                    Download Report
-                                </button>
                             </div>
                         </div>
                         <div style="overflow-x:auto;">
@@ -661,6 +646,7 @@
                                     {% with cat=t.expense_category|default_if_none:''|lower %}
                                     <tr class="account-detail-row site-month-row"
                                         data-month="{{ t.date|date:'Y-m' }}"
+                                        data-pk="{{ t.pk }}"
                                         data-expense-id="{{ t.pk }}"
                                         data-date="{{ t.date|date:'Y-m-d' }}"
                                         data-amount="{{ t.amount|stringformat:'s' }}"
@@ -1788,11 +1774,117 @@
       return { fd, date, amount, cat, remarks };
     }
 
-    async function postRow(row, isEdit, siteName) {
+    // Format a row's date in the "DD MMM, YYYY" style the saved rows use.
+    function fmtDateDisplay(iso) {
+      if (!iso) return '';
+      const d = new Date(iso + 'T00:00:00');
+      if (isNaN(d.getTime())) return iso;
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const day  = String(d.getDate()).padStart(2, '0');
+      const mon  = monthNames[d.getMonth()];
+      const year = d.getFullYear();
+      return `${day} ${mon}, ${year}`;
+    }
+    function fmtDebitRupee(v) {
+      const n = parseFloat(v);
+      if (isNaN(n) || n === 0) return '';
+      return '-₹' + Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    // Replace the row's editing inputs with view-mode cells reflecting the
+    // newly-saved values, then drop edit-mode classes. This keeps the row
+    // in place (no page reload, no duplicate card creation).
+    function refreshRowDisplay(row, vals, isNewSavedRow) {
+      // Normalise dataset first so subsequent edits read the latest values.
+      row.dataset.date              = vals.date || '';
+      row.dataset.amount            = vals.amount ? String(vals.amount) : '';
+      row.dataset.expenseCategory   = vals.cat || '';
+      row.dataset.description       = vals.remarks || '';
+      row.dataset.month             = (vals.date || '').slice(0, 7);
+
+      const dateCell = row.querySelector('.cell-date');
+      if (dateCell) dateCell.textContent = fmtDateDisplay(vals.date);
+
+      // Re-paint every category cell — only the chosen one shows the amount.
+      const chosenCat = (vals.cat === 'fuel') ? 'diesel'
+                      : (CAT_ORDER.indexOf(vals.cat) >= 0 ? vals.cat
+                      : 'other');
+      row.querySelectorAll('.cat-cell').forEach(function (td) {
+        const key = td.dataset.cat;
+        td.textContent = (key === chosenCat) ? fmtDebitRupee(vals.amount) : '';
+      });
+
+      const remarksCell = row.querySelector('.cell-remarks');
+      if (remarksCell) remarksCell.textContent = vals.remarks || '-';
+
+      // Restore the standard Edit + Delete action buttons. For a freshly-
+      // saved new row we need a real Delete URL (the server returned a pk).
+      const lastTd = row.cells[row.cells.length - 1];
+      if (lastTd) {
+        const pk = row.dataset.pk || row.dataset.expenseId || '';
+        lastTd.innerHTML =
+          '<button type="button" class="btn-action-mini edit row-edit-btn">Edit</button>' +
+          (pk ? ' <form method="post" action="/expenses/' + encodeURIComponent(pk) + '/delete/" class="m-0 inline-form" onsubmit="return confirm(\'Confirm deletion of this expense?\')">' +
+                '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
+                '<button type="submit" class="btn-action-mini delete">Del</button>' +
+              '</form>'
+              : '');
+      }
+
+      row.classList.remove('is-editing');
+      delete row.dataset._originalHtml;
+
+      if (isNewSavedRow) {
+        // The +Add Row template just became a real saved row — promote it so
+        // it's no longer treated as the inline new-row template, and prepare
+        // a fresh hidden template for the next +Add Row click.
+        row.classList.remove('site-new-row');
+        row.classList.add('site-month-row');
+        const tbody = row.parentNode;
+        if (tbody) {
+          const tpl = row.cloneNode(true);
+          tpl.classList.remove('site-month-row');
+          tpl.classList.add('site-new-row');
+          tpl.setAttribute('hidden', '');
+          tpl.removeAttribute('data-pk');
+          tpl.removeAttribute('data-expense-id');
+          tpl.dataset.date = '';
+          tpl.dataset.amount = '';
+          tpl.dataset.expenseCategory = '';
+          tpl.dataset.description = '';
+          tpl.dataset.month = '';
+          const tplDate = tpl.querySelector('.cell-date');     if (tplDate)    tplDate.textContent    = '';
+          const tplRem  = tpl.querySelector('.cell-remarks');  if (tplRem)     tplRem.textContent     = '';
+          tpl.querySelectorAll('.cat-cell').forEach(td => { td.textContent = ''; });
+          // Reset the action cell to the Save/Cancel buttons so the next
+          // +Add Row click goes straight into edit-mode again.
+          const tplLast = tpl.cells[tpl.cells.length - 1];
+          if (tplLast) {
+            tplLast.innerHTML =
+              '<button type="button" class="btn-action-mini edit row-save-btn">Save</button>' +
+              ' <button type="button" class="btn-action-mini row-cancel-btn">Cancel</button>';
+          }
+          tbody.appendChild(tpl);
+        }
+        // Drop the empty-state row, if any: this site now has at least one expense.
+        const panel = row.closest('.site-detail-panel');
+        if (panel) {
+          const emptyRow = panel.querySelector('.empty-row');
+          if (emptyRow && emptyRow.parentNode) emptyRow.parentNode.removeChild(emptyRow);
+        }
+      }
+    }
+
+    async function postRow(row, siteName) {
       const payload = collectRowPayload(row, siteName);
       if (!payload.date) { alert('Please enter a date.'); return; }
       if (!payload.amount) { alert('Please enter an amount in one of the category columns.'); return; }
-      const url = isEdit ? `/expenses/${encodeURIComponent(row.dataset.expenseId)}/edit/` : ADD_EXPENSE_URL;
+      // The server-side pk is the source of truth for "is this an edit?".
+      // data-pk is set on every saved row; the inline +Add Row template
+      // leaves it empty until the server returns a fresh id.
+      const pk = (row.dataset.pk || '').trim();
+      const url = pk ? `/expenses/${encodeURIComponent(pk)}/edit/` : ADD_EXPENSE_URL;
+      const wasNewRow = !pk;
       try {
         const res = await fetch(url, {
           method: 'POST',
@@ -1807,7 +1899,19 @@
         let data = null;
         try { data = await res.json(); } catch (_) {}
         if (res.ok && data && data.success) {
-          window.location.reload();
+          if (wasNewRow && data.expense && data.expense.id != null) {
+            row.dataset.pk         = String(data.expense.id);
+            row.dataset.expenseId  = String(data.expense.id);
+          }
+          // Stamp the location_site dataset so the row stays anchored even
+          // if the user later flips Location/Site in the modal.
+          if (!row.dataset.locationSite) row.dataset.locationSite = siteName || '';
+          refreshRowDisplay(row, {
+            date:    payload.date,
+            amount:  payload.amount,
+            cat:     payload.cat,
+            remarks: payload.remarks,
+          }, wasNewRow);
         } else {
           const msg = (data && (data.message || data.error)) || 'Could not save the row.';
           alert(msg);
@@ -1815,85 +1919,6 @@
       } catch (err) {
         alert('Network error. Please try again.');
       }
-    }
-
-    // Apply the panel's report filters (date range, category, credit from/to)
-    // on top of the monthly filter. Sets .site-filter-hidden on rows that
-    // don't match. Returns the count of visible rows for the toolbar.
-    function applyPanelFilters(panel) {
-      const monthVal   = (panel.querySelector('.site-month-picker') || {}).value || '';
-      const dateFrom   = (panel.querySelector('.site-filter-date-from') || {}).value || '';
-      const dateTo     = (panel.querySelector('.site-filter-date-to')   || {}).value || '';
-      const catVal     = (panel.querySelector('.site-filter-category')  || {}).value || '';
-      const creditFrom = ((panel.querySelector('.site-filter-credit-from') || {}).value || '').trim().toLowerCase();
-      const creditTo   = ((panel.querySelector('.site-filter-credit-to')   || {}).value || '').trim().toLowerCase();
-
-      panel.querySelectorAll('.site-month-row').forEach(function (tr) {
-        if (tr.classList.contains('site-new-row')) return;
-        let show = true;
-        if (monthVal && (tr.dataset.month || '') !== monthVal) show = false;
-        const rowDate = tr.dataset.date || '';
-        if (show && dateFrom && rowDate < dateFrom) show = false;
-        if (show && dateTo   && rowDate > dateTo)   show = false;
-        if (show && catVal) {
-          const rc = (tr.dataset.expenseCategory || '').toLowerCase();
-          const matches = (rc === catVal) ||
-                          (catVal === 'diesel' && rc === 'fuel') ||
-                          (catVal === 'other' && !rc);
-          if (!matches) show = false;
-        }
-        if (show && creditFrom) {
-          if (!((tr.dataset.paymentBy || '').toLowerCase().includes(creditFrom))) show = false;
-        }
-        if (show && creditTo) {
-          if (!((tr.dataset.vendor || '').toLowerCase().includes(creditTo))) show = false;
-        }
-        if (show) {
-          tr.classList.remove('site-month-hidden', 'site-filter-hidden');
-        } else {
-          tr.classList.add('site-filter-hidden');
-        }
-      });
-    }
-
-    function csvEscape(v) {
-      const s = v == null ? '' : String(v);
-      if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-      return s;
-    }
-
-    function downloadPanelCsv(panel) {
-      const siteName = panel.dataset.siteName || 'site';
-      const creditDisp = panel.dataset.siteCreditDisplay || '';
-      const headers = ['Date', 'Credit', 'From', 'To', 'Food', 'Room', 'Diesel', 'Travel', 'Ticket', 'Misc./Others', 'Remarks'];
-      const lines = [headers.map(csvEscape).join(',')];
-      panel.querySelectorAll('.site-month-row').forEach(function (tr) {
-        if (tr.classList.contains('site-new-row')) return;
-        if (tr.classList.contains('site-filter-hidden') || tr.classList.contains('site-month-hidden')) return;
-        const cat = (tr.dataset.expenseCategory || '').toLowerCase();
-        const amt = parseAmount(tr.dataset.amount);
-        const bucket = { food:'', room:'', diesel:'', travel:'', ticket:'', other:'' };
-        const key = (cat === 'fuel') ? 'diesel' : (CAT_ORDER.indexOf(cat) >= 0 ? cat : 'other');
-        bucket[key] = amt ? amt.toFixed(2) : '';
-        lines.push([
-          tr.dataset.date || '',
-          creditDisp,
-          tr.dataset.paymentBy || '',
-          tr.dataset.vendor || '',
-          bucket.food, bucket.room, bucket.diesel, bucket.travel, bucket.ticket, bucket.other,
-          tr.dataset.description || '',
-        ].map(csvEscape).join(','));
-      });
-      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const safeName = siteName.replace(/[^A-Za-z0-9_\-]+/g, '_').toLowerCase() || 'site';
-      const ts = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `${safeName}_expense_report_${ts}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 0);
     }
 
     if (expenseGrid) {
@@ -1947,7 +1972,10 @@
           return;
         }
 
-        // "Save" inside an editing row — POST and reload.
+        // "Save" inside an editing row — POST to edit endpoint when data-pk
+        // is present (existing row), otherwise to the add endpoint (new row).
+        // On success the row updates in place; no page reload, no duplicate
+        // card is rendered.
         const rowSaveBtn = e.target.closest('.row-save-btn');
         if (rowSaveBtn) {
           e.preventDefault();
@@ -1955,8 +1983,7 @@
           if (!row) return;
           const panel = row.closest('.site-detail-panel');
           const siteName = (panel && panel.dataset.siteName) || '';
-          const isEdit = !!row.dataset.expenseId;
-          postRow(row, isEdit, siteName);
+          postRow(row, siteName);
           return;
         }
 
@@ -1980,39 +2007,35 @@
           return;
         }
 
-        // Download Report — CSV export of the currently-visible rows.
-        const downloadBtn = e.target.closest('.site-detail-download');
-        if (downloadBtn) {
-          e.preventDefault();
-          const panel = downloadBtn.closest('.site-detail-panel');
-          if (panel) downloadPanelCsv(panel);
-          return;
-        }
       });
 
-      // Panel-local filters: monthly view + report filters (date range,
-      // category, credit from/to). All applied through applyPanelFilters
-      // so visibility stays consistent regardless of which control fired.
+      // Panel-local Monthly View dropdown — hide rows that don't match.
+      // Card-level Month selector — update the card's Credit/Debit/Balance
+      // tiles from the per-site monthly breakdown JSON.
       expenseGrid.addEventListener('change', function (e) {
         const target = e.target;
         if (!target) return;
-        if (
-          target.classList.contains('site-month-picker') ||
-          target.classList.contains('site-filter-date-from') ||
-          target.classList.contains('site-filter-date-to') ||
-          target.classList.contains('site-filter-category')
-        ) {
+
+        if (target.classList.contains('site-month-picker')) {
           const panel = target.closest('.site-detail-panel');
-          if (panel) applyPanelFilters(panel);
+          if (!panel) return;
+          const monthVal = target.value || '';
+          panel.querySelectorAll('.site-month-row').forEach(function (tr) {
+            if (tr.classList.contains('site-new-row')) return;
+            if (!monthVal || (tr.dataset.month || '') === monthVal) {
+              tr.classList.remove('site-month-hidden');
+            } else {
+              tr.classList.add('site-month-hidden');
+            }
+          });
+          return;
         }
-      });
-      expenseGrid.addEventListener('input', function (e) {
-        const target = e.target;
-        if (!target) return;
-        if (target.classList.contains('site-filter-credit-from') ||
-            target.classList.contains('site-filter-credit-to')) {
-          const panel = target.closest('.site-detail-panel');
-          if (panel) applyPanelFilters(panel);
+
+        if (target.classList.contains('card-month-picker')) {
+          const card = target.closest('.expense-card-v5');
+          if (!card) return;
+          applyCardMonthlySummary(card, target.value || '');
+          return;
         }
       });
 
@@ -2024,6 +2047,60 @@
           paintCreditAmount(locationSelectEl.value);
         });
       }
+    }
+
+    // ── Card-level month dropdown (replaces the static latest_date span) ──
+    // The dropdown defaults to the current month. When it changes, the card's
+    // Credit/Debit/Balance tiles update from the per-site monthly breakdown
+    // (data-monthly), with "all" falling back to the all-time totals
+    // (data-totals). The detail panel and its rows are unaffected.
+    function _fmtTile(n) {
+      const v = Math.abs(parseFloat(n) || 0).toFixed(2);
+      return v;
+    }
+    function applyCardMonthlySummary(card, monthKey) {
+      let monthly = {};
+      let totals  = { credit: 0, debit: 0, balance: 0 };
+      try { monthly = JSON.parse(card.dataset.monthly || '{}'); } catch (_) {}
+      try { totals  = JSON.parse(card.dataset.totals  || '{}'); } catch (_) {}
+
+      let credit, debit, balance;
+      if (!monthKey || monthKey === 'all') {
+        credit  = parseFloat(totals.credit)  || 0;
+        debit   = parseFloat(totals.debit)   || 0;
+        balance = parseFloat(totals.balance) || 0;
+      } else {
+        const m = monthly[monthKey] || {};
+        credit  = parseFloat(m.credit)  || 0;
+        debit   = parseFloat(m.debit)   || 0;
+        balance = (parseFloat(m.balance) || (credit - debit));
+      }
+
+      const creditEl  = card.querySelector('.site-stat .val.credit');
+      const debitEl   = card.querySelector('.site-stat .val.debit');
+      const balanceEl = card.querySelector('.site-stat .val.bal-pos, .site-stat .val.bal-neg');
+
+      if (creditEl) creditEl.textContent = '+₹' + _fmtTile(credit);
+      if (debitEl)  debitEl.textContent  = '-₹' + _fmtTile(debit);
+      if (balanceEl) {
+        balanceEl.textContent = (balance >= 0 ? '+' : '-') + '₹' + _fmtTile(balance);
+        balanceEl.classList.remove('bal-pos', 'bal-neg');
+        balanceEl.classList.add(balance >= 0 ? 'bal-pos' : 'bal-neg');
+      }
+    }
+    function initCardMonthSummaries() {
+      if (!expenseGrid) return;
+      expenseGrid.querySelectorAll('.expense-card-v5').forEach(function (card) {
+        const sel = card.querySelector('.card-month-picker');
+        if (!sel) return;
+        applyCardMonthlySummary(card, sel.value || '');
+      });
+    }
+    // Run once on load so the tiles reflect the default-selected current month.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initCardMonthSummaries);
+    } else {
+      initCardMonthSummaries();
     }
 
     function populateMonthPicker(panel) {
