@@ -557,6 +557,30 @@
         margin: 0 4px !important;
       }
       .site-filter-hidden { display: none !important; }
+      /* Compact card-level month dropdown — auto-width, capped at ~160px,
+         right-aligned, and explicitly prevented from stretching the card
+         header row (some global form-input styles set width:100%). */
+      .card-month-picker {
+        width: auto !important;
+        max-width: 160px !important;
+        min-width: 0 !important;
+        flex: 0 0 auto !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #334155 !important;
+        background: #fff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 6px !important;
+        padding: 3px 22px 3px 8px !important;
+        height: 28px !important;
+        line-height: 1 !important;
+        box-sizing: border-box !important;
+      }
+      /* Inline-edit From / To combobox inputs (Credit From / To columns) */
+      .site-detail-table tr.is-editing td.cell-from,
+      .site-detail-table tr.is-editing td.cell-to { background: #fffbeb !important; }
+      .site-row-input.from-input,
+      .site-row-input.to-input { text-align: left !important; color: #334155 !important; }
     </style>
     <section class="expense-list-v5">
         <div class="expense-grid-v5" id="expenseGrid">
@@ -570,8 +594,7 @@
                 <!-- SITE HEADER -->
                 <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
                     <h3 class="site-card-title">{{ group.site }}</h3>
-                    <select class="card-month-picker" title="View totals for a specific month"
-                            style="font-size:11px;font-weight:700;color:#334155;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:3px 6px;">
+                    <select class="card-month-picker" title="View totals for a specific month">
                         <option value="all">All Months</option>
                         {% for m in group.month_options %}
                         <option value="{{ m.key }}"{% if m.key == current_month %} selected{% endif %}>{{ m.label }}</option>
@@ -724,6 +747,19 @@
         </div>
     </section>
 </div>
+
+<!-- ═══════ Datalists for inline-edit From / To dropdowns ═══════ -->
+<!-- Populated from every distinct payment_by / vendor value the tenant has
+     stored. Combobox pattern: <input list="..."> shows suggestions but
+     also accepts free-text. New values get saved back via the existing
+     /expenses/<pk>/edit/ and /expenses/add/ endpoints, so they show up
+     here on the next page render. -->
+<datalist id="datalist-credit-from">
+  {% for v in payment_by_options %}<option value="{{ v }}">{% endfor %}
+</datalist>
+<datalist id="datalist-credit-to">
+  {% for v in vendor_options %}<option value="{{ v }}">{% endfor %}
+</datalist>
 
 <!-- ═══════ Add Expense Modal ═══════ -->
 <style>
@@ -1708,6 +1744,17 @@
       const dateCell = row.querySelector('.cell-date');
       if (dateCell) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}">`;
 
+      // Credit From / Credit To cells -> datalist-backed combobox inputs.
+      // Suggestions come from the global <datalist> tags rendered once per
+      // page; users can still type any new value, which is persisted on
+      // Save and surfaces in future renders.
+      const fromVal = (row.dataset.paymentBy || '').replace(/"/g, '&quot;');
+      const toVal   = (row.dataset.vendor    || '').replace(/"/g, '&quot;');
+      const fromCell = row.querySelector('.cell-from');
+      if (fromCell) fromCell.innerHTML = `<input type="text" class="site-row-input from-input row-from" list="datalist-credit-from" placeholder="Select or type..." value="${fromVal}">`;
+      const toCell = row.querySelector('.cell-to');
+      if (toCell) toCell.innerHTML = `<input type="text" class="site-row-input to-input row-to" list="datalist-credit-to" placeholder="Select or type..." value="${toVal}">`;
+
       // Category cells -> numeric inputs (only the matching category gets the amount)
       row.querySelectorAll('.cat-cell').forEach(function (td) {
         const key = td.dataset.cat;
@@ -1747,6 +1794,13 @@
       const date = dateInput ? dateInput.value : (row.dataset.date || '');
       const remarksInput = row.querySelector('.row-remarks');
       const remarks = remarksInput ? remarksInput.value : '';
+      // Credit From / Credit To — datalist-backed combobox inputs accept
+      // both picked-from-list and newly-typed values. Fall back to the
+      // row's stored value if the input is missing (defensive).
+      const fromInput = row.querySelector('.row-from');
+      const toInput   = row.querySelector('.row-to');
+      const paymentBy = fromInput ? fromInput.value.trim() : (row.dataset.paymentBy || '');
+      const vendor    = toInput   ? toInput.value.trim()   : (row.dataset.vendor    || '');
 
       let cat = '', amount = 0;
       row.querySelectorAll('.cat-input').forEach(function (inp) {
@@ -1761,17 +1815,18 @@
       fd.set('amount', amount ? String(amount) : '');
       fd.set('expense_category', cat);
       fd.set('description', remarks);
-      // Preserve existing per-row metadata so we don't blow away the From/To/Account/Source
-      // values that the row already has — important for edits.
+      // Preserve existing per-row metadata so we don't blow away the Account/Source
+      // values that the row already has — important for edits. From/To come from
+      // the inline-edit inputs above (so new picks / new typed values persist).
       fd.set('location_site',  row.dataset.locationSite || siteName || '');
-      fd.set('payment_by',     row.dataset.paymentBy    || '');
-      fd.set('vendor',         row.dataset.vendor       || '');
+      fd.set('payment_by',     paymentBy);
+      fd.set('vendor',         vendor);
       fd.set('purpose',        row.dataset.purpose      || '');
       fd.set('payment_mode',   row.dataset.paymentMode  || '');
       fd.set('income_source',  row.dataset.incomeSource || '');
       const catId = row.dataset.categoryId;
       if (catId) fd.set('category', catId);
-      return { fd, date, amount, cat, remarks };
+      return { fd, date, amount, cat, remarks, paymentBy, vendor };
     }
 
     // Format a row's date in the "DD MMM, YYYY" style the saved rows use.
@@ -1801,9 +1856,19 @@
       row.dataset.expenseCategory   = vals.cat || '';
       row.dataset.description       = vals.remarks || '';
       row.dataset.month             = (vals.date || '').slice(0, 7);
+      // Persist the From / To values picked or typed in the combobox so
+      // subsequent edits prefill correctly.
+      if (vals.paymentBy !== undefined) row.dataset.paymentBy = vals.paymentBy || '';
+      if (vals.vendor    !== undefined) row.dataset.vendor    = vals.vendor    || '';
 
       const dateCell = row.querySelector('.cell-date');
       if (dateCell) dateCell.textContent = fmtDateDisplay(vals.date);
+
+      // Credit From / Credit To — back to plain text in view mode.
+      const fromCell = row.querySelector('.cell-from');
+      if (fromCell) fromCell.textContent = row.dataset.paymentBy || '-';
+      const toCell = row.querySelector('.cell-to');
+      if (toCell) toCell.textContent = row.dataset.vendor || '-';
 
       // Re-paint every category cell — only the chosen one shows the amount.
       const chosenCat = (vals.cat === 'fuel') ? 'diesel'
@@ -1907,10 +1972,12 @@
           // if the user later flips Location/Site in the modal.
           if (!row.dataset.locationSite) row.dataset.locationSite = siteName || '';
           refreshRowDisplay(row, {
-            date:    payload.date,
-            amount:  payload.amount,
-            cat:     payload.cat,
-            remarks: payload.remarks,
+            date:      payload.date,
+            amount:    payload.amount,
+            cat:       payload.cat,
+            remarks:   payload.remarks,
+            paymentBy: payload.paymentBy,
+            vendor:    payload.vendor,
           }, wasNewRow);
         } else {
           const msg = (data && (data.message || data.error)) || 'Could not save the row.';

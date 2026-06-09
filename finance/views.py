@@ -108,6 +108,18 @@ def _group_expenses_by_site(expenses, user):
     from accounts.views import get_admin_id
     admin_id = get_admin_id(user)
 
+    # Normalise the (raw -> key, display) for a site value so the "(No Site)"
+    # bucket collapses every shape an empty/no-site record can take: NULL,
+    # empty string, whitespace, or the literal string "(No Site)" that
+    # earlier site-detail Add-Row submissions wrote back into location_site.
+    # This is what fixes the "two (No Site) cards" symptom — the grouping
+    # key is now identical regardless of how the row was created.
+    def _site_key_display(raw):
+        s = (raw or '').strip()
+        if not s or s.lower() == '(no site)':
+            return '', '(No Site)'
+        return s.lower(), s
+
     # Credit map: site → total income amount for that tenant. Built in a
     # single sweep so site_card render stays O(N) over expenses + incomes.
     # credit_by_month[site_key][YYYY-MM] = Decimal — feeds the card-level
@@ -122,11 +134,10 @@ def _group_expenses_by_site(expenses, user):
             'amount', 'location_site', 'date',
         )
         for i in income_qs:
-            site = (i.location_site or '').strip()
-            key  = site.lower()
+            key, disp = _site_key_display(i.location_site)
             credit_map[key] = credit_map.get(key, _D('0')) + (i.amount or _D('0'))
             if key not in site_disp or not site_disp[key]:
-                site_disp[key] = site or '(No Site)'
+                site_disp[key] = disp
             if i.date:
                 mkey = i.date.strftime('%Y-%m')
                 cb = credit_by_month.setdefault(key, {})
@@ -145,12 +156,11 @@ def _group_expenses_by_site(expenses, user):
     debit_by_month = {}
     groups = {}
     for e in expenses:
-        site = (getattr(e, 'location_site', None) or '').strip()
-        key  = site.lower()
+        key, disp = _site_key_display(getattr(e, 'location_site', None))
         g = groups.get(key)
         if g is None:
             g = {
-                'site':         site or site_disp.get(key) or '(No Site)',
+                'site':         site_disp.get(key) or disp,
                 'site_key':     key,
                 'credit':       credit_map.get(key, _D('0')),
                 'debit':        _D('0'),
@@ -169,7 +179,10 @@ def _group_expenses_by_site(expenses, user):
             db[mkey] = db.get(mkey, _D('0')) + (e.amount or _D('0'))
         if e.date and (g['latest_date'] is None or e.date > g['latest_date']):
             g['latest_date'] = e.date
-            g['site']        = site or g['site']
+            # Don't overwrite the canonical display with a blank — keep the
+            # first non-empty real-site spelling, otherwise leave "(No Site)".
+            if key:
+                g['site'] = disp
 
     # Surface income-only sites (credit > 0, no expense yet) so the card
     # list reflects every site the tenant is tracking — admin still needs
@@ -412,6 +425,20 @@ def transaction_list(request):
     accounts_grouped = _group_expenses_by_account(transactions_list)
     sites_grouped    = _group_expenses_by_site(transactions_list, request.user)
 
+    # Unique Credit From / Credit To values across this tenant's expense
+    # rows — feeds the inline-edit dropdowns (datalists) in the site detail
+    # panel. No model fields added; we just surface what's already stored.
+    payment_by_options = list(
+        Transaction.objects.filter(admin_id=admin_id, type='expense')
+        .exclude(payment_by__isnull=True).exclude(payment_by='')
+        .values_list('payment_by', flat=True).distinct().order_by('payment_by')
+    )
+    vendor_options = list(
+        Transaction.objects.filter(admin_id=admin_id, type='expense')
+        .exclude(vendor__isnull=True).exclude(vendor='')
+        .values_list('vendor', flat=True).distinct().order_by('vendor')
+    )
+
     return render(request, 'finance/list.html', {
         'transactions':        transactions_list,
         'transactions_json':   transactions_json,
@@ -433,6 +460,9 @@ def transaction_list(request):
         # the page renders with the current month pre-selected so each card
         # surfaces this month's Credit/Debit/Balance immediately.
         'current_month':        timezone.now().strftime('%Y-%m'),
+        # Unique values for the inline-edit Credit From / Credit To dropdowns.
+        'payment_by_options':   payment_by_options,
+        'vendor_options':       vendor_options,
     })
 
 @login_required
