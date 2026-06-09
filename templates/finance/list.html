@@ -501,6 +501,62 @@
         border-radius: 6px !important;
       }
       .site-month-hidden { display: none !important; }
+      /* Wide expansion for the active site card: span all grid columns. */
+      .expense-card-v5.is-expanded { grid-column: 1 / -1 !important; }
+      /* Debit/category header band — mirrors the credit-band styling. */
+      .site-detail-table th.cat-band {
+        text-align: center !important;
+        background: #fef3c7 !important; color: #92400e !important;
+        font-weight: 900 !important; padding: 4px 10px !important;
+        border-bottom: 1px solid #fcd34d !important;
+      }
+      .site-detail-table th.cat-sub {
+        background: #fffbeb !important; color: #92400e !important;
+        border-bottom: 1px solid #fde68a !important; text-align: right !important;
+      }
+      .site-detail-table td.cat-cell {
+        text-align: right !important; color: #ef4444 !important;
+        font-weight: 700 !important; min-width: 80px !important;
+      }
+      .site-detail-table td.cat-cell:empty::after { content: '-'; color: #cbd5e1; font-weight: 400; }
+      /* Inline edit cell inputs */
+      .site-detail-table tr.is-editing td.cell-date,
+      .site-detail-table tr.is-editing td.cat-cell,
+      .site-detail-table tr.is-editing td.cell-remarks { background: #fffbeb !important; }
+      .site-row-input {
+        width: 100% !important; box-sizing: border-box !important;
+        padding: 4px 6px !important; font-size: 12px !important;
+        border: 1px solid #cbd5e1 !important; border-radius: 4px !important;
+        font-weight: 600 !important; color: #334155 !important;
+        background: #fff !important; min-width: 70px !important;
+      }
+      .site-row-input.cat-input { text-align: right !important; color: #ef4444 !important; }
+      .inline-form { display: inline-block !important; margin: 0 !important; }
+      /* Toolbar (Monthly View + report filters + Download button) */
+      .site-detail-toolbar {
+        background: #f8fafc !important; border-bottom: 1px solid #e2e8f0 !important;
+        padding: 10px 12px !important;
+      }
+      .site-detail-toolbar-row {
+        display: flex !important; flex-wrap: wrap !important;
+        align-items: center !important; gap: 8px !important;
+      }
+      .site-toolbar-lbl {
+        font-size: 10px !important; font-weight: 800 !important;
+        color: #64748b !important; text-transform: uppercase !important;
+        letter-spacing: 0.04em !important;
+      }
+      .site-toolbar-input {
+        height: 30px !important; padding: 0 8px !important;
+        font-size: 12px !important; font-weight: 600 !important;
+        border: 1px solid #cbd5e1 !important; border-radius: 5px !important;
+        color: #334155 !important; background: #fff !important;
+      }
+      .site-toolbar-sep {
+        width: 1px !important; height: 20px !important; background: #e2e8f0 !important;
+        margin: 0 4px !important;
+      }
+      .site-filter-hidden { display: none !important; }
     </style>
     <section class="expense-list-v5">
         <div class="expense-grid-v5" id="expenseGrid">
@@ -540,18 +596,43 @@
                 </div>
 
                 <!-- EXCEL-STYLE DETAIL PANEL — hidden by default, toggled by View.
-                     Monthly selector at top + Date | Credit | From | To |
-                     Debit | Category | Remarks | Edit | Delete columns. -->
-                <div class="site-detail-panel" data-detail-for="{{ group.site_key }}" hidden>
+                     Wide inline-editable layout: Date | Credit (read-only sub-cols) |
+                     Food | Room | Diesel | Travel | Ticket | Misc./Others | Remarks |
+                     Action. Editing happens in-row (no modal). -->
+                <div class="site-detail-panel" data-detail-for="{{ group.site_key }}"
+                     data-site-name="{{ group.site }}"
+                     data-site-credit-display="{% if group.credit %}+₹{{ group.credit|floatformat:2 }}{% else %}-{% endif %}"
+                     hidden>
                     <div class="site-detail-wrap">
-                        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
-                            <strong style="font-size:12px;color:#334155;">Monthly View</strong>
-                            <select class="month-picker site-month-picker">
-                                <option value="">All months</option>
-                                {% for t in group.transactions %}
-                                <!-- Months are filled by JS to keep them deduped+sorted; placeholder kept blank server-side -->
-                                {% endfor %}
-                            </select>
+                        <div class="site-detail-toolbar">
+                            <div class="site-detail-toolbar-row">
+                                <strong style="font-size:12px;color:#334155;">Monthly View</strong>
+                                <select class="month-picker site-month-picker">
+                                    <option value="">All months</option>
+                                </select>
+                                <span class="site-toolbar-sep"></span>
+                                <label class="site-toolbar-lbl">From</label>
+                                <input type="date" class="site-toolbar-input site-filter-date-from">
+                                <label class="site-toolbar-lbl">To</label>
+                                <input type="date" class="site-toolbar-input site-filter-date-to">
+                                <select class="site-toolbar-input site-filter-category" style="width:130px;">
+                                    <option value="">All Categories</option>
+                                    <option value="food">Food</option>
+                                    <option value="room">Room</option>
+                                    <option value="diesel">Diesel</option>
+                                    <option value="travel">Travel</option>
+                                    <option value="ticket">Ticket</option>
+                                    <option value="other">Misc./Others</option>
+                                </select>
+                                <input type="text" class="site-toolbar-input site-filter-credit-from"
+                                       placeholder="Credit From" style="width:120px;">
+                                <input type="text" class="site-toolbar-input site-filter-credit-to"
+                                       placeholder="Credit To" style="width:120px;">
+                                <button type="button" class="btn-action-mini site-detail-download"
+                                        style="background:#0f172a;color:#fff;border-color:#0f172a;margin-left:auto;">
+                                    Download Report
+                                </button>
+                            </div>
                         </div>
                         <div style="overflow-x:auto;">
                             <table class="site-detail-table">
@@ -559,27 +640,32 @@
                                     <tr>
                                         <th rowspan="2" style="vertical-align:bottom;">Date</th>
                                         <th class="credit-band" colspan="3">Credit (from Income — read only)</th>
-                                        <th rowspan="2" style="vertical-align:bottom;text-align:right;">Debit</th>
-                                        <th rowspan="2" style="vertical-align:bottom;">Category</th>
+                                        <th class="cat-band" colspan="6">Debit (₹) — Category</th>
                                         <th rowspan="2" style="vertical-align:bottom;">Remarks</th>
-                                        <th rowspan="2" style="vertical-align:bottom;text-align:center;">Edit</th>
-                                        <th rowspan="2" style="vertical-align:bottom;text-align:center;">Delete</th>
+                                        <th rowspan="2" style="vertical-align:bottom;text-align:center;">Action</th>
                                     </tr>
                                     <tr>
                                         <th class="credit-group" style="text-align:right;">Credit</th>
                                         <th class="from-sub">From</th>
                                         <th class="to-sub">To</th>
+                                        <th class="cat-sub">Food</th>
+                                        <th class="cat-sub">Room</th>
+                                        <th class="cat-sub">Diesel</th>
+                                        <th class="cat-sub">Travel</th>
+                                        <th class="cat-sub">Ticket</th>
+                                        <th class="cat-sub">Misc./Others</th>
                                     </tr>
                                 </thead>
-                                <tbody class="site-detail-tbody" data-site-credit-display="{% if group.credit %}+₹{{ group.credit|floatformat:2 }}{% else %}-{% endif %}">
+                                <tbody class="site-detail-tbody">
                                     {% for t in group.transactions %}
+                                    {% with cat=t.expense_category|default_if_none:''|lower %}
                                     <tr class="account-detail-row site-month-row"
                                         data-month="{{ t.date|date:'Y-m' }}"
                                         data-expense-id="{{ t.pk }}"
                                         data-date="{{ t.date|date:'Y-m-d' }}"
                                         data-amount="{{ t.amount|stringformat:'s' }}"
                                         data-category-id="{{ t.category_id|default_if_none:'' }}"
-                                        data-expense-category="{{ t.expense_category|default_if_none:'' }}"
+                                        data-expense-category="{{ cat }}"
                                         data-purpose="{{ t.purpose|default_if_none:'' }}"
                                         data-payment-by="{{ t.payment_by|default_if_none:'' }}"
                                         data-vendor="{{ t.vendor|default_if_none:'' }}"
@@ -587,26 +673,48 @@
                                         data-payment-mode="{{ t.payment_mode|default_if_none:'' }}"
                                         data-income-source="{{ t.income_source|default_if_none:'' }}"
                                         data-description="{{ t.description|default_if_none:'' }}">
-                                        <td>{{ t.date|date:"d M, Y" }}</td>
+                                        <td class="cell-date" data-readmode>{{ t.date|date:"d M, Y" }}</td>
                                         <td class="credit">{% if group.credit %}+₹{{ group.credit|floatformat:2 }}{% else %}-{% endif %}</td>
-                                        <td>{{ t.payment_by|default:"-" }}</td>
-                                        <td>{{ t.vendor|default:"-" }}</td>
-                                        <td class="debit">-₹{{ t.amount|floatformat:2 }}</td>
-                                        <td>{% if t.expense_category %}{{ t.get_expense_category_display }}{% elif t.category %}{{ t.category.name }}{% else %}-{% endif %}</td>
-                                        <td>{{ t.description|default:"-"|truncatechars:40 }}</td>
-                                        <td style="text-align:center;">
-                                            <button type="button" class="btn-action-mini edit" data-edit-expense="{{ t.pk }}">Edit</button>
-                                        </td>
-                                        <td style="text-align:center;">
-                                            <form method="post" action="{% url 'expenses:delete' t.pk %}" class="m-0" onsubmit="return confirm('Confirm deletion of this expense?')">
+                                        <td class="cell-from">{{ t.payment_by|default:"-" }}</td>
+                                        <td class="cell-to">{{ t.vendor|default:"-" }}</td>
+                                        <td class="cat-cell" data-cat="food">{% if cat == 'food' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
+                                        <td class="cat-cell" data-cat="room">{% if cat == 'room' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
+                                        <td class="cat-cell" data-cat="diesel">{% if cat == 'diesel' or cat == 'fuel' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
+                                        <td class="cat-cell" data-cat="travel">{% if cat == 'travel' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
+                                        <td class="cat-cell" data-cat="ticket">{% if cat == 'ticket' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
+                                        <td class="cat-cell" data-cat="other">{% if cat == 'other' or not cat %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
+                                        <td class="cell-remarks">{{ t.description|default:"-" }}</td>
+                                        <td style="text-align:center;white-space:nowrap;">
+                                            <button type="button" class="btn-action-mini edit row-edit-btn">Edit</button>
+                                            <form method="post" action="{% url 'expenses:delete' t.pk %}" class="m-0 inline-form" onsubmit="return confirm('Confirm deletion of this expense?')">
                                                 {% csrf_token %}
-                                                <button type="submit" class="btn-action-mini delete">Delete</button>
+                                                <button type="submit" class="btn-action-mini delete">Del</button>
                                             </form>
                                         </td>
                                     </tr>
+                                    {% endwith %}
                                     {% empty %}
-                                    <tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:20px;">No expenses yet for this site.</td></tr>
+                                    <tr class="empty-row"><td colspan="12" style="text-align:center;color:#94a3b8;padding:20px;">No expenses yet for this site.</td></tr>
                                     {% endfor %}
+                                    <!-- Inline new-row template — clicking + Add opens an editable empty row. -->
+                                    <tr class="account-detail-row site-new-row" hidden
+                                        data-site-name="{{ group.site }}">
+                                        <td class="cell-date"></td>
+                                        <td class="credit">{% if group.credit %}+₹{{ group.credit|floatformat:2 }}{% else %}-{% endif %}</td>
+                                        <td class="cell-from">-</td>
+                                        <td class="cell-to">-</td>
+                                        <td class="cat-cell" data-cat="food"></td>
+                                        <td class="cat-cell" data-cat="room"></td>
+                                        <td class="cat-cell" data-cat="diesel"></td>
+                                        <td class="cat-cell" data-cat="travel"></td>
+                                        <td class="cat-cell" data-cat="ticket"></td>
+                                        <td class="cat-cell" data-cat="other"></td>
+                                        <td class="cell-remarks"></td>
+                                        <td style="text-align:center;white-space:nowrap;">
+                                            <button type="button" class="btn-action-mini edit row-save-btn">Save</button>
+                                            <button type="button" class="btn-action-mini row-cancel-btn">Cancel</button>
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -614,8 +722,9 @@
                             <span style="font-size:11px;color:#64748b;font-weight:700;">
                                 {{ group.count }} expense{{ group.count|pluralize }}
                             </span>
-                            <button type="button" class="btn-v5 btn-primary-v5" data-add-expense-site="{{ group.site }}" data-site-credit="{{ group.credit|stringformat:'s' }}">
-                                + Add Expense
+                            <button type="button" class="btn-action-mini edit site-new-row-btn"
+                                    style="background:#0f172a;color:#fff;border-color:#0f172a;">
+                                + Add Row
                             </button>
                         </div>
                     </div>
@@ -1571,16 +1680,225 @@
       });
     }
 
-    // Edit click delegation: open modal with prefilled data.
-    // After regrouping, the per-transaction data-* attributes live on the
-    // .account-detail-row inside the account card's detail panel, not on
-    // the .expense-card-v5 itself. Use the [data-expense-id] selector so
-    // the prefill reads from whichever element actually carries that attr.
-    // Also wire the "View" button on the account card to toggle the inline
-    // detail panel for that account.
+    // Site-detail panel: wide inline-editable table.
+    //   - View toggles the panel (and expands the card across the grid).
+    //   - Per-row Edit switches the row to inline-edit mode (no modal).
+    //   - + Add Row reveals an empty editable row at the bottom.
+    //   - Save POSTs via the existing /expenses/add/ and /expenses/<id>/edit/ endpoints.
+    //   - Download Report exports the currently-visible rows as CSV.
+
+    // Category column metadata — keys match the model's existing
+    // EXPENSE_CATEGORY_CHOICES code + two extended codes ('room', 'diesel')
+    // accepted by the loosened TransactionForm (no model migration).
+    const CAT_ORDER  = ['food', 'room', 'diesel', 'travel', 'ticket', 'other'];
+    const CAT_LABELS = { food: 'Food', room: 'Room', diesel: 'Diesel', travel: 'Travel', ticket: 'Ticket', other: 'Misc./Others' };
+
+    function fmtRupee(v) {
+      const n = parseFloat(v);
+      if (isNaN(n) || n === 0) return '';
+      return '-₹' + Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+    function parseAmount(s) {
+      if (s === null || s === undefined) return 0;
+      const cleaned = String(s).replace(/[^0-9.\-]/g, '');
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? 0 : n;
+    }
+
+    // Switch a row from view-mode to inline-edit mode (replace cell text
+    // with inputs). Save persists; Cancel restores original DOM.
+    function enterRowEdit(row) {
+      if (row.classList.contains('is-editing')) return;
+      // Snapshot original HTML so Cancel can restore exactly.
+      row.dataset._originalHtml = row.innerHTML;
+      row.classList.add('is-editing');
+
+      const dateVal    = row.dataset.date || '';
+      const remarksVal = row.dataset.description || '';
+      const curCat     = (row.dataset.expenseCategory || '').toLowerCase();
+      const curAmount  = row.dataset.amount || '';
+
+      // Date cell -> date input
+      const dateCell = row.querySelector('.cell-date');
+      if (dateCell) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}">`;
+
+      // Category cells -> numeric inputs (only the matching category gets the amount)
+      row.querySelectorAll('.cat-cell').forEach(function (td) {
+        const key = td.dataset.cat;
+        const matches = (key === curCat) ||
+                        (key === 'diesel' && curCat === 'fuel') ||
+                        (!curCat && key === 'other');
+        const val = matches ? curAmount : '';
+        td.innerHTML = `<input type="number" step="0.01" min="0" class="site-row-input cat-input" data-cat="${key}" value="${val}">`;
+      });
+
+      // Remarks cell -> text input
+      const remarksCell = row.querySelector('.cell-remarks');
+      if (remarksCell) remarksCell.innerHTML = `<input type="text" class="site-row-input row-remarks" value="${(remarksVal||'').replace(/"/g,'&quot;')}">`;
+
+      // Action cell -> Save / Cancel
+      const lastTd = row.cells[row.cells.length - 1];
+      if (lastTd) {
+        lastTd.innerHTML =
+          '<button type="button" class="btn-action-mini edit row-save-btn">Save</button> ' +
+          '<button type="button" class="btn-action-mini row-cancel-btn">Cancel</button>';
+      }
+    }
+
+    function exitRowEdit(row, restore) {
+      row.classList.remove('is-editing');
+      if (restore && row.dataset._originalHtml) {
+        row.innerHTML = row.dataset._originalHtml;
+      }
+      delete row.dataset._originalHtml;
+    }
+
+    // Read the inline-edit inputs into a FormData payload compatible with
+    // TransactionForm. The first non-zero category cell wins (the chosen
+    // expense_category + amount).
+    function collectRowPayload(row, siteName) {
+      const dateInput = row.querySelector('.row-date');
+      const date = dateInput ? dateInput.value : (row.dataset.date || '');
+      const remarksInput = row.querySelector('.row-remarks');
+      const remarks = remarksInput ? remarksInput.value : '';
+
+      let cat = '', amount = 0;
+      row.querySelectorAll('.cat-input').forEach(function (inp) {
+        if (cat) return;
+        const v = parseAmount(inp.value);
+        if (v > 0) { cat = inp.dataset.cat || ''; amount = v; }
+      });
+
+      const fd = new FormData();
+      fd.set('type', 'expense');
+      fd.set('date', date);
+      fd.set('amount', amount ? String(amount) : '');
+      fd.set('expense_category', cat);
+      fd.set('description', remarks);
+      // Preserve existing per-row metadata so we don't blow away the From/To/Account/Source
+      // values that the row already has — important for edits.
+      fd.set('location_site',  row.dataset.locationSite || siteName || '');
+      fd.set('payment_by',     row.dataset.paymentBy    || '');
+      fd.set('vendor',         row.dataset.vendor       || '');
+      fd.set('purpose',        row.dataset.purpose      || '');
+      fd.set('payment_mode',   row.dataset.paymentMode  || '');
+      fd.set('income_source',  row.dataset.incomeSource || '');
+      const catId = row.dataset.categoryId;
+      if (catId) fd.set('category', catId);
+      return { fd, date, amount, cat, remarks };
+    }
+
+    async function postRow(row, isEdit, siteName) {
+      const payload = collectRowPayload(row, siteName);
+      if (!payload.date) { alert('Please enter a date.'); return; }
+      if (!payload.amount) { alert('Please enter an amount in one of the category columns.'); return; }
+      const url = isEdit ? `/expenses/${encodeURIComponent(row.dataset.expenseId)}/edit/` : ADD_EXPENSE_URL;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': csrfToken,
+            'Accept': 'application/json',
+          },
+          body: payload.fd,
+          credentials: 'same-origin',
+        });
+        let data = null;
+        try { data = await res.json(); } catch (_) {}
+        if (res.ok && data && data.success) {
+          window.location.reload();
+        } else {
+          const msg = (data && (data.message || data.error)) || 'Could not save the row.';
+          alert(msg);
+        }
+      } catch (err) {
+        alert('Network error. Please try again.');
+      }
+    }
+
+    // Apply the panel's report filters (date range, category, credit from/to)
+    // on top of the monthly filter. Sets .site-filter-hidden on rows that
+    // don't match. Returns the count of visible rows for the toolbar.
+    function applyPanelFilters(panel) {
+      const monthVal   = (panel.querySelector('.site-month-picker') || {}).value || '';
+      const dateFrom   = (panel.querySelector('.site-filter-date-from') || {}).value || '';
+      const dateTo     = (panel.querySelector('.site-filter-date-to')   || {}).value || '';
+      const catVal     = (panel.querySelector('.site-filter-category')  || {}).value || '';
+      const creditFrom = ((panel.querySelector('.site-filter-credit-from') || {}).value || '').trim().toLowerCase();
+      const creditTo   = ((panel.querySelector('.site-filter-credit-to')   || {}).value || '').trim().toLowerCase();
+
+      panel.querySelectorAll('.site-month-row').forEach(function (tr) {
+        if (tr.classList.contains('site-new-row')) return;
+        let show = true;
+        if (monthVal && (tr.dataset.month || '') !== monthVal) show = false;
+        const rowDate = tr.dataset.date || '';
+        if (show && dateFrom && rowDate < dateFrom) show = false;
+        if (show && dateTo   && rowDate > dateTo)   show = false;
+        if (show && catVal) {
+          const rc = (tr.dataset.expenseCategory || '').toLowerCase();
+          const matches = (rc === catVal) ||
+                          (catVal === 'diesel' && rc === 'fuel') ||
+                          (catVal === 'other' && !rc);
+          if (!matches) show = false;
+        }
+        if (show && creditFrom) {
+          if (!((tr.dataset.paymentBy || '').toLowerCase().includes(creditFrom))) show = false;
+        }
+        if (show && creditTo) {
+          if (!((tr.dataset.vendor || '').toLowerCase().includes(creditTo))) show = false;
+        }
+        if (show) {
+          tr.classList.remove('site-month-hidden', 'site-filter-hidden');
+        } else {
+          tr.classList.add('site-filter-hidden');
+        }
+      });
+    }
+
+    function csvEscape(v) {
+      const s = v == null ? '' : String(v);
+      if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+
+    function downloadPanelCsv(panel) {
+      const siteName = panel.dataset.siteName || 'site';
+      const creditDisp = panel.dataset.siteCreditDisplay || '';
+      const headers = ['Date', 'Credit', 'From', 'To', 'Food', 'Room', 'Diesel', 'Travel', 'Ticket', 'Misc./Others', 'Remarks'];
+      const lines = [headers.map(csvEscape).join(',')];
+      panel.querySelectorAll('.site-month-row').forEach(function (tr) {
+        if (tr.classList.contains('site-new-row')) return;
+        if (tr.classList.contains('site-filter-hidden') || tr.classList.contains('site-month-hidden')) return;
+        const cat = (tr.dataset.expenseCategory || '').toLowerCase();
+        const amt = parseAmount(tr.dataset.amount);
+        const bucket = { food:'', room:'', diesel:'', travel:'', ticket:'', other:'' };
+        const key = (cat === 'fuel') ? 'diesel' : (CAT_ORDER.indexOf(cat) >= 0 ? cat : 'other');
+        bucket[key] = amt ? amt.toFixed(2) : '';
+        lines.push([
+          tr.dataset.date || '',
+          creditDisp,
+          tr.dataset.paymentBy || '',
+          tr.dataset.vendor || '',
+          bucket.food, bucket.room, bucket.diesel, bucket.travel, bucket.ticket, bucket.other,
+          tr.dataset.description || '',
+        ].map(csvEscape).join(','));
+      });
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeName = siteName.replace(/[^A-Za-z0-9_\-]+/g, '_').toLowerCase() || 'site';
+      const ts = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `${safeName}_expense_report_${ts}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 0);
+    }
+
     if (expenseGrid) {
       expenseGrid.addEventListener('click', function (e) {
-        // "View" — toggle the site detail panel and populate its month picker.
+        // "View" — toggle the site detail panel + wide expansion of the card.
         const viewBtn = e.target.closest('[data-view-site]');
         if (viewBtn) {
           e.preventDefault();
@@ -1590,57 +1908,112 @@
           if (!panel) return;
           if (panel.hasAttribute('hidden')) {
             panel.removeAttribute('hidden');
+            card.classList.add('is-expanded');
             viewBtn.textContent = 'Hide';
             populateMonthPicker(panel);
           } else {
             panel.setAttribute('hidden', '');
+            card.classList.remove('is-expanded');
             viewBtn.textContent = 'View';
           }
           return;
         }
 
-        // "+ Add Expense" inside the site detail — prefill Location/Site
-        // with the site name and Credit Amount with the site's credit
-        // from Income (read-only auto-fill, Income/Expense restructure).
-        const addBtn = e.target.closest('[data-add-expense-site]');
-        if (addBtn) {
+        // "+ Add Row" inside the panel — unhide the inline empty row and
+        // place it into edit mode immediately.
+        const addRowBtn = e.target.closest('.site-new-row-btn');
+        if (addRowBtn) {
           e.preventDefault();
-          resetFormForAdd();
-          const siteName = addBtn.dataset.addExpenseSite || '';
-          if (siteName && siteName !== '(No Site)') {
-            setSelectValue(locationSelectEl, siteName);
-            paintCreditAmount(siteName);
-          }
-          openModal(false);
+          const panel = addRowBtn.closest('.site-detail-panel');
+          if (!panel) return;
+          const newRow = panel.querySelector('.site-new-row');
+          if (!newRow) return;
+          newRow.removeAttribute('hidden');
+          newRow.dataset.date = newRow.dataset.date || new Date().toISOString().slice(0, 10);
+          newRow.dataset.description = newRow.dataset.description || '';
+          enterRowEdit(newRow);
+          // Pre-fill location_site from the panel's site name so the saved
+          // row stays linked to the same card group.
+          newRow.dataset.locationSite = panel.dataset.siteName || '';
           return;
         }
 
-        const editBtn = e.target.closest('[data-edit-expense]');
-        if (!editBtn) return;
-        e.preventDefault();
-        const source = editBtn.closest('[data-expense-id]');
-        if (!source) return;
-        prefillFormFromCard(source);
-        openModal(true);
+        // Per-row "Edit" — switch to inline edit mode (no modal).
+        const rowEditBtn = e.target.closest('.row-edit-btn');
+        if (rowEditBtn) {
+          e.preventDefault();
+          const row = rowEditBtn.closest('.account-detail-row');
+          if (row) enterRowEdit(row);
+          return;
+        }
+
+        // "Save" inside an editing row — POST and reload.
+        const rowSaveBtn = e.target.closest('.row-save-btn');
+        if (rowSaveBtn) {
+          e.preventDefault();
+          const row = rowSaveBtn.closest('.account-detail-row');
+          if (!row) return;
+          const panel = row.closest('.site-detail-panel');
+          const siteName = (panel && panel.dataset.siteName) || '';
+          const isEdit = !!row.dataset.expenseId;
+          postRow(row, isEdit, siteName);
+          return;
+        }
+
+        // "Cancel" inside an editing row — restore or hide (for new row).
+        const rowCancelBtn = e.target.closest('.row-cancel-btn');
+        if (rowCancelBtn) {
+          e.preventDefault();
+          const row = rowCancelBtn.closest('.account-detail-row');
+          if (!row) return;
+          if (row.classList.contains('site-new-row')) {
+            row.classList.remove('is-editing');
+            row.setAttribute('hidden', '');
+            // Reset the empty row to its initial markup so the next + Add
+            // starts clean.
+            row.querySelectorAll('.cat-cell').forEach(td => { td.innerHTML = ''; });
+            const dateCell = row.querySelector('.cell-date'); if (dateCell) dateCell.innerHTML = '';
+            const remarksCell = row.querySelector('.cell-remarks'); if (remarksCell) remarksCell.innerHTML = '';
+          } else {
+            exitRowEdit(row, true);
+          }
+          return;
+        }
+
+        // Download Report — CSV export of the currently-visible rows.
+        const downloadBtn = e.target.closest('.site-detail-download');
+        if (downloadBtn) {
+          e.preventDefault();
+          const panel = downloadBtn.closest('.site-detail-panel');
+          if (panel) downloadPanelCsv(panel);
+          return;
+        }
       });
 
-      // Per-card monthly filter — the dropdown in the detail panel's
-      // header. Changing it hides/shows site-month-row by data-month.
+      // Panel-local filters: monthly view + report filters (date range,
+      // category, credit from/to). All applied through applyPanelFilters
+      // so visibility stays consistent regardless of which control fired.
       expenseGrid.addEventListener('change', function (e) {
-        const sel = e.target.closest('.site-month-picker');
-        if (!sel) return;
-        const panel = sel.closest('.site-detail-panel');
-        if (!panel) return;
-        const target = sel.value || '';
-        panel.querySelectorAll('.site-month-row').forEach(function (tr) {
-          if (!target) {
-            tr.classList.remove('site-month-hidden');
-          } else if ((tr.dataset.month || '') === target) {
-            tr.classList.remove('site-month-hidden');
-          } else {
-            tr.classList.add('site-month-hidden');
-          }
-        });
+        const target = e.target;
+        if (!target) return;
+        if (
+          target.classList.contains('site-month-picker') ||
+          target.classList.contains('site-filter-date-from') ||
+          target.classList.contains('site-filter-date-to') ||
+          target.classList.contains('site-filter-category')
+        ) {
+          const panel = target.closest('.site-detail-panel');
+          if (panel) applyPanelFilters(panel);
+        }
+      });
+      expenseGrid.addEventListener('input', function (e) {
+        const target = e.target;
+        if (!target) return;
+        if (target.classList.contains('site-filter-credit-from') ||
+            target.classList.contains('site-filter-credit-to')) {
+          const panel = target.closest('.site-detail-panel');
+          if (panel) applyPanelFilters(panel);
+        }
       });
 
       // Repaint Credit Amount when the user manually swaps Location/Site

@@ -54,16 +54,23 @@ class TransactionForm(forms.ModelForm):
             label='Account',
         )
         # Fixed-choice expense category (Income/Expense restructure) — blank is
-        # a valid value (admin may leave it unset), so explicitly mark optional.
+        # a valid value (admin may leave it unset). Replace with a free CharField
+        # so the site-detail inline table can post extended category codes (e.g.
+        # 'room', 'diesel') without a model-level choices migration.
         if 'expense_category' in self.fields:
-            self.fields['expense_category'].required = False
-        # location_site, payment_by, vendor, purpose are blank=True on the model,
-        # so they're already optional at the form level.
+            self.fields['expense_category'] = forms.CharField(
+                required=False,
+                max_length=20,
+                widget=forms.Select(choices=[('', '— Select —')] + list(Transaction.EXPENSE_CATEGORY_CHOICES)),
+            )
 
     def _post_clean(self):
         # Run normal model validation, then drop any payment_mode error caused
         # by the model's TYPE_CHOICES list — the modal lets users pick free-text
         # account names (e.g. "Bank Account 1") that aren't in the choices.
+        # Also drop any expense_category error so the site-detail inline table
+        # can post extended category codes (e.g. 'room', 'diesel') that aren't
+        # in the model's EXPENSE_CATEGORY_CHOICES list.
         super()._post_clean()
         if 'payment_mode' in self._errors:
             self._errors.pop('payment_mode', None)
@@ -73,6 +80,11 @@ class TransactionForm(forms.ModelForm):
             value = value[:20]  # respect model max_length
             self.cleaned_data['payment_mode'] = value
             self.instance.payment_mode = value
+        if 'expense_category' in self._errors:
+            self._errors.pop('expense_category', None)
+            value = (self.data.get('expense_category') or '').strip().lower()[:20]
+            self.cleaned_data['expense_category'] = value
+            self.instance.expense_category = value
 
 class CategoryForm(forms.ModelForm):
     class Meta:
