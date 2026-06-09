@@ -584,17 +584,11 @@
         white-space: nowrap !important;
       }
 
-      /* Per-site accent border (Issue 4 — color palette). Index assigned in
-         the view by hashing the site name so the same site always renders
-         with the same accent across Expense and Income modules. */
-      .expense-card-v5.site-color-0 { border-left: 4px solid #2563eb !important; }
-      .expense-card-v5.site-color-1 { border-left: 4px solid #10b981 !important; }
-      .expense-card-v5.site-color-2 { border-left: 4px solid #f59e0b !important; }
-      .expense-card-v5.site-color-3 { border-left: 4px solid #ef4444 !important; }
-      .expense-card-v5.site-color-4 { border-left: 4px solid #8b5cf6 !important; }
-      .expense-card-v5.site-color-5 { border-left: 4px solid #06b6d4 !important; }
-      .expense-card-v5.site-color-6 { border-left: 4px solid #ec4899 !important; }
-      .expense-card-v5.site-color-7 { border-left: 4px solid #84cc16 !important; }
+      /* Per-site accent border — colour is assigned in JS by hashing the
+         site name (ASCII sum mod 10) against the SITE_ACCENT_PALETTE
+         defined inside the script block at the bottom of this file.
+         Inline style with `important` is set there so it beats the base
+         `.expense-card-v5 { border: 1px solid ... !important }` shorthand. */
       /* Inline-edit From / To combobox inputs (Credit From / To columns) */
       .site-detail-table tr.is-editing td.cell-from,
       .site-detail-table tr.is-editing td.cell-to { background: #fffbeb !important; }
@@ -604,21 +598,27 @@
     <section class="expense-list-v5">
         <div class="expense-grid-v5" id="expenseGrid">
             {% for group in sites_grouped %}
-            <div class="expense-card-v5 site-color-{{ group.color_index }}" data-site-key="{{ group.site_key }}"
+            <div class="expense-card-v5" data-site-key="{{ group.site_key }}"
                  data-site-credit="{{ group.credit|stringformat:'s' }}"
                  data-expense-count="{{ group.count }}"
                  data-monthly='{{ group.monthly_json }}'
                  data-totals='{{ group.totals_json }}'
                  data-current-month="{{ current_month }}">
-                <!-- SITE HEADER -->
+                <!-- SITE HEADER — View/Hide button sits inline to the left of
+                     the month dropdown so the panel no longer needs its own
+                     action row (Fix 1). -->
                 <div class="site-card-header-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
                     <h3 class="site-card-title">{{ group.site }}</h3>
-                    <select class="card-month-picker" title="View totals for a specific month">
-                        <option value="all">All Months</option>
-                        {% for m in group.month_options %}
-                        <option value="{{ m.key }}"{% if m.key == current_month %} selected{% endif %}>{{ m.label }}</option>
-                        {% endfor %}
-                    </select>
+                    <div class="site-card-header-actions" style="display:inline-flex;gap:8px;align-items:center;flex:0 0 auto;">
+                        <button type="button" class="btn-action-v5 edit site-card-view-btn" data-view-site="{{ group.site_key }}"
+                                style="height:28px;padding:0 10px;font-size:10px;">View</button>
+                        <select class="card-month-picker" title="View totals for a specific month">
+                            <option value="all">All Months</option>
+                            {% for m in group.month_options %}
+                            <option value="{{ m.key }}"{% if m.key == current_month %} selected{% endif %}>{{ m.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
 
                 <!-- CREDIT (from Income module) / DEBIT / BALANCE -->
@@ -639,11 +639,6 @@
                     </div>
                 </div>
 
-                <!-- ACTIONS -->
-                <div class="card-actions-v5">
-                    <button type="button" class="btn-action-v5 edit" data-view-site="{{ group.site_key }}">View</button>
-                </div>
-
                 <!-- EXCEL-STYLE DETAIL PANEL — hidden by default, toggled by View.
                      Wide inline-editable layout: Date | Credit (read-only sub-cols) |
                      Food | Room | Diesel | Travel | Ticket | Misc./Others | Remarks |
@@ -653,14 +648,10 @@
                      data-site-credit-display="{% if group.credit %}+₹{{ group.credit|floatformat:2 }}{% else %}-{% endif %}"
                      hidden>
                     <div class="site-detail-wrap">
-                        <div class="site-detail-toolbar">
-                            <div class="site-detail-toolbar-row">
-                                <strong style="font-size:12px;color:#334155;">Monthly View</strong>
-                                <select class="month-picker site-month-picker">
-                                    <option value="">All months</option>
-                                </select>
-                            </div>
-                        </div>
+                        <!-- Monthly View section removed (Fix 1) — the card
+                             header's compact month dropdown above is the sole
+                             monthly selector now and also filters the rows
+                             below via the card-month-picker change handler. -->
                         <div style="overflow-x:auto;">
                             <table class="site-detail-table">
                                 <thead>
@@ -2114,6 +2105,20 @@
             card.classList.add('is-expanded');
             viewBtn.textContent = 'Hide';
             populateMonthPicker(panel);
+            // Fix 1 — apply the card-header month filter to the panel rows
+            // immediately on open so they match the currently-selected month
+            // (the in-panel "Monthly View" picker has been removed).
+            const _cardSel = card.querySelector('.card-month-picker');
+            const _mv = _cardSel ? (_cardSel.value || '') : '';
+            const _showAll = !_mv || _mv === 'all';
+            panel.querySelectorAll('.site-month-row').forEach(function (tr) {
+              if (tr.classList.contains('site-new-row')) return;
+              if (_showAll || (tr.dataset.month || '') === _mv) {
+                tr.classList.remove('site-month-hidden');
+              } else {
+                tr.classList.add('site-month-hidden');
+              }
+            });
           } else {
             panel.setAttribute('hidden', '');
             card.classList.remove('is-expanded');
@@ -2274,7 +2279,23 @@
         if (target.classList.contains('card-month-picker')) {
           const card = target.closest('.expense-card-v5');
           if (!card) return;
-          applyCardMonthlySummary(card, target.value || '');
+          const monthVal = target.value || '';
+          applyCardMonthlySummary(card, monthVal);
+          // Fix 1 — also filter the detail-panel rows by month so the card
+          // header dropdown is the single source of truth (the redundant
+          // "Monthly View" picker inside the panel has been removed).
+          const panel = card.querySelector('.site-detail-panel');
+          if (panel) {
+            const showAll = !monthVal || monthVal === 'all';
+            panel.querySelectorAll('.site-month-row').forEach(function (tr) {
+              if (tr.classList.contains('site-new-row')) return;
+              if (showAll || (tr.dataset.month || '') === monthVal) {
+                tr.classList.remove('site-month-hidden');
+              } else {
+                tr.classList.add('site-month-hidden');
+              }
+            });
+          }
           return;
         }
       });
@@ -2336,11 +2357,40 @@
         applyCardMonthlySummary(card, sel.value || '');
       });
     }
+
+    // ── Fix 2 — per-site colour accent (Expense Manager only) ────────
+    // Fixed palette of 10 distinct accents. Each card's slot is the ASCII
+    // sum of its site name modulo the palette length, so the same site
+    // (including "(No Site)") always lands on the same colour. Applied as
+    // an inline `border-left` with !important so it beats the base
+    // `.expense-card-v5 { border: ... !important }` shorthand.
+    const SITE_ACCENT_PALETTE = [
+      '#E57373', '#64B5F6', '#81C784', '#FFB74D', '#BA68C8',
+      '#4DB6AC', '#F06292', '#A1887F', '#90A4AE', '#FFF176'
+    ];
+    function applySiteAccentColors() {
+      if (!expenseGrid) return;
+      expenseGrid.querySelectorAll('.expense-card-v5').forEach(function (card) {
+        const titleEl = card.querySelector('.site-card-title');
+        const name = (titleEl ? titleEl.textContent : '').trim();
+        let sum = 0;
+        for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+        const idx = SITE_ACCENT_PALETTE.length
+          ? (sum % SITE_ACCENT_PALETTE.length)
+          : 0;
+        card.style.setProperty('border-left', '4px solid ' + SITE_ACCENT_PALETTE[idx], 'important');
+      });
+    }
+
     // Run once on load so the tiles reflect the default-selected current month.
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initCardMonthSummaries);
+      document.addEventListener('DOMContentLoaded', function () {
+        initCardMonthSummaries();
+        applySiteAccentColors();
+      });
     } else {
       initCardMonthSummaries();
+      applySiteAccentColors();
     }
 
     function populateMonthPicker(panel) {
