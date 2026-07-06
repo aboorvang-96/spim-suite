@@ -187,12 +187,33 @@ def load_attendance(request):
         'no_week_off':  'No Week Off',
     }
 
+    # Display-only translation for auto-marked Sundays. The lazy
+    # ensure_sunday_holidays backfill writes rows with
+    # (status='holiday', source='admin', created_by=NULL) — the same
+    # fingerprint api.views.mobile_attendance already uses to detect
+    # auto-fills. When that fingerprint matches on a Sunday date, surface
+    # the display label as 'Sunday' so the Suite UI (Summary / drawer /
+    # calendar) shows "Sunday" by default. Manual admin edits set
+    # created_by via save_attendance, so any admin override (including
+    # explicitly picking Holiday for a Sunday) falls through unchanged.
+    # DB rows, choices, payroll and the mobile API are all untouched.
+    def _display_status(r):
+        label = STATUS_DISPLAY.get(r.status, 'Present')
+        if (
+            label == 'Holiday'
+            and r.source == 'admin'
+            and r.created_by_id is None
+            and r.date.weekday() == 6
+        ):
+            return 'Sunday'
+        return label
+
     records = [{
         'empId':   r.employee.employee_id or '',
         'empPk':   r.employee.pk,  # internal lookup key — never displayed as EMP ID
         'empName': r.employee.name,
         'date':    r.date.isoformat(),
-        'status':  STATUS_DISPLAY.get(r.status, 'Present'),
+        'status':  _display_status(r),
         # Site / Working Site — defensive getattr so this view stays alive
         # even before migration 0004 has been applied to the Suite DB.
         'site':        getattr(r, 'site',         '') or '',

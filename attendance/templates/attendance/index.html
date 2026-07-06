@@ -118,6 +118,7 @@
 .sb-leave     { background: #fef3c7; color: #78350f; }
 .sb-halfday   { background: #dbeafe; color: #0c2d6b; }
 .sb-holiday   { background: #e9d5ff; color: #581c87; }
+.sb-sunday    { background: #f1f5f9; color: #475569; }
 .sb-weeklyoff { background: #e2e8f0; color: #1e293b; }
 
 /* ── Summary table ── */
@@ -469,6 +470,7 @@
                             <th>Absent</th>
                             <th>Leave</th>
                             <th>Holiday</th>
+                            <th>Sunday</th>
                             <th>Weekly Off</th>
                             <th>Half Day</th>
                         </tr>
@@ -1346,7 +1348,12 @@ function editAttendance(idx) {
     document.getElementById('editEmployee').value   = att.empId + ' / ' + att.empName;
     document.getElementById('editWorkingSite').value = att.workingSite || '';
     document.getElementById('editDate').value        = att.date;
-    document.getElementById('editStatus').value      = STATUS_OPTIONS.includes(att.status) ? att.status : 'Present';
+    // Auto-marked Sundays surface as 'Sunday' (a display-only value not
+    // present in STATUS_OPTIONS). Map back to 'Holiday' for the edit
+    // dropdown so opening the modal on an auto-Sunday cell preserves
+    // the pre-translation default and admin's Save doesn't silently
+    // flip the row to 'Present'.
+    document.getElementById('editStatus').value      = STATUS_OPTIONS.includes(att.status) ? att.status : (att.status === 'Sunday' ? 'Holiday' : 'Present');
     document.getElementById('editRemarks').value     = att.remarks || '';
     document.getElementById('editModal').classList.add('active');
 }
@@ -1484,8 +1491,12 @@ function _renderSummary() {
 
     const byDate = {};
     records.forEach(r => {
-        if (!byDate[r.date]) byDate[r.date] = { Present:0, Absent:0, Leave:0, Holiday:0, 'Weekly Off':0, 'Half Day':0 };
+        if (!byDate[r.date]) byDate[r.date] = { Present:0, Absent:0, Leave:0, Holiday:0, Sunday:0, 'Weekly Off':0, 'Half Day':0 };
         const s = r.status || 'Present';
+        // The backend (attendance/views.py::load_attendance) already
+        // labels auto-marked Sundays as 'Sunday' and admin-selected
+        // holidays as 'Holiday', so the Summary just counts whatever
+        // label the row carries — no re-detection needed here.
         if (byDate[r.date][s] !== undefined) byDate[r.date][s]++;
         else byDate[r.date][s] = 1;
     });
@@ -1504,6 +1515,7 @@ function _renderSummary() {
             <td><span class="sb sb-absent">${v.Absent||0}</span></td>
             <td><span class="sb sb-leave">${v.Leave||0}</span></td>
             <td><span class="sb sb-holiday">${v.Holiday||0}</span></td>
+            <td><span class="sb sb-sunday">${v.Sunday||0}</span></td>
             <td><span class="sb sb-weeklyoff">${v['Weekly Off']||0}</span></td>
             <td><span class="sb sb-halfday">${v['Half Day']||0}</span></td>
         `;
@@ -1560,12 +1572,15 @@ function perDay(monthlySalary, cycleDays) {
 }
 
 /* Per-cell earning — pay-per-status weights per the business rule.
-   Sundays are auto-marked Holiday upstream → they pay full. */
+   The backend (attendance/views.py::load_attendance) surfaces auto-marked
+   Sundays as status='Sunday' for display purposes; the pay weight below
+   is identical to 'Holiday' so cycle totals stay numerically unchanged. */
 function dailyEarning(status, baseSalary, cycleDays) {
     const pd = perDay(baseSalary, cycleDays);
     if (status === 'Present')    return pd;
     if (status === 'Half Day')   return pd / 2;
     if (status === 'Holiday')    return pd;
+    if (status === 'Sunday')     return pd;
     if (status === 'Week Off')   return pd;
     if (status === 'Weekly Off') return pd;
     if (status === 'Leave')      return 0;
@@ -1588,6 +1603,12 @@ function computeCycleEarnings(records, baseSalary, cycleDays) {
         switch (r.status) {
             case 'Present':     present++;  break;
             case 'Holiday':     holiday++;  break;
+            // Auto-marked Sundays surface as status='Sunday' (display-only
+            // translation done in attendance/views.py::load_attendance).
+            // Business rule for pay is unchanged, so they contribute to
+            // paidDays just like Holiday did before — this keeps the
+            // on-screen cycle total identical to the payslip total.
+            case 'Sunday':      holiday++;  break;
             case 'Half Day':    half++;     break;
             case 'Week Off':
             case 'Weekly Off':  weekOff++;  break;
@@ -1824,13 +1845,13 @@ function openDateDetail(dateStr) {
         return;
     }
 
-    const groups = { Present: [], 'Half Day': [], Leave: [], Holiday: [], 'Weekly Off': [], Other: [] };
+    const groups = { Present: [], 'Half Day': [], Leave: [], Holiday: [], Sunday: [], 'Weekly Off': [], Other: [] };
     records.forEach(r => {
         const g = groups[r.status] !== undefined ? r.status : 'Other';
         groups[g].push(r);
     });
 
-    const slugMap = { Present:'present', 'Half Day':'halfday', Leave:'leave', Holiday:'holiday', 'Weekly Off':'weeklyoff', Other:'absent' };
+    const slugMap = { Present:'present', 'Half Day':'halfday', Leave:'leave', Holiday:'holiday', Sunday:'sunday', 'Weekly Off':'weeklyoff', Other:'absent' };
 
     let html = '';
     Object.entries(groups).forEach(([grp, rows]) => {
