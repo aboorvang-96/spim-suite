@@ -603,6 +603,7 @@ let editingIndex      = null;
 let drawerEmpId       = null;
 let drawerEmpData     = null;
 let editAttendanceMode = false;
+var _serverMinDate = null; // Earliest date fetched from server (for cache-skip logic)
 
 /* ═══════════════════════════════════════════════
    INIT
@@ -689,6 +690,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             });
             localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(existing));
+            _serverMinDate = cycleStart;
             loadBulkAttendanceTable();
         })
         .catch(function() { loadBulkAttendanceTable(); });
@@ -729,7 +731,30 @@ function switchTab(tabName, el) {
     document.querySelectorAll('.tab-link').forEach(l => l.classList.remove('active'));
     document.getElementById('tab-' + tabName).classList.remove('hidden');
     el.classList.add('active');
-    if (tabName === 'summary') generateSummary();
+    if (tabName === 'summary') {
+        // Default view = latest 3 attendance cycles (26→25 windows) in
+        // descending order. Only auto-applied when the user hasn't set a
+        // custom filter range — an active From/To must not be overwritten.
+        var fromEl = document.getElementById('sumFromDate');
+        var toEl   = document.getElementById('sumToDate');
+        if (!fromEl.value && !toEl.value) applyDefaultSummaryRange();
+        generateSummary();
+    }
+}
+
+/* Default Summary window = latest 3 attendance cycles (26→25).
+   Reuses getCycles() so the boundary matches the drawer cycle list —
+   no separate "3 calendar months" heuristic. Descending order is
+   preserved by _renderSummary's sort().reverse() step. */
+function applyDefaultSummaryRange() {
+    var cycles = getCycles();
+    if (!cycles || !cycles.length) return;
+    var latest   = cycles[0];
+    var earliest = cycles[Math.min(2, cycles.length - 1)];
+    var fromEl = document.getElementById('sumFromDate');
+    var toEl   = document.getElementById('sumToDate');
+    if (fromEl) fromEl.value = earliest.start;
+    if (toEl)   toEl.value   = latest.end;
 }
 
 /* ═══════════════════════════════════════════════
@@ -1377,9 +1402,62 @@ function deleteAttendance(idx) {
 }
 
 /* ═══════════════════════════════════════════════
+   SERVER FETCH FOR HISTORICAL WINDOWS
+   The initial DOMContentLoaded loader only pulls the current 26→25
+   cycle. When Summary or the Employee drawer needs earlier dates
+   (previous month, older cycle), the DB rows aren't in localStorage
+   yet — so the table/calendar renders empty. This helper fetches the
+   missing window on demand, merges into localStorage, then calls the
+   supplied callback so the caller can re-render.
+═══════════════════════════════════════════════ */
+function ensureServerDataFetched(fromDate, toDate, cb) {
+    if (!fromDate) { cb(); return; }
+    // Skip fetch when the earliest requested date is already covered by
+    // an earlier server load in this session.
+    if (_serverMinDate && fromDate >= _serverMinDate) { cb(); return; }
+    var url = '/attendance/load/?date_from=' + encodeURIComponent(fromDate);
+    if (toDate) url += '&date_to=' + encodeURIComponent(toDate);
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var existing = loadAttendance();
+        // Drop cached rows inside the freshly-fetched window so DB stays authoritative.
+        var effectiveTo = toDate || '9999-12-31';
+        existing = existing.filter(function(r) {
+            return !(r.date >= fromDate && r.date <= effectiveTo);
+        });
+        (data.records || []).forEach(function(r) {
+            var hrs = r.status === 'Present' ? '8.00' : (r.status === 'Half Day' ? '4.00' : '0.00');
+            existing.push({
+                empId: r.empId,
+                empPk: r.empPk ? String(r.empPk) : '',
+                empName: r.empName || '',
+                mainLocation: '',
+                site:        r.site        || '',
+                workingSite: r.workingSite || '',
+                date: r.date, status: r.status, remarks: '', hours: hrs, baseSalary: 0
+            });
+        });
+        localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(existing));
+        // Track the earliest date we've now fetched so subsequent calls
+        // for the same or narrower window skip the network round trip.
+        if (!_serverMinDate || fromDate < _serverMinDate) _serverMinDate = fromDate;
+        cb();
+    })
+    .catch(function() { cb(); });
+}
+
+/* ═══════════════════════════════════════════════
    SUMMARY (Task 6) — Daily table: Date | Present | Absent | Leave | Holiday | Half Day
 ═══════════════════════════════════════════════ */
 function generateSummary() {
+    var from = document.getElementById('sumFromDate').value;
+    var to   = document.getElementById('sumToDate').value;
+    // Fetch any historical data we don't have yet, then render.
+    ensureServerDataFetched(from, to, _renderSummary);
+}
+
+function _renderSummary() {
     const from    = document.getElementById('sumFromDate').value;
     const to      = document.getElementById('sumToDate').value;
     const empId   = (document.getElementById('sumEmpId')   ? document.getElementById('sumEmpId').value.trim()   : '').toLowerCase();
@@ -1434,10 +1512,12 @@ function generateSummary() {
 }
 
 function clearSummaryFilters() {
-    document.getElementById('sumFromDate').value = '';
-    document.getElementById('sumToDate').value   = '';
+    // Clearing filters restores the default latest-3-cycles view — the
+    // Summary is a dashboard, not an empty search box, so From/To are
+    // reseeded with the same default applyDefaultSummaryRange() uses.
     const ei = document.getElementById('sumEmpId');   if (ei)   ei.value = '';
     const en = document.getElementById('sumEmpName'); if (en)   en.value = '';
+    applyDefaultSummaryRange();
     generateSummary();
 }
 
@@ -1556,6 +1636,16 @@ function renderDrawerContent() {
     const cycle  = cycles[cycIdx];
     if (!cycle) return;
 
+    // Fetch historical cycles on demand — the initial page load only
+    // populates the current 26→25 cycle in localStorage, so older cycles
+    // would otherwise render as an empty calendar with no salary figures.
+    ensureServerDataFetched(cycle.start, cycle.end, function() {
+        _renderDrawerContentInner(cycle);
+    });
+}
+
+function _renderDrawerContentInner(cycle) {
+    if (!drawerEmpData) return;
     const { empId, empName, baseSalary } = drawerEmpData;
     const records  = loadAttendance().filter(r => r.empId === empId && r.date >= cycle.start && r.date <= cycle.end);
     const recMap   = {};
