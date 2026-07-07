@@ -5,7 +5,7 @@
 {% block active_attendance %}active{% endblock %}
 
 {% block head %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 /* ── Layout ── */
@@ -2146,53 +2146,29 @@ function _buildRegisterMatrix(cycle) {
    already uses; if localStorage already has employees it fires cb
    immediately with no network round-trip. */
 function _ensureEmployeesLoaded(cb) {
-    var cached = loadEmployees();
-    console.log('[Register] _ensureEmployeesLoaded — cached employees =', cached.length);
-    if (cached.length > 0) { cb(); return; }
-    console.log('[Register] _ensureEmployeesLoaded — fetching /employees/api/');
+    if (loadEmployees().length > 0) { cb(); return; }
     fetch('/employees/api/?t=' + Date.now(), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
         var parsed = data.employees || [];
-        console.log('[Register] _ensureEmployeesLoaded — server returned', parsed.length, 'employees');
         if (parsed.length > 0) localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(parsed));
         cb();
     })
-    .catch(function(err) {
-        console.log('[Register] _ensureEmployeesLoaded — fetch FAILED:', err);
-        cb();
-    });
+    .catch(function() { cb(); });
 }
 
 function exportRegisterExcel() {
-    console.log('[Register] step 1 — exportRegisterExcel entered');
-    if (!window.XLSX) {
-        console.log('[Register] step 1a — ABORT: window.XLSX is undefined');
-        return;
-    }
+    if (!window.XLSX) return;
     const cycle = _selectedRegisterCycle();
-    console.log('[Register] step 2 — selected cycle:', cycle);
-    if (!cycle) {
-        console.log('[Register] step 2a — ABORT: no cycle');
-        return;
-    }
+    if (!cycle) return;
     // Guard the two prerequisites — employees list and cycle-window
     // attendance rows — before building the matrix. Nesting the two
     // existing helpers avoids duplicating any fetch logic.
-    console.log('[Register] step 3 — calling _ensureEmployeesLoaded');
     _ensureEmployeesLoaded(function() {
-    console.log('[Register] step 4 — _ensureEmployeesLoaded callback fired; loadEmployees().length =', loadEmployees().length);
-    console.log('[Register] step 5 — calling ensureServerDataFetched for', cycle.start, '→', cycle.end);
     ensureServerDataFetched(cycle.start, cycle.end, function() {
-        console.log('[Register] step 6 — ensureServerDataFetched callback fired');
-        console.log('[Register] step 7 — loadAttendance().length =', loadAttendance().length);
         const matrix = _buildRegisterMatrix(cycle);
-        console.log('[Register] step 8 — matrix.rows.length =', matrix.rows.length, '| matrix.dates.length =', matrix.dates.length);
-        if (matrix.rows.length === 0) {
-            console.log('[Register] step 8a — matrix.rows is EMPTY. Employees array =', loadEmployees());
-        }
         const dates = matrix.dates;
         const numDateCols = dates.length;
         const remarksColIdx = numDateCols + 1;
@@ -2242,13 +2218,7 @@ function exportRegisterExcel() {
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Register');
-        console.log('[Register] step 9 — about to call XLSX.writeFile; aoa rows =', aoa.length, '| cols =', aoa[0] ? aoa[0].length : 0);
-        try {
-            XLSX.writeFile(wb, 'attendance_register_' + cycle.start + '_to_' + cycle.end + '.xlsx');
-            console.log('[Register] step 10 — XLSX.writeFile returned without throwing');
-        } catch (err) {
-            console.log('[Register] step 10 — XLSX.writeFile THREW:', err);
-        }
+        XLSX.writeFile(wb, 'attendance_register_' + cycle.start + '_to_' + cycle.end + '.xlsx');
     });
     });
 }
