@@ -461,6 +461,20 @@
                 </div>
             </div>
 
+            <!-- Monthly Attendance Register export block. Reuses the same
+                 26→25 cycle list as the drawer via getCycles(); no new
+                 date filter and no new API. -->
+            <div class="sum-filters" style="margin-top:0.5rem;">
+                <div class="fg">
+                    <label for="regCycleSelect">Attendance Cycle</label>
+                    <select id="regCycleSelect" class="form-select w-full"></select>
+                </div>
+                <div style="display:flex; align-items:flex-end; gap:0.5rem;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="exportRegisterExcel()">Download Excel</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="exportRegisterPDF()">Download PDF</button>
+                </div>
+            </div>
+
             <div class="att-table-wrap">
                 <table class="att-table" id="summaryTable">
                     <thead>
@@ -756,6 +770,10 @@ function switchTab(tabName, el) {
         var fromEl = document.getElementById('sumFromDate');
         var toEl   = document.getElementById('sumToDate');
         if (!fromEl.value && !toEl.value) applyDefaultSummaryRange();
+        // Populate the Attendance Register cycle selector each time the
+        // Summary tab opens so it reflects the freshest getCycles() list.
+        // Default selection = index 0 = current cycle.
+        buildRegisterCycleOptions();
         generateSummary();
     }
 }
@@ -2011,6 +2029,204 @@ function exportDrawerExcel() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
     XLSX.writeFile(wb, empId + '_attendance_' + cycle.start + '.xlsx');
+}
+
+/* ═══════════════════════════════════════════════
+   MONTHLY ATTENDANCE REGISTER — matrix export
+   One row per employee, one column per date in the selected 26→25 cycle,
+   Remarks column shows "Total Present Days: XX". Reuses getCycles(),
+   loadEmployees(), loadAttendance(), ensureServerDataFetched(), and the
+   XLSX / html2pdf libraries already loaded for the drawer exports.
+═══════════════════════════════════════════════ */
+const REGISTER_STATUS_CODE = {
+    'Present':     'P',
+    'Absent':      'A',
+    'Half Day':    'HD',
+    'Leave':       'L',
+    'Holiday':     'H',
+    'Sunday':      'S',
+    'Weekly Off':  'WO',
+    'No Week Off': 'NWO'
+};
+
+function buildRegisterCycleOptions() {
+    const sel = document.getElementById('regCycleSelect');
+    if (!sel) return;
+    const cycles = getCycles();
+    sel.innerHTML = cycles.map((c, i) => `<option value="${i}">${escHtml(c.label)}</option>`).join('');
+    // Default = index 0 = current cycle (matches the drawer's default too).
+    if (cycles.length) sel.value = '0';
+}
+
+function _selectedRegisterCycle() {
+    const cycles = getCycles();
+    if (!cycles.length) return null;
+    const sel = document.getElementById('regCycleSelect');
+    const idx = (sel && sel.value !== '') ? (parseInt(sel.value) || 0) : 0;
+    return cycles[Math.min(idx, cycles.length - 1)] || cycles[0];
+}
+
+function _buildRegisterMatrix(cycle) {
+    const employees = loadEmployees();
+    const records = loadAttendance().filter(r =>
+        r.date >= cycle.start && r.date <= cycle.end
+    );
+    // Index attendance rows by (empId or empPk fallback) → { date: status }.
+    const recMap = {};
+    records.forEach(r => {
+        const key = (r.empId && String(r.empId)) || String(r.empPk || '');
+        if (!key) return;
+        if (!recMap[key]) recMap[key] = {};
+        recMap[key][r.date] = r.status;
+    });
+
+    // Enumerate every date in the cycle window as { iso, dom }.
+    const dates = [];
+    let cur = new Date(cycle.start + 'T00:00:00');
+    const end = new Date(cycle.end + 'T00:00:00');
+    while (cur <= end) {
+        dates.push({ iso: dateToStr(cur), dom: cur.getDate() });
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    const rows = employees.map(emp => {
+        const key = (emp.id && String(emp.id)) || String(emp.pk || '');
+        const empMap = recMap[key] || {};
+        let presentCount = 0;
+        const cells = dates.map(d => {
+            const s = empMap[d.iso] || '';
+            if (s === 'Present') presentCount++;
+            return REGISTER_STATUS_CODE[s] || '';
+        });
+        return {
+            label: (emp.id || '') + ' / ' + (emp.name || ''),
+            cells: cells,
+            present: presentCount
+        };
+    });
+
+    return { dates: dates, rows: rows };
+}
+
+function exportRegisterExcel() {
+    if (!window.XLSX) return;
+    const cycle = _selectedRegisterCycle();
+    if (!cycle) return;
+    // Ensure the selected cycle's rows are cached locally (existing helper —
+    // pulls from /attendance/load/ if not yet in localStorage).
+    ensureServerDataFetched(cycle.start, cycle.end, function() {
+        const matrix = _buildRegisterMatrix(cycle);
+        const dates = matrix.dates;
+        const numDateCols = dates.length;
+        const remarksColIdx = numDateCols + 1;
+        const lastColIdx = numDateCols + 1;   // EMP col + N date cols + Remarks col
+        // Pad an array of `n` empty strings so the merged title rows span
+        // the full width when SheetJS materialises them.
+        const padBlanks = n => Array.from({ length: n }, () => '');
+
+        // ── Title rows (span every column) ──
+        const titleRow = ['MONTHLY ATTENDANCE REGISTER', ...padBlanks(lastColIdx)];
+        const cycleRow = ['Attendance Cycle: ' + cycle.label, ...padBlanks(lastColIdx)];
+
+        // ── Two-row header per the register format ──
+        // Header row A: [EMP ID / EMP NAME, Attendance Dates, "", "", …, Remarks]
+        const headerA = ['EMP ID / EMP NAME', 'Attendance Dates'];
+        for (let i = 1; i < numDateCols; i++) headerA.push('');
+        headerA.push('Remarks');
+        // Header row B: ["", 26, 27, …, 25, ""]
+        const headerB = [''];
+        dates.forEach(d => headerB.push(d.dom));
+        headerB.push('');
+
+        const aoa = [titleRow, cycleRow, headerA, headerB];
+        matrix.rows.forEach(r => {
+            aoa.push([r.label, ...r.cells, 'Total Present Days: ' + r.present]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        // Cell merges — title rows first, then the two-row register header:
+        //   Row 0 A:end → "MONTHLY ATTENDANCE REGISTER"
+        //   Row 1 A:end → "Attendance Cycle: <label>"
+        //   Rows 2..3 A → EMP ID / EMP NAME header (merged vertically)
+        //   Row 2 B..last-date-col → Attendance Dates
+        //   Rows 2..3 remarks col → Remarks (merged vertically)
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: lastColIdx } },
+            { s: { r: 2, c: 0 }, e: { r: 3, c: 0 } },
+            { s: { r: 2, c: 1 }, e: { r: 2, c: numDateCols } },
+            { s: { r: 2, c: remarksColIdx }, e: { r: 3, c: remarksColIdx } }
+        ];
+        // Column widths: label wide, date cells narrow, remarks wide.
+        const colWidths = [{ wch: 26 }];
+        for (let i = 0; i < numDateCols; i++) colWidths.push({ wch: 5 });
+        colWidths.push({ wch: 26 });
+        ws['!cols'] = colWidths;
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Register');
+        XLSX.writeFile(wb, 'attendance_register_' + cycle.start + '_to_' + cycle.end + '.xlsx');
+    });
+}
+
+function exportRegisterPDF() {
+    if (!window.html2pdf) return;
+    const cycle = _selectedRegisterCycle();
+    if (!cycle) return;
+    ensureServerDataFetched(cycle.start, cycle.end, function() {
+        const matrix = _buildRegisterMatrix(cycle);
+        const dates = matrix.dates;
+        const numDateCols = dates.length;
+
+        // Build the register as an HTML table with a two-row header using
+        // rowspan / colspan (mirrors the Excel merge layout above).
+        let html = '<div style="padding:16px; font-family:Arial, sans-serif; color:#111;">';
+        html += '<h2 style="text-align:center; margin:0 0 6px; letter-spacing:0.03em;">MONTHLY ATTENDANCE REGISTER</h2>';
+        html += '<p style="text-align:center; margin:0 0 12px; font-size:11px;">Attendance Cycle: ' + escHtml(cycle.label) + '</p>';
+        html += '<table style="width:100%; border-collapse:collapse; font-size:9px;">';
+        html += '<thead>';
+        html += '<tr>';
+        html += '<th rowspan="2" style="border:1px solid #333; padding:4px; background:#f1f5f9;">EMP ID / EMP NAME</th>';
+        html += '<th colspan="' + numDateCols + '" style="border:1px solid #333; padding:4px; background:#f1f5f9;">Attendance Dates</th>';
+        html += '<th rowspan="2" style="border:1px solid #333; padding:4px; background:#f1f5f9;">Remarks</th>';
+        html += '</tr>';
+        html += '<tr>';
+        dates.forEach(d => {
+            html += '<th style="border:1px solid #333; padding:2px; background:#f8fafc;">' + d.dom + '</th>';
+        });
+        html += '</tr>';
+        html += '</thead><tbody>';
+        matrix.rows.forEach(r => {
+            html += '<tr>';
+            html += '<td style="border:1px solid #333; padding:3px; font-weight:600; white-space:nowrap;">' + escHtml(r.label) + '</td>';
+            r.cells.forEach(c => {
+                html += '<td style="border:1px solid #333; padding:2px; text-align:center;">' + escHtml(c) + '</td>';
+            });
+            html += '<td style="border:1px solid #333; padding:3px; white-space:nowrap;">Total Present Days: ' + r.present + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+
+        // Off-screen container so html2pdf can rasterize at full width.
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.left = '-10000px';
+        wrap.style.top = '0';
+        wrap.style.width = '1400px';
+        wrap.innerHTML = html;
+        document.body.appendChild(wrap);
+
+        html2pdf().set({
+            margin: 0.3,
+            filename: 'attendance_register_' + cycle.start + '_to_' + cycle.end + '.pdf',
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+        }).from(wrap).save().then(function() {
+            try { document.body.removeChild(wrap); } catch (e) {}
+        }).catch(function() {
+            try { document.body.removeChild(wrap); } catch (e) {}
+        });
+    });
 }
 
 /* ═══════════════════════════════════════════════
