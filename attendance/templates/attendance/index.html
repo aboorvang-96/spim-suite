@@ -467,7 +467,7 @@
             <div class="sum-filters" style="margin-top:0.5rem;">
                 <div class="fg">
                     <label for="regCycleSelect">Attendance Cycle</label>
-                    <select id="regCycleSelect" class="form-select w-full"></select>
+                    <select id="regCycleSelect" class="form-select w-full" onchange="onRegisterCycleChange()"></select>
                 </div>
                 <div style="display:flex; align-items:flex-end; gap:0.5rem;">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="exportRegisterExcel()">Download Excel</button>
@@ -764,33 +764,41 @@ function switchTab(tabName, el) {
     // browser tab and doesn't leak between sessions.
     try { sessionStorage.setItem('attTab', tabName); } catch (e) {}
     if (tabName === 'summary') {
-        // Default view = latest 3 attendance cycles (26→25 windows) in
-        // descending order. Only auto-applied when the user hasn't set a
-        // custom filter range — an active From/To must not be overwritten.
+        // Populate the Attendance Register cycle selector FIRST so any
+        // sessionStorage-persisted cycle index is restored before we
+        // sync From/To. On a fresh session the dropdown defaults to
+        // index 0 (current cycle).
+        buildRegisterCycleOptions();
         var fromEl = document.getElementById('sumFromDate');
         var toEl   = document.getElementById('sumToDate');
-        if (!fromEl.value && !toEl.value) applyDefaultSummaryRange();
-        // Populate the Attendance Register cycle selector each time the
-        // Summary tab opens so it reflects the freshest getCycles() list.
-        // Default selection = index 0 = current cycle.
-        buildRegisterCycleOptions();
+        // Only auto-populate when the user hasn't set a custom range
+        // in-tab. Mirror From/To to the (possibly restored) selected
+        // cycle so dropdown, fields, and rendered table are consistent.
+        if (!fromEl.value && !toEl.value) {
+            var cycle = _selectedRegisterCycle();
+            if (cycle) {
+                fromEl.value = cycle.start;
+                toEl.value   = cycle.end;
+            } else {
+                applyDefaultSummaryRange();
+            }
+        }
         generateSummary();
     }
 }
 
-/* Default Summary window = latest 3 attendance cycles (26→25).
-   Reuses getCycles() so the boundary matches the drawer cycle list —
-   no separate "3 calendar months" heuristic. Descending order is
-   preserved by _renderSummary's sort().reverse() step. */
+/* Default Summary window = the CURRENT attendance cycle (26→25).
+   Reuses getCycles()[0] so the boundary matches the drawer/register
+   dropdown default. Descending order is preserved by _renderSummary's
+   sort().reverse() step. */
 function applyDefaultSummaryRange() {
     var cycles = getCycles();
     if (!cycles || !cycles.length) return;
-    var latest   = cycles[0];
-    var earliest = cycles[Math.min(2, cycles.length - 1)];
+    var current = cycles[0];
     var fromEl = document.getElementById('sumFromDate');
     var toEl   = document.getElementById('sumToDate');
-    if (fromEl) fromEl.value = earliest.start;
-    if (toEl)   toEl.value   = latest.end;
+    if (fromEl) fromEl.value = current.start;
+    if (toEl)   toEl.value   = current.end;
 }
 
 /* ═══════════════════════════════════════════════
@@ -1522,14 +1530,14 @@ function _renderSummary() {
     const empName = (document.getElementById('sumEmpName') ? document.getElementById('sumEmpName').value.trim() : '').toLowerCase();
     let records   = loadAttendance();
 
-    // Blank From/To → fall back to the latest 3 attendance cycles. This
+    // Blank From/To → fall back to the CURRENT attendance cycle. This
     // keeps the "Clear" button honest (fields visibly become empty) while
     // the Summary still renders the default dashboard view instead of
     // dumping the full attendance archive.
     if (!from && !to) {
         const cycles = getCycles();
         if (cycles && cycles.length) {
-            from = cycles[Math.min(2, cycles.length - 1)].start;
+            from = cycles[0].start;
             to   = cycles[0].end;
         }
     }
@@ -1587,14 +1595,18 @@ function _renderSummary() {
 }
 
 function clearSummaryFilters() {
-    // Clearing empties all four filter fields so the user gets a visible
-    // reset even when From/To were already at the default range. The
-    // default latest-3-cycles view is still shown afterwards — the
-    // fallback in _renderSummary treats empty From/To as "last 3 cycles".
-    const fd = document.getElementById('sumFromDate'); if (fd) fd.value = '';
-    const td = document.getElementById('sumToDate');   if (td) td.value = '';
+    // Clear reverts the Summary to the CURRENT attendance cycle:
+    // - Employee filters empty.
+    // - Cycle dropdown reset to index 0 and any persisted selection
+    //   dropped so a subsequent refresh stays on the current cycle.
+    // - From/To repopulated (not left blank) so dropdown, fields, and
+    //   rendered table are all consistent on the current cycle.
     const ei = document.getElementById('sumEmpId');    if (ei) ei.value = '';
     const en = document.getElementById('sumEmpName');  if (en) en.value = '';
+    const sel = document.getElementById('regCycleSelect');
+    if (sel && sel.options.length) sel.value = '0';
+    try { sessionStorage.removeItem('attCycleIdx'); } catch (e) {}
+    applyDefaultSummaryRange();
     generateSummary();
 }
 
@@ -2054,8 +2066,19 @@ function buildRegisterCycleOptions() {
     if (!sel) return;
     const cycles = getCycles();
     sel.innerHTML = cycles.map((c, i) => `<option value="${i}">${escHtml(c.label)}</option>`).join('');
-    // Default = index 0 = current cycle (matches the drawer's default too).
-    if (cycles.length) sel.value = '0';
+    if (!cycles.length) return;
+    // Restore the previously-selected cycle (persisted by
+    // onRegisterCycleChange) so refresh keeps the user's choice.
+    // Defaults to 0 (current cycle) on a fresh session or invalid save.
+    let idx = 0;
+    try {
+        const saved = sessionStorage.getItem('attCycleIdx');
+        if (saved !== null && saved !== '') {
+            const parsed = parseInt(saved);
+            if (!isNaN(parsed) && parsed >= 0 && parsed < cycles.length) idx = parsed;
+        }
+    } catch (e) {}
+    sel.value = String(idx);
 }
 
 function _selectedRegisterCycle() {
@@ -2064,6 +2087,27 @@ function _selectedRegisterCycle() {
     const sel = document.getElementById('regCycleSelect');
     const idx = (sel && sel.value !== '') ? (parseInt(sel.value) || 0) : 0;
     return cycles[Math.min(idx, cycles.length - 1)] || cycles[0];
+}
+
+/* Cycle-picker change handler — mirrors the selected 26→25 cycle into
+   the Summary's From/To fields and refreshes the daily table so it
+   shows only that cycle's dates. #regCycleSelect remains the source of
+   truth for the export functions; this handler simply keeps the Summary
+   view in sync with whatever cycle the user is about to export. */
+function onRegisterCycleChange() {
+    const cycle = _selectedRegisterCycle();
+    if (!cycle) return;
+    const fromEl = document.getElementById('sumFromDate');
+    const toEl   = document.getElementById('sumToDate');
+    if (fromEl) fromEl.value = cycle.start;
+    if (toEl)   toEl.value   = cycle.end;
+    // Persist the selected cycle so a refresh restores the same view
+    // (dropdown, From/To, and rendered table stay in sync).
+    try {
+        const sel = document.getElementById('regCycleSelect');
+        if (sel) sessionStorage.setItem('attCycleIdx', sel.value);
+    } catch (e) {}
+    generateSummary();
 }
 
 function _buildRegisterMatrix(cycle) {
