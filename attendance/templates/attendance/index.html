@@ -764,25 +764,12 @@ function switchTab(tabName, el) {
     // browser tab and doesn't leak between sessions.
     try { sessionStorage.setItem('attTab', tabName); } catch (e) {}
     if (tabName === 'summary') {
-        // Populate the Attendance Register cycle selector FIRST so any
-        // sessionStorage-persisted cycle index is restored before we
-        // sync From/To. On a fresh session the dropdown defaults to
-        // index 0 (current cycle).
+        // Populate the Attendance Register cycle selector — defaults to
+        // index 0 (current cycle) unless a prior selection was persisted.
+        // From/To are intentionally left blank on Summary open; the
+        // Summary falls back to the dropdown's selected cycle via
+        // _renderSummary's blank-fallback so data still renders.
         buildRegisterCycleOptions();
-        var fromEl = document.getElementById('sumFromDate');
-        var toEl   = document.getElementById('sumToDate');
-        // Only auto-populate when the user hasn't set a custom range
-        // in-tab. Mirror From/To to the (possibly restored) selected
-        // cycle so dropdown, fields, and rendered table are consistent.
-        if (!fromEl.value && !toEl.value) {
-            var cycle = _selectedRegisterCycle();
-            if (cycle) {
-                fromEl.value = cycle.start;
-                toEl.value   = cycle.end;
-            } else {
-                applyDefaultSummaryRange();
-            }
-        }
         generateSummary();
     }
 }
@@ -1530,15 +1517,16 @@ function _renderSummary() {
     const empName = (document.getElementById('sumEmpName') ? document.getElementById('sumEmpName').value.trim() : '').toLowerCase();
     let records   = loadAttendance();
 
-    // Blank From/To → fall back to the CURRENT attendance cycle. This
-    // keeps the "Clear" button honest (fields visibly become empty) while
-    // the Summary still renders the default dashboard view instead of
-    // dumping the full attendance archive.
+    // Blank From/To → fall back to the cycle currently selected in the
+    // Attendance Register dropdown (defaults to the current cycle when
+    // no explicit selection). Keeps the Summary in sync with the
+    // dropdown even when the date inputs are empty, so a Clear or
+    // fresh open still renders the right window.
     if (!from && !to) {
-        const cycles = getCycles();
-        if (cycles && cycles.length) {
-            from = cycles[0].start;
-            to   = cycles[0].end;
+        const cycle = _selectedRegisterCycle();
+        if (cycle) {
+            from = cycle.start;
+            to   = cycle.end;
         }
     }
 
@@ -1595,18 +1583,17 @@ function _renderSummary() {
 }
 
 function clearSummaryFilters() {
-    // Clear reverts the Summary to the CURRENT attendance cycle:
-    // - Employee filters empty.
-    // - Cycle dropdown reset to index 0 and any persisted selection
-    //   dropped so a subsequent refresh stays on the current cycle.
-    // - From/To repopulated (not left blank) so dropdown, fields, and
-    //   rendered table are all consistent on the current cycle.
+    // Clear applies to the filter section only:
+    //   Employee ID, Employee Name, From Date, To Date.
+    // The Attendance Cycle dropdown and any persisted cycle selection
+    // are intentionally left untouched. With From/To blank, the Summary
+    // falls back through _renderSummary's blank-fallback to the cycle
+    // currently selected in the dropdown, so the table keeps rendering
+    // the right window.
+    const fd = document.getElementById('sumFromDate'); if (fd) fd.value = '';
+    const td = document.getElementById('sumToDate');   if (td) td.value = '';
     const ei = document.getElementById('sumEmpId');    if (ei) ei.value = '';
     const en = document.getElementById('sumEmpName');  if (en) en.value = '';
-    const sel = document.getElementById('regCycleSelect');
-    if (sel && sel.options.length) sel.value = '0';
-    try { sessionStorage.removeItem('attCycleIdx'); } catch (e) {}
-    applyDefaultSummaryRange();
     generateSummary();
 }
 
@@ -2152,14 +2139,60 @@ function _buildRegisterMatrix(cycle) {
     return { dates: dates, rows: rows };
 }
 
+/* Guard against the initial page-load race — the DOMContentLoaded chain
+   fetches /employees/api/ asynchronously, and a user who clicks Download
+   before it resolves would get an empty employees list and therefore an
+   empty register. This helper reuses the same endpoint the initial load
+   already uses; if localStorage already has employees it fires cb
+   immediately with no network round-trip. */
+function _ensureEmployeesLoaded(cb) {
+    var cached = loadEmployees();
+    console.log('[Register] _ensureEmployeesLoaded — cached employees =', cached.length);
+    if (cached.length > 0) { cb(); return; }
+    console.log('[Register] _ensureEmployeesLoaded — fetching /employees/api/');
+    fetch('/employees/api/?t=' + Date.now(), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var parsed = data.employees || [];
+        console.log('[Register] _ensureEmployeesLoaded — server returned', parsed.length, 'employees');
+        if (parsed.length > 0) localStorage.setItem(EMPLOYEE_KEY, JSON.stringify(parsed));
+        cb();
+    })
+    .catch(function(err) {
+        console.log('[Register] _ensureEmployeesLoaded — fetch FAILED:', err);
+        cb();
+    });
+}
+
 function exportRegisterExcel() {
-    if (!window.XLSX) return;
+    console.log('[Register] step 1 — exportRegisterExcel entered');
+    if (!window.XLSX) {
+        console.log('[Register] step 1a — ABORT: window.XLSX is undefined');
+        return;
+    }
     const cycle = _selectedRegisterCycle();
-    if (!cycle) return;
-    // Ensure the selected cycle's rows are cached locally (existing helper —
-    // pulls from /attendance/load/ if not yet in localStorage).
+    console.log('[Register] step 2 — selected cycle:', cycle);
+    if (!cycle) {
+        console.log('[Register] step 2a — ABORT: no cycle');
+        return;
+    }
+    // Guard the two prerequisites — employees list and cycle-window
+    // attendance rows — before building the matrix. Nesting the two
+    // existing helpers avoids duplicating any fetch logic.
+    console.log('[Register] step 3 — calling _ensureEmployeesLoaded');
+    _ensureEmployeesLoaded(function() {
+    console.log('[Register] step 4 — _ensureEmployeesLoaded callback fired; loadEmployees().length =', loadEmployees().length);
+    console.log('[Register] step 5 — calling ensureServerDataFetched for', cycle.start, '→', cycle.end);
     ensureServerDataFetched(cycle.start, cycle.end, function() {
+        console.log('[Register] step 6 — ensureServerDataFetched callback fired');
+        console.log('[Register] step 7 — loadAttendance().length =', loadAttendance().length);
         const matrix = _buildRegisterMatrix(cycle);
+        console.log('[Register] step 8 — matrix.rows.length =', matrix.rows.length, '| matrix.dates.length =', matrix.dates.length);
+        if (matrix.rows.length === 0) {
+            console.log('[Register] step 8a — matrix.rows is EMPTY. Employees array =', loadEmployees());
+        }
         const dates = matrix.dates;
         const numDateCols = dates.length;
         const remarksColIdx = numDateCols + 1;
@@ -2209,7 +2242,14 @@ function exportRegisterExcel() {
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Register');
-        XLSX.writeFile(wb, 'attendance_register_' + cycle.start + '_to_' + cycle.end + '.xlsx');
+        console.log('[Register] step 9 — about to call XLSX.writeFile; aoa rows =', aoa.length, '| cols =', aoa[0] ? aoa[0].length : 0);
+        try {
+            XLSX.writeFile(wb, 'attendance_register_' + cycle.start + '_to_' + cycle.end + '.xlsx');
+            console.log('[Register] step 10 — XLSX.writeFile returned without throwing');
+        } catch (err) {
+            console.log('[Register] step 10 — XLSX.writeFile THREW:', err);
+        }
+    });
     });
 }
 
@@ -2217,6 +2257,9 @@ function exportRegisterPDF() {
     if (!window.html2pdf) return;
     const cycle = _selectedRegisterCycle();
     if (!cycle) return;
+    // Same two-prerequisite guard as exportRegisterExcel — ensures the
+    // employees list is present before html2pdf snapshots the table.
+    _ensureEmployeesLoaded(function() {
     ensureServerDataFetched(cycle.start, cycle.end, function() {
         const matrix = _buildRegisterMatrix(cycle);
         const dates = matrix.dates;
@@ -2270,6 +2313,7 @@ function exportRegisterPDF() {
         }).catch(function() {
             try { document.body.removeChild(wrap); } catch (e) {}
         });
+    });
     });
 }
 
