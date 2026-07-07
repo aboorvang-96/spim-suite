@@ -55,6 +55,19 @@ class Employee(models.Model):
     location         = models.CharField(max_length=100, blank=True, default='')
     site             = models.CharField(max_length=150, blank=True, default='')
     base_salary      = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Salary Type selector. 'base_salary' (default) preserves every existing
+    # employee's payroll flow byte-for-byte. 'daily_basis' switches the
+    # attendance-earnings formula in _compute_attendance_breakdown so
+    # `base_salary` is interpreted as a per-day rate multiplied by paid
+    # days (see employees/views.py). Non-base fields (OT / Advance /
+    # Deductions / PF / Food) continue to work exactly as before.
+    SALARY_TYPE_CHOICES = (
+        ('base_salary', 'Base Salary'),
+        ('daily_basis', 'Daily Basis'),
+    )
+    salary_type      = models.CharField(
+        max_length=20, choices=SALARY_TYPE_CHOICES, default='base_salary',
+    )
     # Manual-override flag: False = base_salary follows SalaryStructure(role + level).
     # Flipped to True the moment an admin types a value into Salary Edit that
     # differs from the configured base. Once True, Salary Config updates and

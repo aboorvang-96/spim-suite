@@ -709,6 +709,12 @@ def salary_dashboard(request):
                 'month': month_name or (salary_record.month.strftime('%B') if salary_record else 'N/A'),
                 'year': year or (salary_record.month.year if salary_record else 'N/A'),
                 'base_salary': float(e.base_salary),
+                # Salary Type surfaced so the Edit modal can render the
+                # dropdown with the employee's current selection and swap
+                # the "Base Salary" label to "Daily Salary" for daily-basis
+                # rows. Defaults to 'base_salary' for rows created before
+                # the field existed (migration 0012).
+                'salary_type': getattr(e, 'salary_type', 'base_salary') or 'base_salary',
                 'salary_is_custom_override': bool(e.salary_is_custom_override),
                 'gross_salary': gross_base + ot, # simplified gross
                 'advance_pay': advance,
@@ -1080,7 +1086,18 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
         date__lte=cycle_end,
     ).filter(date__lte=today)
 
+    # Salary Type branch. 'daily_basis' employees never receive the fixed
+    # monthly-salary fallback and never divide by cycle_days — their
+    # `base_salary` field holds a per-day rate and earnings are literally
+    # rate × paid_days. 'base_salary' path below is byte-for-byte the
+    # existing formula.
+    is_daily = getattr(employee, 'salary_type', 'base_salary') == 'daily_basis'
+
     if not records.exists():
+        if is_daily:
+            # Daily-basis: no attendance → no earnings. Never surface the
+            # per-day rate as a monthly "safe fallback".
+            return Decimal('0'), Decimal('0')
         # No attendance marked — treat as fully paid (safe fallback).
         # Paid-days surfaced as CycleDays so the modal stays consistent
         # with the full-base earnings figure.
@@ -1097,7 +1114,19 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     half_days     = records_paid.filter(status='half_day').count()
     week_off_days = records_paid.filter(status='week_off').count()
 
-    # ---- PaidDays = pure sum of per-status weights ----
+    if is_daily:
+        # Daily Basis: pay ONLY for full Present days.
+        # Half Day / Holiday / Weekly Off / Sunday / Leave / Absent /
+        # No Week Off all contribute 0 — daily-wage workers only earn
+        # for days they were fully Present. This is the deliberate
+        # business rule for this mode and differs from the Base Salary
+        # paid-day formula, which stays untouched below.
+        worked_days = Decimal(str(present_days))
+        # daily_rate × worked_days — no cycle divisor, no cap.
+        final_salary = (basic_salary * worked_days).quantize(Decimal('0.01'))
+        return final_salary, worked_days
+
+    # ---- PaidDays = pure sum of per-status weights (Base Salary only) ----
     paid_days = (
         Decimal(str(present_days))
         + Decimal(str(week_off_days))
@@ -1410,6 +1439,15 @@ def manage_ajax(request):
             if posted_level and posted_level != (employee.level or ''):
                 employee.level = posted_level
                 emp_dirty_fields.append('level')
+            # Salary Type persistence. Blank / unknown values fall back to
+            # 'base_salary' so the existing payroll flow is preserved. Only
+            # a real change writes to the DB so untouched rows stay clean.
+            posted_stype = (data.get('salary_type') or '').strip().lower()
+            if posted_stype not in ('base_salary', 'daily_basis'):
+                posted_stype = ''
+            if posted_stype and posted_stype != (getattr(employee, 'salary_type', 'base_salary') or 'base_salary'):
+                employee.salary_type = posted_stype
+                emp_dirty_fields.append('salary_type')
             try:
                 posted_base = Decimal(str(data.get('salary') or 0))
             except Exception:

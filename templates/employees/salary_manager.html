@@ -205,7 +205,14 @@
                 <div class="sec-title">Salary Details</div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="stat-label">Base Salary (₹) <span style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(auto-filled from Role + Level)</span></label>
+                        <label class="stat-label">Salary Type</label>
+                        <select name="salary_type" id="edit-salary-type" class="filter-input" onchange="handleSalaryTypeChange()" title="Base Salary = monthly amount; Daily Basis = per-day rate × paid days">
+                            <option value="base_salary">Base Salary</option>
+                            <option value="daily_basis">Daily Basis</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="stat-label" id="edit-salary-label">Base Salary (₹) <span id="edit-salary-hint" style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(auto-filled from Role + Level)</span></label>
                         <input type="number" name="salary" id="edit-salary" class="filter-input" oninput="calcNet()" required title="Base Salary">
                         <div id="edit-override-flag" style="display:none;margin-top:4px;font-size:0.7rem;font-weight:600;color:#b45309;">⚠ Custom salary override active — config changes will not overwrite this value.</div>
                     </div>
@@ -659,6 +666,14 @@
         const baseToShow = (cfgBase !== null && !overridden) ? cfgBase : (s.base_salary || 0);
 
         document.getElementById('edit-salary').value = baseToShow;
+        // Salary Type — default to Base Salary when the field is missing
+        // (rows created before migration 0012). handleSalaryTypeChange()
+        // then swaps the input label to match.
+        var sTypeSel = document.getElementById('edit-salary-type');
+        if (sTypeSel) {
+            sTypeSel.value = (s.salary_type === 'daily_basis') ? 'daily_basis' : 'base_salary';
+            handleSalaryTypeChange();
+        }
         document.getElementById('edit-ot').value = s.overtime || 0;
         document.getElementById('edit-advance').value = s.advance_pay || 0;
         document.getElementById('edit-ded').value = s.deduction || 0;
@@ -718,6 +733,32 @@
         }
     }
 
+    /* ── Salary Type label swap.
+       Base Salary mode → "Base Salary (₹)" (+ Role/Level hint).
+       Daily Basis mode → "Daily Salary (₹)" with a per-day hint. Only the
+       label/hint text changes; the same #edit-salary input is reused so
+       the save flow (name="salary") is unchanged. */
+    function handleSalaryTypeChange() {
+        var sTypeSel = document.getElementById('edit-salary-type');
+        var lbl      = document.getElementById('edit-salary-label');
+        var hint     = document.getElementById('edit-salary-hint');
+        if (!sTypeSel || !lbl) return;
+        var isDaily = sTypeSel.value === 'daily_basis';
+        // Preserve the existing "Base Salary (₹) …" text node structure
+        // by rebuilding the label + inner <span> instead of replacing the
+        // whole element (keeps CSS selectors, id, and layout intact).
+        var prefix = isDaily ? 'Daily Salary (₹) ' : 'Base Salary (₹) ';
+        lbl.childNodes[0].nodeValue = prefix;
+        if (hint) {
+            hint.textContent = isDaily
+                ? '(per-day rate × paid days)'
+                : '(auto-filled from Role + Level)';
+        }
+        // Refresh the Attendance Earnings / Net Pay preview so the new
+        // formula is visible immediately when the dropdown is toggled.
+        if (typeof calcNet === 'function') calcNet();
+    }
+
     /* ── Attendance earnings: read localStorage, compute payable days × per-day ── */
     function calcAttendanceEarnings() {
         const recId  = parseInt(document.getElementById('edit-id').value, 10);
@@ -767,10 +808,26 @@
 
         if (records.length === 0) return 0;
 
-        // Fixed 26-day divisor — ensures full attendance always equals basic salary
-        // regardless of whether the calendar month has 28, 29, 30, or 31 days.
-        const perDay = base / 26;
-        let payable  = 0;
+        // Salary Type branch — Daily Basis counts only worked days
+        // (Present + 0.5 × Half Day); Base Salary keeps the existing
+        // fixed-26 divisor + cap formula with the full paid-day set.
+        const isDaily = (s.salary_type === 'daily_basis');
+
+        if (isDaily) {
+            // Daily Basis: pay ONLY for full Present days. Half Day /
+            // Holiday / Weekly Off / Sunday / Leave / Absent / No Week
+            // Off all contribute 0 — mirrors the server-side rule in
+            // employees/views.py::_compute_attendance_breakdown.
+            let worked = 0;
+            records.forEach(r => {
+                if ((r.status || '').trim() === 'Present') worked += 1;
+                // Every other status contributes 0.
+            });
+            return Math.round(worked * base * 100) / 100;
+        }
+
+        // ── Base Salary: existing formula unchanged ──
+        let payable = 0;
         records.forEach(r => {
             const st = (r.status || '').trim();
             if      (st === 'Present')    payable += 1;
@@ -779,7 +836,9 @@
             else if (st === 'Weekly Off') payable += 1;
             // Leave = 0 (unpaid)
         });
-
+        // Fixed 26-day divisor — ensures full attendance always equals basic salary
+        // regardless of whether the calendar month has 28, 29, 30, or 31 days.
+        const perDay = base / 26;
         // Cap at basic salary so no over-payment in longer cycles
         const computed = Math.round(payable * perDay * 100) / 100;
         return Math.min(computed, base);
