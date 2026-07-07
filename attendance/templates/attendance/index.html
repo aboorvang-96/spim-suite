@@ -2270,23 +2270,31 @@ function exportRegisterPDF() {
         });
         html += '</tbody></table></div>';
 
-        // Off-screen but IN-LAYOUT container. html2pdf → html2canvas
-        // has a known-broken interaction with `position: fixed` at
-        // large negative offsets (produces a blank canvas), so we use
-        // `position: absolute` at a negative `left` instead — the
-        // element is fully rendered into the layout tree with a real
-        // bounding box the rasterizer reads correctly, but sits far
-        // off-screen so the user never sees it. NOTE: do not set
-        // opacity:0 or visibility:hidden here — html2canvas honours
-        // those and would rasterize the whole capture as transparent /
-        // blank, defeating the purpose.
+        // html2pdf().from(wrap) internally CLONES `wrap` into its own
+        // container and hands the clone to html2canvas. The clone
+        // inherits `wrap`'s computed styles, so any off-screen
+        // positioning (position:fixed/absolute + left:-9999px) or
+        // invisibility (opacity:0, visibility:hidden) on `wrap`
+        // propagates to the clone and defeats the capture — the drawer
+        // PDF works only because its source element sits inside the
+        // viewport with default opacity. To keep that same "visible
+        // clone" invariant while still hiding the register from the
+        // user, wrap.style stays plain (just width) and we clip via an
+        // ANCESTOR: a size-0 overflow:hidden hider fixed at 0,0.
+        const hider = document.createElement('div');
+        hider.style.position = 'fixed';
+        hider.style.left = '0';
+        hider.style.top = '0';
+        hider.style.width = '0';
+        hider.style.height = '0';
+        hider.style.overflow = 'hidden';
+
         const wrap = document.createElement('div');
-        wrap.style.position = 'absolute';
-        wrap.style.left = '-9999px';
-        wrap.style.top = '0';
         wrap.style.width = '1400px';
         wrap.innerHTML = html;
-        document.body.appendChild(wrap);
+
+        hider.appendChild(wrap);
+        document.body.appendChild(hider);
 
         html2pdf().set({
             margin: 0.3,
@@ -2294,9 +2302,9 @@ function exportRegisterPDF() {
             html2canvas: { scale: 2 },
             jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
         }).from(wrap).save().then(function() {
-            try { document.body.removeChild(wrap); } catch (e) {}
+            try { document.body.removeChild(hider); } catch (e) {}
         }).catch(function() {
-            try { document.body.removeChild(wrap); } catch (e) {}
+            try { document.body.removeChild(hider); } catch (e) {}
         });
     });
     });
