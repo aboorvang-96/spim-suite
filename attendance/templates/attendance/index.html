@@ -1130,6 +1130,12 @@ function applyAttendanceLocks() {
         if (!rowDate) { unlockRow(tr); return; }
         var existing = attendance.find(function(a) {
             if (a.date !== rowDate) return false;
+            // Ignore the server's Sunday auto-fill on the entry page so
+            // Sunday behaves like every other day — admin must manually
+            // mark it. Real admin edits on a Sunday come back as
+            // 'Holiday'/'Present'/etc. (server distinguishes via
+            // created_by) and still lock the row as before.
+            if (a.status === 'Sunday') return false;
             // Primary: DB primary key (always available for server-synced records)
             if (empPk !== '' && a.empPk === empPk) return true;
             // Fallback: employee_id for non-blank IDs
@@ -2264,10 +2270,19 @@ function exportRegisterPDF() {
         });
         html += '</tbody></table></div>';
 
-        // Off-screen container so html2pdf can rasterize at full width.
+        // Off-screen but IN-LAYOUT container. html2pdf → html2canvas
+        // has a known-broken interaction with `position: fixed` at
+        // large negative offsets (produces a blank canvas), so we use
+        // `position: absolute` at a negative `left` instead — the
+        // element is fully rendered into the layout tree with a real
+        // bounding box the rasterizer reads correctly, but sits far
+        // off-screen so the user never sees it. NOTE: do not set
+        // opacity:0 or visibility:hidden here — html2canvas honours
+        // those and would rasterize the whole capture as transparent /
+        // blank, defeating the purpose.
         const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.left = '-10000px';
+        wrap.style.position = 'absolute';
+        wrap.style.left = '-9999px';
         wrap.style.top = '0';
         wrap.style.width = '1400px';
         wrap.innerHTML = html;
