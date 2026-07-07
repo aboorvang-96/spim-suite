@@ -642,6 +642,18 @@ document.addEventListener('DOMContentLoaded', function () {
     setTodayDate();
     deduplicateAttendanceLocalStorage();
 
+    // Restore the previously-active tab (Attendance / Summary) from
+    // sessionStorage so a page refresh doesn't always snap back to the
+    // Attendance tab. No-op when nothing was persisted or the value is
+    // 'attendance' (already the HTML default).
+    try {
+        var savedTab = sessionStorage.getItem('attTab');
+        if (savedTab && savedTab !== 'attendance') {
+            var link = document.querySelector('.tab-link[onclick*="\'' + savedTab + '\'"]');
+            if (link) switchTab(savedTab, link);
+        }
+    } catch (e) {}
+
     /* ── Load shared DB records so all linked admins share visibility ── */
     function loadFromServer() {
         /* Fetch from the start of the active 26→25 cycle, not the first
@@ -733,6 +745,10 @@ function switchTab(tabName, el) {
     document.querySelectorAll('.tab-link').forEach(l => l.classList.remove('active'));
     document.getElementById('tab-' + tabName).classList.remove('hidden');
     el.classList.add('active');
+    // Remember the active tab so a page refresh restores the same view.
+    // sessionStorage (not localStorage) so the choice is scoped to this
+    // browser tab and doesn't leak between sessions.
+    try { sessionStorage.setItem('attTab', tabName); } catch (e) {}
     if (tabName === 'summary') {
         // Default view = latest 3 attendance cycles (26→25 windows) in
         // descending order. Only auto-applied when the user hasn't set a
@@ -1165,12 +1181,18 @@ function clearAllSelections() {
 }
 
 function updateSelectedCount() {
+    // "total" is the pool the master select-all can actually toggle (locked
+    // rows are excluded because their checkboxes are disabled). "all" is the
+    // true employee count in the table — surfaced in the counter so the
+    // display matches Salary Management's list size (locked rows previously
+    // made the counter read "39" for a 46-employee tenant).
     const total   = document.querySelectorAll('#bulkAttBody .rowCheck:not(:disabled)').length;
+    const all     = document.querySelectorAll('#bulkAttBody .rowCheck').length;
     const checked = document.querySelectorAll('#bulkAttBody .rowCheck:checked').length;
     const locked  = document.querySelectorAll('#bulkAttBody tr.row-locked').length;
     const badge   = document.getElementById('selectedCount');
     if (badge) {
-        let txt = checked + ' / ' + total + ' selected';
+        let txt = checked + ' / ' + all + ' selected';
         if (locked > 0) txt += ' · ' + locked + ' already marked';
         badge.textContent = txt;
     }
@@ -1460,16 +1482,39 @@ function ensureServerDataFetched(fromDate, toDate, cb) {
 function generateSummary() {
     var from = document.getElementById('sumFromDate').value;
     var to   = document.getElementById('sumToDate').value;
+    // Mirror _renderSummary's blank-fields fallback so the historical
+    // fetch still covers the last 3 cycles when From/To are cleared —
+    // without this, Clear would render only whatever localStorage
+    // already had for the current cycle.
+    if (!from && !to) {
+        var cycles = getCycles();
+        if (cycles && cycles.length) {
+            from = cycles[Math.min(2, cycles.length - 1)].start;
+            to   = cycles[0].end;
+        }
+    }
     // Fetch any historical data we don't have yet, then render.
     ensureServerDataFetched(from, to, _renderSummary);
 }
 
 function _renderSummary() {
-    const from    = document.getElementById('sumFromDate').value;
-    const to      = document.getElementById('sumToDate').value;
+    let from      = document.getElementById('sumFromDate').value;
+    let to        = document.getElementById('sumToDate').value;
     const empId   = (document.getElementById('sumEmpId')   ? document.getElementById('sumEmpId').value.trim()   : '').toLowerCase();
     const empName = (document.getElementById('sumEmpName') ? document.getElementById('sumEmpName').value.trim() : '').toLowerCase();
     let records   = loadAttendance();
+
+    // Blank From/To → fall back to the latest 3 attendance cycles. This
+    // keeps the "Clear" button honest (fields visibly become empty) while
+    // the Summary still renders the default dashboard view instead of
+    // dumping the full attendance archive.
+    if (!from && !to) {
+        const cycles = getCycles();
+        if (cycles && cycles.length) {
+            from = cycles[Math.min(2, cycles.length - 1)].start;
+            to   = cycles[0].end;
+        }
+    }
 
     if (from)    records = records.filter(r => r.date >= from);
     if (to)      records = records.filter(r => r.date <= to);
@@ -1524,12 +1569,14 @@ function _renderSummary() {
 }
 
 function clearSummaryFilters() {
-    // Clearing filters restores the default latest-3-cycles view — the
-    // Summary is a dashboard, not an empty search box, so From/To are
-    // reseeded with the same default applyDefaultSummaryRange() uses.
-    const ei = document.getElementById('sumEmpId');   if (ei)   ei.value = '';
-    const en = document.getElementById('sumEmpName'); if (en)   en.value = '';
-    applyDefaultSummaryRange();
+    // Clearing empties all four filter fields so the user gets a visible
+    // reset even when From/To were already at the default range. The
+    // default latest-3-cycles view is still shown afterwards — the
+    // fallback in _renderSummary treats empty From/To as "last 3 cycles".
+    const fd = document.getElementById('sumFromDate'); if (fd) fd.value = '';
+    const td = document.getElementById('sumToDate');   if (td) td.value = '';
+    const ei = document.getElementById('sumEmpId');    if (ei) ei.value = '';
+    const en = document.getElementById('sumEmpName');  if (en) en.value = '';
     generateSummary();
 }
 

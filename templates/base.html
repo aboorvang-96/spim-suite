@@ -209,6 +209,17 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Keep the currently-active module visible in the sidebar nav.
+            // The nav is a flex-column with its own overflow-y:auto; when the
+            // active link sits low in the list (Attendance Registry, Material/
+            // Stock, …) it gets scrolled off-screen behind the fixed user
+            // profile footer. Scroll it into view once on mount so the user
+            // can always see where they are.
+            const activeLink = document.querySelector('.sidebar-nav .sidebar-link.active');
+            if (activeLink && typeof activeLink.scrollIntoView === 'function') {
+                activeLink.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
+
             // Sidebar logic
             const menuBtn = document.getElementById('menu-btn');
             const sidebar = document.getElementById('sidebar');
