@@ -145,3 +145,51 @@ def ensure_sunday_holidays(
     # objects with non-None pk gives the actual insert count where the
     # backend supports it, otherwise it's a best-effort upper bound.
     return sum(1 for r in created if getattr(r, 'pk', None) is not None) or 0
+
+
+# ---------------------------------------------------------------------------
+# Attendance display mapping — single source of truth
+# ---------------------------------------------------------------------------
+#
+# Lifted verbatim from attendance.views.load_attendance's nested closure so
+# both the Suite web view AND the SPIM Lite HR mobile endpoint call the SAME
+# helper. Behavior is byte-for-byte identical to the original closure — only
+# the function name changed (was `_display_status`, now `display_status`).
+# ---------------------------------------------------------------------------
+
+STATUS_DISPLAY = {
+    'present':      'Present',
+    'absent':       'Absent',
+    'half_day':     'Half Day',
+    'leave':        'Leave',
+    'holiday':      'Holiday',
+    # The attendance summary template (templates/attendance/index.html)
+    # buckets by 'Weekly Off' (see byDate / kpiCounts / groups / slugMap).
+    # Returning 'Week Off' here makes the bucket lookup fall through to
+    # the else branch and the rendered cell always reads 0. Emit the
+    # label the template expects so summaries/charts/KPIs aggregate.
+    'week_off':     'Weekly Off',
+    'no_week_off':  'No Week Off',
+}
+
+
+def display_status(r):
+    # Display-only translation for auto-marked Sundays. The lazy
+    # ensure_sunday_holidays backfill writes rows with
+    # (status='holiday', source='admin', created_by=NULL) — the same
+    # fingerprint api.views.mobile_attendance already uses to detect
+    # auto-fills. When that fingerprint matches on a Sunday date, surface
+    # the display label as 'Sunday' so the Suite UI (Summary / drawer /
+    # calendar) shows "Sunday" by default. Manual admin edits set
+    # created_by via save_attendance, so any admin override (including
+    # explicitly picking Holiday for a Sunday) falls through unchanged.
+    # DB rows, choices, payroll and the mobile API are all untouched.
+    label = STATUS_DISPLAY.get(r.status, 'Present')
+    if (
+        label == 'Holiday'
+        and r.source == 'admin'
+        and r.created_by_id is None
+        and r.date.weekday() == 6
+    ):
+        return 'Sunday'
+    return label

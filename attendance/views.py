@@ -5,7 +5,7 @@ from django.core.exceptions import MultipleObjectsReturned
 from employees.models import Employee
 from accounts.views import get_admin_id
 from .models import AttendanceRecord
-from .utils import ensure_sunday_holidays
+from .utils import ensure_sunday_holidays, display_status
 import datetime
 import json
 
@@ -173,48 +173,15 @@ def load_attendance(request):
     if date_to:
         qs = qs.filter(date__lte=date_to)
 
-    STATUS_DISPLAY = {
-        'present':      'Present',
-        'absent':       'Absent',
-        'half_day':     'Half Day',
-        'leave':        'Leave',
-        'holiday':      'Holiday',
-        # The attendance summary template (templates/attendance/index.html)
-        # buckets by 'Weekly Off' (see byDate / kpiCounts / groups / slugMap).
-        # Returning 'Week Off' here makes the bucket lookup fall through to
-        # the else branch and the rendered cell always reads 0. Emit the
-        # label the template expects so summaries/charts/KPIs aggregate.
-        'week_off':     'Weekly Off',
-        'no_week_off':  'No Week Off',
-    }
-
-    # Display-only translation for auto-marked Sundays. The lazy
-    # ensure_sunday_holidays backfill writes rows with
-    # (status='holiday', source='admin', created_by=NULL) — the same
-    # fingerprint api.views.mobile_attendance already uses to detect
-    # auto-fills. When that fingerprint matches on a Sunday date, surface
-    # the display label as 'Sunday' so the Suite UI (Summary / drawer /
-    # calendar) shows "Sunday" by default. Manual admin edits set
-    # created_by via save_attendance, so any admin override (including
-    # explicitly picking Holiday for a Sunday) falls through unchanged.
-    # DB rows, choices, payroll and the mobile API are all untouched.
-    def _display_status(r):
-        label = STATUS_DISPLAY.get(r.status, 'Present')
-        if (
-            label == 'Holiday'
-            and r.source == 'admin'
-            and r.created_by_id is None
-            and r.date.weekday() == 6
-        ):
-            return 'Sunday'
-        return label
-
+    # STATUS_DISPLAY + Sunday-remap live in attendance.utils.display_status,
+    # so this view and the SPIM Lite HR mobile endpoint call the same helper
+    # (no duplicated Sunday logic).
     records = [{
         'empId':   r.employee.employee_id or '',
         'empPk':   r.employee.pk,  # internal lookup key — never displayed as EMP ID
         'empName': r.employee.name,
         'date':    r.date.isoformat(),
-        'status':  _display_status(r),
+        'status':  display_status(r),
         # Site / Working Site — defensive getattr so this view stays alive
         # even before migration 0004 has been applied to the Suite DB.
         'site':        getattr(r, 'site',         '') or '',

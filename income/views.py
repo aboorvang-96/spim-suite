@@ -472,6 +472,26 @@ def _group_incomes_by_site(incomes, user):
     )
 
 
+def _ensure_location_site(admin_id, name, created_by):
+    """
+    Idempotently register a location_site under the given tenant. Called
+    whenever an Income row is saved with a non-blank location_site so
+    the SPIM Suite LocationSite registry stays in sync — mirrors the
+    behavior originally inlined in income_add / income_edit, and is
+    reused by the SPIM Lite HR mobile endpoints so both paths behave
+    identically. No return value; failure is silent by design (matches
+    the original inline behavior).
+    """
+    if not admin_id:
+        return
+    name = (name or '').strip()
+    if not name:
+        return
+    if LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
+        return
+    LocationSite.objects.create(admin_id=admin_id, name=name, created_by=created_by)
+
+
 def _income_to_dict(i):
     return {
         'id': i.pk,
@@ -520,11 +540,11 @@ def income_add(request):
         income.user     = request.user
         income.admin_id = get_admin_id(request.user)
         income.save()
-        if income.location_site:
-            admin_id = get_admin_id(request.user)
-            name = income.location_site.strip()
-            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
-                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
+        _ensure_location_site(
+            get_admin_id(request.user),
+            income.location_site,
+            request.user,
+        )
         if ajax:
             d = _income_to_dict(income)
             d['combo'] = _income_combo_data(income, request.user, is_admin_user(request.user))
@@ -559,11 +579,11 @@ def income_edit(request, pk):
         income = form.save(commit=False)
         income.admin_id = get_admin_id(request.user)
         income.save()
-        if income.location_site:
-            admin_id = get_admin_id(request.user)
-            name = income.location_site.strip()
-            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
-                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
+        _ensure_location_site(
+            get_admin_id(request.user),
+            income.location_site,
+            request.user,
+        )
         if ajax:
             d = _income_to_dict(income)
             d['combo'] = _income_combo_data(income, request.user, is_admin_user(request.user))

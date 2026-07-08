@@ -19,7 +19,7 @@ import json
 import logging
 import traceback
 from functools import wraps
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
@@ -31,7 +31,7 @@ from django.db.models import Sum
 
 from employees.models import Employee, SalaryUpdate, BankDetail
 from attendance.models import AttendanceRecord
-from attendance.utils import ensure_sunday_holidays
+from attendance.utils import ensure_sunday_holidays, display_status
 from projects.models import WorkLog, MachineLocation
 from .models import MobileAuthToken
 
@@ -1150,4 +1150,510 @@ def api_dashboard(request):
         'total_income':  str(total_income),
         'total_expense': str(total_expense),
         'balance':       str(total_income - total_expense),
+    })
+
+
+# ---------------------------------------------------------------------------
+# SPIM Lite HR endpoints — read-only, HR-gated, tenant-scoped
+# ---------------------------------------------------------------------------
+#
+# These endpoints exist because every other /api/mobile/* endpoint is
+# self-scoped to request.employee. HR needs to view other employees under
+# the SAME admin_id (tenant). Every endpoint below is:
+#   * bearer-token authenticated (via mobile_hr_required → mobile_auth_required)
+#   * HR-gated (403 if the caller isn't HR)
+#   * admin_id-scoped (404 if the target employee belongs to another tenant)
+#   * read-only (GET only)
+#
+# Business logic is REUSED from existing helpers — no duplication:
+#   * ensure_sunday_holidays  (attendance.utils)
+#   * display_status          (attendance.utils — single source of truth)
+#   * _compute_attendance_breakdown  (employees.views — same helper mobile_salary uses)
+# ---------------------------------------------------------------------------
+
+_HR_KEYWORD = 'hr'
+
+
+def _is_hr_employee(emp):
+    """
+    HR detection mirrors SPIM Lite's utils/permissions.ts:isHrUser — scan
+    designation / department / level (trim + lowercase) for the substring
+    'hr'. Kept as a substring match so both server and client agree on
+    who is HR without a schema change.
+    """
+    if emp is None:
+        return False
+    for field in (
+        getattr(emp, 'designation', '') or '',
+        getattr(emp, 'department', '') or '',
+        getattr(emp, 'level', '') or '',
+    ):
+        if _HR_KEYWORD in field.strip().lower():
+            return True
+    return False
+
+
+def _hr_effective_admin_id(emp):
+    """
+    Resolve the effective admin_id (tenant) for an HR mobile caller.
+
+    Mirrors the fallback already used by mobile_attendance for the same
+    reason: some Employee rows land with admin_id='PENDING' or blank
+    (created before the tenant was finalised). In that case the row's
+    creator (Employee.created_by, a Django User) still carries the real
+    admin_id, so we prefer that. Without this resolver, HR endpoints
+    would filter on 'PENDING' and either return legacy noise or nothing.
+
+    Returns the resolved admin_id string, or '' if unresolvable.
+    """
+    if emp is None:
+        return ''
+    direct = (getattr(emp, 'admin_id', '') or '').strip()
+    if direct and direct != 'PENDING':
+        return direct
+    creator = getattr(emp, 'created_by', None)
+    if creator is not None:
+        creator_admin = (getattr(creator, 'admin_id', '') or '').strip()
+        if creator_admin:
+            return creator_admin
+    return direct  # possibly '' — caller decides how to handle
+
+
+def mobile_hr_required(view_func):
+    """
+    Decorator: mobile_auth_required + HR gate. Layers on top of the
+    existing token auth without modifying it. Non-HR callers get 403.
+    """
+    @wraps(view_func)
+    @mobile_auth_required
+    def _wrapped(request, *args, **kwargs):
+        if not _is_hr_employee(request.employee):
+            return JsonResponse(
+                {'success': False, 'error': 'HR privileges required.'},
+                status=403,
+            )
+        return view_func(request, *args, **kwargs)
+    return _wrapped
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_employees(request):
+    """
+    GET /api/mobile/hr/employees/
+
+    Returns every employee under the HR caller's admin_id. Mirrors the
+    dict shape of employees.views.employee_list_json (so a future Lite
+    client can share a picker component with the Suite web view). No
+    calculation, no aggregation — just the reused queryset.
+    """
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+    qs = Employee.objects.filter(admin_id=hr_admin_id).order_by('name')
+    employees = [{
+        'id':           emp.employee_id or '',
+        'pk':           emp.pk,
+        'name':         emp.name,
+        'dept':         emp.department or '',
+        'role':         emp.designation or '',
+        'mainLocation': emp.location or '',
+        'site':         emp.site or '',
+        'baseSalary':   float(emp.base_salary) if emp.base_salary else 0,
+        'salaryType':   getattr(emp, 'salary_type', 'base_salary') or 'base_salary',
+    } for emp in qs]
+    return JsonResponse({'success': True, 'employees': employees})
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_attendance(request):
+    """
+    GET /api/mobile/hr/attendance/?employee_id=<pk>&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+
+    Returns attendance rows for the target employee across the requested
+    window. Reuses:
+      * ensure_sunday_holidays()  — same Sunday backfill the Suite uses
+      * display_status()          — same Sunday-display rule the Suite uses
+      * AttendanceRecord queryset — same admin_id-scoped filter shape
+
+    404 if the target employee belongs to another admin_id (tenant isolation).
+    """
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+    emp_pk = (request.GET.get('employee_id') or '').strip()
+    date_from = (request.GET.get('date_from') or '').strip()
+    date_to = (request.GET.get('date_to') or '').strip()
+
+    if not emp_pk:
+        return JsonResponse(
+            {'success': False, 'error': 'employee_id is required.'},
+            status=400,
+        )
+
+    try:
+        target = Employee.objects.get(pk=emp_pk, admin_id=hr_admin_id)
+    except (Employee.DoesNotExist, ValueError, TypeError):
+        # Never leak "wrong tenant" vs "doesn't exist" — both return 404.
+        return JsonResponse(
+            {'success': False, 'error': 'Employee not found.'},
+            status=404,
+        )
+
+    # Sunday backfill scoped to this target so the response matches the
+    # Suite web view for the same window.
+    if date_from:
+        backfill_to = date_to
+        if not backfill_to:
+            try:
+                df = datetime.strptime(date_from, '%Y-%m-%d').date()
+                next_month = df.replace(day=28) + timedelta(days=4)
+                backfill_to = (
+                    next_month.replace(day=1) - timedelta(days=1)
+                ).isoformat()
+            except ValueError:
+                backfill_to = ''
+        if backfill_to:
+            ensure_sunday_holidays(
+                hr_admin_id, date_from, backfill_to, employees=[target],
+            )
+
+    qs = AttendanceRecord.objects.filter(
+        admin_id=hr_admin_id, employee=target,
+    ).select_related('employee')
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    qs = qs.order_by('-date')
+
+    records = [{
+        'empId':       r.employee.employee_id or '',
+        'empPk':       r.employee.pk,
+        'empName':     r.employee.name,
+        'date':        r.date.isoformat(),
+        'status':      display_status(r),
+        'source':      r.source,
+        'site':        getattr(r, 'site', '') or '',
+        'workingSite': getattr(r, 'working_site', '') or '',
+    } for r in qs]
+
+    return JsonResponse({'success': True, 'records': records})
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_salary(request):
+    """
+    GET /api/mobile/hr/salary/?employee_id=<pk>
+
+    Current 26→25 cycle salary summary for the target employee. Reuses
+    the same helper mobile_salary uses (_compute_attendance_breakdown),
+    so no salary calculation is duplicated.
+
+    404 if the target employee belongs to another admin_id (tenant isolation).
+    """
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+    emp_pk = (request.GET.get('employee_id') or '').strip()
+
+    if not emp_pk:
+        return JsonResponse(
+            {'success': False, 'error': 'employee_id is required.'},
+            status=400,
+        )
+
+    try:
+        target = Employee.objects.get(pk=emp_pk, admin_id=hr_admin_id)
+    except (Employee.DoesNotExist, ValueError, TypeError):
+        return JsonResponse(
+            {'success': False, 'error': 'Employee not found.'},
+            status=404,
+        )
+
+    today = date.today()
+
+    # Cycle window — identical rule to mobile_salary.
+    if today.day >= 26:
+        cycle_start = today.replace(day=26)
+        if today.month == 12:
+            cycle_end = date(today.year + 1, 1, 25)
+        else:
+            cycle_end = date(today.year, today.month + 1, 25)
+    else:
+        if today.month == 1:
+            cycle_start = date(today.year - 1, 12, 26)
+        else:
+            cycle_start = date(today.year, today.month - 1, 26)
+        cycle_end = today.replace(day=25)
+
+    sal = SalaryUpdate.objects.filter(
+        employee=target,
+        month__year=cycle_end.year,
+        month__month=cycle_end.month,
+    ).first()
+
+    att_qs = AttendanceRecord.objects.filter(
+        employee=target,
+        date__gte=cycle_start,
+        date__lte=cycle_end,
+    )
+    present_days = att_qs.filter(status='present').count()
+    absent_days = att_qs.filter(status='absent').count()
+
+    # Reuse the exact same helper mobile_salary uses.
+    from employees.views import _compute_attendance_breakdown
+    net_salary_amount, paid_days_dec = _compute_attendance_breakdown(
+        target, cycle_end.replace(day=1), float(target.base_salary),
+    )
+    net_salary = str(round(net_salary_amount, 2))
+    paid_days = float(paid_days_dec)
+    basic_salary = str(target.base_salary)
+    hra = '0.00'
+
+    if sal:
+        allowances = str(sal.extra_allowance + sal.ot_allowance + sal.food_allowance)
+        deductions = str(sal.total_deduction)
+    else:
+        allowances = '0.00'
+        deductions = '0.00'
+
+    return JsonResponse({
+        'success': True,
+        'employee': {
+            'pk': target.pk,
+            'employee_id': target.employee_id or '',
+            'name': target.name,
+        },
+        'salary': {
+            'basic_salary': basic_salary,
+            'hra':          hra,
+            'allowances':   allowances,
+            'deductions':   deductions,
+            'net_salary':   net_salary,
+            'paid_days':    paid_days,
+            'present_days': present_days,
+            'absent_days':  absent_days,
+            'cycle_start':  str(cycle_start),
+            'cycle_end':    str(cycle_end),
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# SPIM Lite HR Income endpoints — read/write, HR-gated, tenant-scoped
+# ---------------------------------------------------------------------------
+#
+# These endpoints wrap the existing Suite Income module:
+#   * validation      → income.forms.IncomeForm   (single source of truth)
+#   * serialization   → income.views._income_to_dict
+#   * queryset shape  → Income.objects.filter(admin_id=…)
+#   * location auto-register → income.views._ensure_location_site
+#
+# Nothing new is duplicated. Income has no employee FK (schema decision —
+# search happens on the free-text fields title / source / description /
+# payment_by; searching by Employee ID or Name is not supported).
+#
+# Every mutating endpoint sets Income.user to the Employee's creator
+# Django User (Employee.created_by). This mirrors the fallback that
+# api.views.mobile_attendance already uses to resolve admin_id for
+# mobile-originated writes, so HR-created rows land in the same tenant
+# bucket the Suite admin sees.
+# ---------------------------------------------------------------------------
+
+
+def _hr_creator_user(emp):
+    """
+    Resolve the Django User to stamp on rows created by an HR mobile
+    call. Uses Employee.created_by, which is how the Suite already
+    ties Employee rows to a tenant. Returns None if unresolvable;
+    callers must 500 in that case rather than write a bad FK.
+    """
+    creator = getattr(emp, 'created_by', None)
+    return creator if creator is not None else None
+
+
+def _hr_income_payload_dict(income):
+    """
+    Thin wrapper over income.views._income_to_dict so the mobile
+    response uses the exact same serializer as the Suite web AJAX
+    endpoint. Deferred import avoids pulling income into api's
+    module-load path.
+    """
+    from income.views import _income_to_dict
+    return _income_to_dict(income)
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_income_categories(request):
+    """
+    GET /api/mobile/hr/income/categories/
+
+    Reused IncomeCategory queryset — scoped to the tenant via the
+    category creator's admin_id, matching income.views.income_list.
+    """
+    from categories.models import IncomeCategory
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+    qs = IncomeCategory.objects.filter(
+        created_by__admin_id=hr_admin_id,
+    ).order_by('name')
+    categories = [{
+        'id':   c.id,
+        'name': c.name,
+    } for c in qs]
+    return JsonResponse({'success': True, 'categories': categories})
+
+
+@csrf_exempt
+@mobile_hr_required
+@require_http_methods(['GET', 'POST'])
+def mobile_hr_income_list(request):
+    """
+    GET  /api/mobile/hr/income/       — list (with filters)
+    POST /api/mobile/hr/income/       — create
+
+    List filters (all optional, mirror income.views.income_list):
+      * search       — matches title / source / description / payment_by
+      * category     — IncomeCategory pk
+      * date_from    — YYYY-MM-DD
+      * date_to      — YYYY-MM-DD
+
+    Sort order: same as Income.Meta.ordering (-date, -created_at) —
+    "latest first" out of the box; no client-side sort needed.
+
+    Search notes: Income is NOT linked to an Employee row (no FK). The
+    Suite's income_list already searches title / source / description;
+    payment_by is added here so free-text party names (which HR often
+    treats as the "person") are matched too. Employee ID / Employee Name
+    lookup is not possible against this schema.
+
+    Response:
+      { success: True, incomes: [ _income_to_dict(row), … ] }
+    """
+    from income.models import Income
+    from income.forms import IncomeForm
+    from income.views import _ensure_location_site
+    from django.db.models import Q
+
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+
+    if request.method == 'GET':
+        qs = Income.objects.filter(admin_id=hr_admin_id).select_related('category', 'user')
+
+        search    = (request.GET.get('search')    or '').strip()
+        category  = (request.GET.get('category')  or '').strip()
+        date_from = (request.GET.get('date_from') or '').strip()
+        date_to   = (request.GET.get('date_to')   or '').strip()
+
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search)
+                | Q(source__icontains=search)
+                | Q(description__icontains=search)
+                | Q(payment_by__icontains=search)
+            )
+        if category:
+            try:
+                qs = qs.filter(category_id=int(category))
+            except (ValueError, TypeError):
+                pass
+        if date_from:
+            qs = qs.filter(date__gte=date_from)
+        if date_to:
+            qs = qs.filter(date__lte=date_to)
+
+        # Income.Meta.ordering already sorts -date, -created_at.
+        incomes = [_hr_income_payload_dict(i) for i in qs]
+        return JsonResponse({'success': True, 'incomes': incomes})
+
+    # POST — create. Reuses IncomeForm verbatim.
+    creator = _hr_creator_user(request.employee)
+    if creator is None:
+        return JsonResponse({
+            'success': False,
+            'error': 'HR account is missing a tenant creator. Please contact your admin.',
+        }, status=500)
+
+    data = _json_body(request) or {}
+    form = IncomeForm(creator, data)
+    if not form.is_valid():
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse(
+            {'success': False, 'errors': errors, 'message': first},
+            status=400,
+        )
+
+    income = form.save(commit=False)
+    income.user     = creator
+    income.admin_id = hr_admin_id
+    income.save()
+    _ensure_location_site(hr_admin_id, income.location_site, creator)
+
+    return JsonResponse({
+        'success': True,
+        'income':  _hr_income_payload_dict(income),
+    }, status=201)
+
+
+@csrf_exempt
+@mobile_hr_required
+@require_http_methods(['GET', 'PUT', 'DELETE'])
+def mobile_hr_income_detail(request, pk):
+    """
+    GET    /api/mobile/hr/income/<pk>/  — retrieve
+    PUT    /api/mobile/hr/income/<pk>/  — update
+    DELETE /api/mobile/hr/income/<pk>/  — delete (mirrors the Suite web
+                                          admin behavior; Suite already
+                                          supports Income deletion).
+
+    Cross-tenant lookups return 404 to avoid leaking existence.
+    """
+    from income.models import Income
+    from income.forms import IncomeForm
+    from income.views import _ensure_location_site
+
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+
+    try:
+        income = Income.objects.get(pk=pk, admin_id=hr_admin_id)
+    except (Income.DoesNotExist, ValueError, TypeError):
+        return JsonResponse(
+            {'success': False, 'error': 'Income not found.'},
+            status=404,
+        )
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'success': True,
+            'income':  _hr_income_payload_dict(income),
+        })
+
+    if request.method == 'DELETE':
+        income.delete()
+        return JsonResponse({'success': True})
+
+    # PUT — update via the same form the Suite uses.
+    creator = _hr_creator_user(request.employee)
+    if creator is None:
+        return JsonResponse({
+            'success': False,
+            'error': 'HR account is missing a tenant creator. Please contact your admin.',
+        }, status=500)
+
+    data = _json_body(request) or {}
+    form = IncomeForm(creator, data, instance=income)
+    if not form.is_valid():
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse(
+            {'success': False, 'errors': errors, 'message': first},
+            status=400,
+        )
+
+    income = form.save(commit=False)
+    income.admin_id = hr_admin_id  # never let the payload widen scope
+    income.save()
+    _ensure_location_site(hr_admin_id, income.location_site, creator)
+
+    return JsonResponse({
+        'success': True,
+        'income':  _hr_income_payload_dict(income),
     })

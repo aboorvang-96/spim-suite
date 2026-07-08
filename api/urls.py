@@ -24,4 +24,14 @@ urlpatterns = [
     path('mobile/bank-details/',             views.mobile_bank_details,      name='mobile_bank_details'),
     path('mobile/salary/',                   views.mobile_salary,            name='mobile_salary'),
     path('mobile/dashboard/',                views.mobile_dashboard,         name='mobile_dashboard'),
+
+    # SPIM Lite HR-only mobile endpoints (read-only, tenant-scoped)
+    path('mobile/hr/employees/',   views.mobile_hr_employees,  name='mobile_hr_employees'),
+    path('mobile/hr/attendance/',  views.mobile_hr_attendance, name='mobile_hr_attendance'),
+    path('mobile/hr/salary/',      views.mobile_hr_salary,     name='mobile_hr_salary'),
+
+    # HR Income CRUD — read/write, tenant-scoped, HR-gated.
+    path('mobile/hr/income/categories/', views.mobile_hr_income_categories, name='mobile_hr_income_categories'),
+    path('mobile/hr/income/',            views.mobile_hr_income_list,       name='mobile_hr_income_list'),
+    path('mobile/hr/income/<int:pk>/',   views.mobile_hr_income_detail,     name='mobile_hr_income_detail'),
 ]
