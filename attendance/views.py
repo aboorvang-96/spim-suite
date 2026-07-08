@@ -36,7 +36,8 @@ def index(request):
             'mainLocation': emp.location or '',
             'site': emp.site or '',
             'leave': '0',
-            'baseSalary': float(emp.base_salary) if emp.base_salary else 0
+            'baseSalary': float(emp.base_salary) if emp.base_salary else 0,
+            'salaryType': emp.salary_type or 'base_salary'
         })
         
     context = {

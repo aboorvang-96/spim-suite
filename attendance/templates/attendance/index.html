@@ -985,12 +985,13 @@ function loadBulkAttendanceTable() {
         tr.dataset.empPk   = String(emp.pk || '');
         tr.dataset.empName = emp.name;
         tr.dataset.baseSalary = emp.baseSalary || 0;
+        tr.dataset.salaryType = emp.salaryType || 'base_salary';
         tr.innerHTML = `
             <td style="text-align:center;">
                 <input type="checkbox" class="rowCheck" onchange="updateSelectedCount()" aria-label="Select">
             </td>
             <td>
-                <span class="emp-chip" onclick="openEmpDrawer('${escAttr(emp.id)}','${escAttr(emp.name)}',${emp.baseSalary||0})">
+                <span class="emp-chip" onclick="openEmpDrawer('${escAttr(emp.id)}','${escAttr(emp.name)}',${emp.baseSalary||0},'${emp.salaryType||'base_salary'}')">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
                     ${escHtml(emp.id)} / ${escHtml(emp.name)}
                 </span>
@@ -1606,13 +1607,15 @@ function clearSummaryFilters() {
 /* ═══════════════════════════════════════════════
    EMPLOYEE DETAIL DRAWER (Task 2, 3, Calendar)
 ═══════════════════════════════════════════════ */
-function openEmpDrawer(empId, empName, baseSalary) {
+function openEmpDrawer(empId, empName, baseSalary, salaryType) {
     drawerEmpId   = empId;
-    drawerEmpData = { empId, empName, baseSalary: parseFloat(baseSalary) || 0 };
+    const sType = salaryType || 'base_salary';
+    drawerEmpData = { empId, empName, baseSalary: parseFloat(baseSalary) || 0, salaryType: sType };
 
+    const isDaily = sType === 'daily_basis';
     document.getElementById('drawerEmpName').textContent = empId + ' / ' + empName;
     document.getElementById('drawerEmpMeta').textContent =
-        'Base Salary: ₹' + (drawerEmpData.baseSalary).toLocaleString('en-IN');
+        (isDaily ? 'Daily Salary' : 'Base Salary') + ': ₹' + (drawerEmpData.baseSalary).toLocaleString('en-IN');
 
     buildCycleOptions();
     renderDrawerContent();
@@ -1636,17 +1639,20 @@ function calendarDays(start, end) {
     return Math.round((end - start) / 86400000) + 1;
 }
 
-function perDay(monthlySalary, cycleDays) {
+function perDay(monthlySalary, cycleDays, salaryType) {
+    if (salaryType === 'daily_basis') return monthlySalary > 0 ? monthlySalary : 0;
     const divisor = (cycleDays && cycleDays > 0) ? cycleDays : 30;
     return monthlySalary > 0 ? monthlySalary / divisor : 0;
 }
 
 /* Per-cell earning — pay-per-status weights per the business rule.
-   The backend (attendance/views.py::load_attendance) surfaces auto-marked
-   Sundays as status='Sunday' for display purposes; the pay weight below
-   is identical to 'Holiday' so cycle totals stay numerically unchanged. */
-function dailyEarning(status, baseSalary, cycleDays) {
-    const pd = perDay(baseSalary, cycleDays);
+   daily_basis employees earn only on Present days (full daily salary). */
+function dailyEarning(status, baseSalary, cycleDays, salaryType) {
+    const pd = perDay(baseSalary, cycleDays, salaryType);
+    if (salaryType === 'daily_basis') {
+        if (status === 'Present') return pd;
+        return 0;
+    }
     if (status === 'Present')    return pd;
     if (status === 'Half Day')   return pd / 2;
     if (status === 'Holiday')    return pd;
@@ -1663,9 +1669,10 @@ function dailyEarning(status, baseSalary, cycleDays) {
    every record in the cycle. Divisor = calendar days in the cycle.
    Future Sundays (auto-marked Holiday by the backend backfill) are
    excluded — they pay only once the cycle has reached that date. */
-function computeCycleEarnings(records, baseSalary, cycleDays) {
+function computeCycleEarnings(records, baseSalary, cycleDays, salaryType) {
     if (!baseSalary || !cycleDays) return 0;
     const todayDateStr = todayStr();
+    const isDaily = salaryType === 'daily_basis';
     let present = 0, holiday = 0, half = 0, weekOff = 0;
     records.forEach(r => {
         const dow = new Date(r.date + 'T00:00:00').getDay();
@@ -1673,17 +1680,15 @@ function computeCycleEarnings(records, baseSalary, cycleDays) {
         switch (r.status) {
             case 'Present':     present++;  break;
             case 'Holiday':     holiday++;  break;
-            // Auto-marked Sundays surface as status='Sunday' (display-only
-            // translation done in attendance/views.py::load_attendance).
-            // Business rule for pay is unchanged, so they contribute to
-            // paidDays just like Holiday did before — this keeps the
-            // on-screen cycle total identical to the payslip total.
             case 'Sunday':      holiday++;  break;
             case 'Half Day':    half++;     break;
             case 'Week Off':
             case 'Weekly Off':  weekOff++;  break;
         }
     });
+    if (isDaily) {
+        return baseSalary * present;
+    }
     const paidDays = present + holiday + weekOff + 0.5 * half;
     return (baseSalary / cycleDays) * paidDays;
 }
@@ -1737,7 +1742,8 @@ function renderDrawerContent() {
 
 function _renderDrawerContentInner(cycle) {
     if (!drawerEmpData) return;
-    const { empId, empName, baseSalary } = drawerEmpData;
+    const { empId, empName, baseSalary, salaryType } = drawerEmpData;
+    const isDaily  = salaryType === 'daily_basis';
     const records  = loadAttendance().filter(r => r.empId === empId && r.date >= cycle.start && r.date <= cycle.end);
     const recMap   = {};
     records.forEach(r => recMap[r.date] = r);
@@ -1777,12 +1783,14 @@ function _renderDrawerContentInner(cycle) {
         <div class="emp-kpi kpi-sunday"><div class="val">${kpiCounts.Sunday}</div><div class="lbl">Sunday</div></div>
     `;
 
-    // Update header meta with cycle-accurate per-day figure
     if (baseSalary > 0) {
-        const pd = baseSalary / cycleDays;
+        const pd = perDay(baseSalary, cycleDays, salaryType);
+        const salaryLabel = isDaily ? 'Daily Salary' : 'Base Salary';
+        const perDayLabel = isDaily
+            ? ' | Per Day: ₹' + pd.toLocaleString('en-IN', {maximumFractionDigits: 2})
+            : ' | Per Day (÷' + cycleDays + '): ₹' + pd.toLocaleString('en-IN', {maximumFractionDigits: 2});
         document.getElementById('drawerEmpMeta').textContent =
-            'Base Salary: ₹' + baseSalary.toLocaleString('en-IN') +
-            ' | Per Day (÷' + cycleDays + '): ₹' + pd.toLocaleString('en-IN', {maximumFractionDigits: 2});
+            salaryLabel + ': ₹' + baseSalary.toLocaleString('en-IN') + perDayLabel;
     }
 
     let calHtml = DAY_NAMES.map(d => `<div class="cal-hdr">${d}</div>`).join('');
@@ -1813,7 +1821,7 @@ function _renderDrawerContentInner(cycle) {
                 cls       = 'cal-none';
                 statusLbl = '-';
             }
-            const earned = isFutureSunday ? 0 : dailyEarning(rec.status, baseSalary, cycleDays);
+            const earned = isFutureSunday ? 0 : dailyEarning(rec.status, baseSalary, cycleDays, salaryType);
             const salaryLine = (baseSalary > 0 && earned > 0)
                 ? '₹' + earned.toLocaleString('en-IN', {maximumFractionDigits: 0})
                 : '';
@@ -1842,7 +1850,7 @@ function _renderDrawerContentInner(cycle) {
 
     // Authoritative cycle total — uses the same formula as the salary
     // module so the figure here always matches the payslip for this cycle.
-    const totalEarned = computeCycleEarnings(records, baseSalary, cycleDays);
+    const totalEarned = computeCycleEarnings(records, baseSalary, cycleDays, salaryType);
     if (baseSalary > 0 && totalEarned > 0) {
         totalEl.textContent = 'Cycle Total Earned: ₹' +
             totalEarned.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1981,7 +1989,7 @@ function exportDrawerPDF() {
 
 function exportDrawerExcel() {
     if (!drawerEmpData || !window.XLSX) return;
-    const { empId, empName, baseSalary } = drawerEmpData;
+    const { empId, empName, baseSalary, salaryType } = drawerEmpData;
 
     const sel    = document.getElementById('drawerCycleSelect');
     const cycIdx = parseInt(sel.value) || 0;
@@ -1992,7 +2000,8 @@ function exportDrawerExcel() {
     const start    = new Date(cycle.start + 'T00:00:00');
     const end      = new Date(cycle.end   + 'T00:00:00');
     const cycleDays = calendarDays(start, end);
-    const pd        = baseSalary > 0 ? baseSalary / cycleDays : 0;
+    const isDaily   = salaryType === 'daily_basis';
+    const pd        = baseSalary > 0 ? perDay(baseSalary, cycleDays, salaryType) : 0;
 
     const records = loadAttendance().filter(r =>
         r.empId === empId && r.date >= cycle.start && r.date <= cycle.end
@@ -2016,17 +2025,15 @@ function exportDrawerExcel() {
             ? '-'
             : (rec ? rec.status : (isSun ? 'Sunday' : '-'));
         const remarks = rec ? (rec.remarks || '') : '';
-        const earned  = (rec && !isFutureSunday) ? dailyEarning(rec.status, baseSalary, cycleDays) : 0;
+        const earned  = (rec && !isFutureSunday) ? dailyEarning(rec.status, baseSalary, cycleDays, salaryType) : 0;
         rows.push([empId, empName, ds, dow, status, remarks, earned > 0 ? earned.toFixed(2) : '']);
         cur.setDate(cur.getDate() + 1);
     }
-    // Cycle total uses the authoritative formula (with cap + earned-week-off
-    // credit) — same number shown in the drawer footer.
-    const totalEarned = computeCycleEarnings(records, baseSalary, cycleDays);
+    const totalEarned = computeCycleEarnings(records, baseSalary, cycleDays, salaryType);
     rows.push([]);
     rows.push(['', '', '', '', '', 'Cycle Total Earned:', totalEarned.toFixed(2)]);
-    rows.push(['', '', '', '', '', 'Base Salary:', baseSalary]);
-    rows.push(['', '', '', '', '', 'Per Day (÷' + cycleDays + '):', pd.toFixed(2)]);
+    rows.push(['', '', '', '', '', (isDaily ? 'Daily Salary:' : 'Base Salary:'), baseSalary]);
+    rows.push(['', '', '', '', '', (isDaily ? 'Per Day:' : 'Per Day (÷' + cycleDays + '):'), pd.toFixed(2)]);
     rows.push(['', '', '', '', '', 'Cycle:', cycle.label]);
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
