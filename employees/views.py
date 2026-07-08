@@ -505,6 +505,7 @@ def employee_list_json(request):
             'site':         emp.site or '',
             'leave':        '0',
             'baseSalary':   float(emp.base_salary) if emp.base_salary else 0,
+            'salaryType':   getattr(emp, 'salary_type', 'base_salary') or 'base_salary',
         })
     return JsonResponse({'employees': emp_list})
 
