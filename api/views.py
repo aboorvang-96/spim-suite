@@ -27,7 +27,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import check_password, make_password
-from django.db.models import Sum
+from django.db.models import Sum, Count
 
 from employees.models import Employee, SalaryUpdate, BankDetail
 from attendance.models import AttendanceRecord
@@ -1480,6 +1480,47 @@ def _hr_income_payload_dict(income):
     return _income_to_dict(income)
 
 
+def _hr_income_filtered_queryset(hr_admin_id, get_params):
+    """
+    Build the Income queryset for the caller's tenant using the same
+    filter rule as `mobile_hr_income_list`. Extracted so the list and
+    the report share one source of truth for `search / category /
+    date_from / date_to` — no filter logic is duplicated.
+
+    `get_params` is any dict-like object with .get() (typically
+    request.GET). Returns an ordered queryset (Income.Meta.ordering
+    already sorts -date, -created_at).
+    """
+    from income.models import Income
+    from django.db.models import Q
+
+    qs = Income.objects.filter(admin_id=hr_admin_id).select_related('category', 'user')
+
+    search    = (get_params.get('search')    or '').strip()
+    category  = (get_params.get('category')  or '').strip()
+    date_from = (get_params.get('date_from') or '').strip()
+    date_to   = (get_params.get('date_to')   or '').strip()
+
+    if search:
+        qs = qs.filter(
+            Q(title__icontains=search)
+            | Q(source__icontains=search)
+            | Q(description__icontains=search)
+            | Q(payment_by__icontains=search)
+        )
+    if category:
+        try:
+            qs = qs.filter(category_id=int(category))
+        except (ValueError, TypeError):
+            pass
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+
+    return qs
+
+
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_income_categories(request):
@@ -1527,38 +1568,13 @@ def mobile_hr_income_list(request):
     Response:
       { success: True, incomes: [ _income_to_dict(row), … ] }
     """
-    from income.models import Income
     from income.forms import IncomeForm
     from income.views import _ensure_location_site
-    from django.db.models import Q
 
     hr_admin_id = _hr_effective_admin_id(request.employee)
 
     if request.method == 'GET':
-        qs = Income.objects.filter(admin_id=hr_admin_id).select_related('category', 'user')
-
-        search    = (request.GET.get('search')    or '').strip()
-        category  = (request.GET.get('category')  or '').strip()
-        date_from = (request.GET.get('date_from') or '').strip()
-        date_to   = (request.GET.get('date_to')   or '').strip()
-
-        if search:
-            qs = qs.filter(
-                Q(title__icontains=search)
-                | Q(source__icontains=search)
-                | Q(description__icontains=search)
-                | Q(payment_by__icontains=search)
-            )
-        if category:
-            try:
-                qs = qs.filter(category_id=int(category))
-            except (ValueError, TypeError):
-                pass
-        if date_from:
-            qs = qs.filter(date__gte=date_from)
-        if date_to:
-            qs = qs.filter(date__lte=date_to)
-
+        qs = _hr_income_filtered_queryset(hr_admin_id, request.GET)
         # Income.Meta.ordering already sorts -date, -created_at.
         incomes = [_hr_income_payload_dict(i) for i in qs]
         return JsonResponse({'success': True, 'incomes': incomes})
@@ -1684,6 +1700,51 @@ def _hr_expense_payload_dict(t):
     return _expense_to_dict(t)
 
 
+def _hr_expense_filtered_queryset(hr_admin_id, get_params):
+    """
+    Build the Transaction (type='expense') queryset for the caller's tenant
+    using the same filter rule as `mobile_hr_expense_list`. Extracted so
+    the list and the report share one source of truth for `search /
+    category / date_from / date_to` — no filter logic is duplicated.
+
+    `get_params` is any dict-like object with .get() (typically request.GET
+    or a plain dict passed from the report view). Returns an ordered
+    queryset (Transaction.Meta.ordering already sorts -date, -created_at).
+    """
+    from finance.models import Transaction
+    from django.db.models import Q
+
+    qs = Transaction.objects.filter(
+        admin_id=hr_admin_id, type='expense',
+    ).select_related('category', 'branch')
+
+    search    = (get_params.get('search')    or '').strip()
+    category  = (get_params.get('category')  or '').strip()
+    date_from = (get_params.get('date_from') or '').strip()
+    date_to   = (get_params.get('date_to')   or '').strip()
+
+    if search:
+        qs = qs.filter(
+            Q(description__icontains=search)
+            | Q(vendor__icontains=search)
+            | Q(reference__icontains=search)
+            | Q(purpose__icontains=search)
+            | Q(payment_by__icontains=search)
+            | Q(income_source__icontains=search)
+        )
+    if category:
+        try:
+            qs = qs.filter(category_id=int(category))
+        except (ValueError, TypeError):
+            pass
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+
+    return qs
+
+
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_expense_categories(request):
@@ -1726,42 +1787,13 @@ def mobile_hr_expense_list(request):
     Response:
       { success: True, expenses: [ _expense_to_dict(row), … ] }
     """
-    from finance.models import Transaction
     from finance.forms import TransactionForm
     from branches.models import LocationSite
-    from django.db.models import Q
 
     hr_admin_id = _hr_effective_admin_id(request.employee)
 
     if request.method == 'GET':
-        qs = Transaction.objects.filter(
-            admin_id=hr_admin_id, type='expense',
-        ).select_related('category', 'branch')
-
-        search    = (request.GET.get('search')    or '').strip()
-        category  = (request.GET.get('category')  or '').strip()
-        date_from = (request.GET.get('date_from') or '').strip()
-        date_to   = (request.GET.get('date_to')   or '').strip()
-
-        if search:
-            qs = qs.filter(
-                Q(description__icontains=search)
-                | Q(vendor__icontains=search)
-                | Q(reference__icontains=search)
-                | Q(purpose__icontains=search)
-                | Q(payment_by__icontains=search)
-                | Q(income_source__icontains=search)
-            )
-        if category:
-            try:
-                qs = qs.filter(category_id=int(category))
-            except (ValueError, TypeError):
-                pass
-        if date_from:
-            qs = qs.filter(date__gte=date_from)
-        if date_to:
-            qs = qs.filter(date__lte=date_to)
-
+        qs = _hr_expense_filtered_queryset(hr_admin_id, request.GET)
         expenses = [_hr_expense_payload_dict(t) for t in qs]
         return JsonResponse({'success': True, 'expenses': expenses})
 
@@ -1883,4 +1915,818 @@ def mobile_hr_expense_detail(request, pk):
     return JsonResponse({
         'success': True,
         'expense': _hr_expense_payload_dict(obj),
+    })
+
+
+# ---------------------------------------------------------------------------
+# SPIM Lite HR Attendance Report — PDF / XLSX download, HR-gated, tenant-scoped
+# ---------------------------------------------------------------------------
+#
+# Streams a binary file (PDF default, XLSX on request) built from the same
+# attendance rows the HR Attendance Viewer already reads:
+#   * ensure_sunday_holidays  — Sunday backfill (unchanged)
+#   * display_status          — Sunday/label mapping (unchanged)
+#   * AttendanceRecord queryset — admin_id-scoped filter (unchanged)
+#   * openpyxl / reportlab    — same libs the Suite's salary report uses
+#
+# No new attendance / employee models, forms, or serializers were added.
+# ---------------------------------------------------------------------------
+
+
+_ATTENDANCE_REPORT_SUMMARY_LABELS = (
+    'Present',
+    'Absent',
+    'Half Day',
+    'Leave',
+    'Holiday',
+    'Sunday',
+    'Weekly Off',
+    'No Week Off',
+)
+
+
+def _hr_attendance_report_cycle_default():
+    """
+    Fallback attendance window when the caller does not supply date_from /
+    date_to. Same 26→25 anchor rule the Suite uses for salary and the
+    mobile viewer uses client-side.
+    """
+    today = date.today()
+    if today.day >= 26:
+        cycle_start = today.replace(day=26)
+        if today.month == 12:
+            cycle_end = date(today.year + 1, 1, 25)
+        else:
+            cycle_end = date(today.year, today.month + 1, 25)
+    else:
+        if today.month == 1:
+            cycle_start = date(today.year - 1, 12, 26)
+        else:
+            cycle_start = date(today.year, today.month - 1, 26)
+        cycle_end = today.replace(day=25)
+    return cycle_start, cycle_end
+
+
+def _hr_attendance_report_rows(hr_admin_id, target_employees, date_from, date_to):
+    """
+    Backfill Sundays, then stream attendance rows (dicts) + a per-label
+    summary counter — no display transform beyond display_status(). The
+    resulting list is what both the PDF and XLSX renderers consume.
+    """
+    if target_employees:
+        ensure_sunday_holidays(
+            hr_admin_id,
+            date_from.isoformat(),
+            date_to.isoformat(),
+            employees=list(target_employees),
+        )
+
+    qs = AttendanceRecord.objects.filter(
+        admin_id=hr_admin_id,
+        employee__in=target_employees,
+        date__gte=date_from,
+        date__lte=date_to,
+    ).select_related('employee').order_by('employee__name', 'date')
+
+    rows = []
+    summary = {lbl: 0 for lbl in _ATTENDANCE_REPORT_SUMMARY_LABELS}
+    for r in qs:
+        status_label = display_status(r)
+        rows.append({
+            'emp_id':       r.employee.employee_id or '',
+            'emp_name':     r.employee.name or '',
+            'date':         r.date.isoformat(),
+            'date_display': r.date.strftime('%d %b, %Y'),
+            'status':       status_label,
+            'site':         getattr(r, 'site', '') or '',
+            'working_site': getattr(r, 'working_site', '') or '',
+        })
+        if status_label in summary:
+            summary[status_label] += 1
+    return rows, summary
+
+
+def _render_hr_attendance_xlsx(rows, summary, period_label, filename_base, scope_label):
+    """XLSX HttpResponse — same styling recipe as _render_salary_xlsx."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Attendance Report'
+
+    headers = ['EMP ID', 'EMP NAME', 'DATE', 'STATUS', 'SITE', 'WORKING SITE']
+    ws.append(headers)
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='1E293B')
+    for col_idx in range(1, len(headers) + 1):
+        c = ws.cell(row=1, column=col_idx)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal='center')
+
+    for r in rows:
+        ws.append([
+            r['emp_id'],
+            r['emp_name'],
+            r['date_display'],
+            r['status'],
+            r['site'],
+            r['working_site'],
+        ])
+
+    ws.append([])
+    ws.append([f'Scope: {scope_label}', '', '', '', '', ''])
+    ws.append([f'Period: {period_label}', '', '', '', '', ''])
+    ws.append([f'Total Rows: {len(rows)}', '', '', '', '', ''])
+    ws.append([])
+    ws.append(['SUMMARY', '', '', '', '', ''])
+    for lbl in _ATTENDANCE_REPORT_SUMMARY_LABELS:
+        ws.append([lbl, summary.get(lbl, 0), '', '', '', ''])
+
+    widths = [14, 26, 16, 14, 22, 22]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = HttpResponse(
+        buf.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.xlsx"'
+    return response
+
+
+def _render_hr_attendance_pdf(rows, summary, period_label, filename_base, scope_label):
+    """PDF HttpResponse — same styling recipe as _render_salary_pdf."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title14', parent=styles['Title'], fontSize=14, alignment=0)
+    sub_style   = ParagraphStyle('Sub8',    parent=styles['Normal'], fontSize=8)
+
+    story = [
+        Paragraph(f"Attendance Report — {period_label}", title_style),
+        Paragraph(f"Scope: {scope_label}", sub_style),
+        Paragraph(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            sub_style,
+        ),
+        Spacer(1, 6),
+    ]
+
+    table_data = [['EMP ID', 'EMP NAME', 'DATE', 'STATUS', 'SITE', 'WORKING SITE']]
+    for r in rows:
+        table_data.append([
+            r['emp_id']       or '-',
+            r['emp_name']     or '-',
+            r['date_display'] or '-',
+            r['status']       or '-',
+            r['site']         or '-',
+            r['working_site'] or '-',
+        ])
+    if not rows:
+        table_data.append(['-', '-', '-', '-', '-', '-'])
+
+    col_widths = [70, 150, 90, 80, 130, 130]
+    tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
+        ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
+        ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, -1), 8),
+        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 10))
+
+    # Summary block — mirrors the viewer's Attendance Summary card.
+    summary_data = [['STATUS', 'COUNT']]
+    for lbl in _ATTENDANCE_REPORT_SUMMARY_LABELS:
+        summary_data.append([lbl, str(summary.get(lbl, 0))])
+    summary_data.append(['TOTAL ROWS', str(len(rows))])
+    sum_tbl = Table(summary_data, colWidths=[120, 60], repeatRows=1)
+    sum_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
+        ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
+        ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, -1), 8),
+        ('ALIGN',      (1, 1), (1, -1),  'RIGHT'),
+        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
+        ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
+        ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
+    ]))
+    story.append(sum_tbl)
+    doc.build(story)
+
+    buf.seek(0)
+    response = HttpResponse(buf.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.pdf"'
+    return response
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_attendance_report(request):
+    """
+    GET /api/mobile/hr/attendance/report/
+        ?format=pdf|xlsx        (default: pdf)
+        &employee_id=<pk>|all   (default: all — every employee in the tenant)
+        &date_from=YYYY-MM-DD   (default: current 26→25 cycle start)
+        &date_to=YYYY-MM-DD     (default: current 26→25 cycle end)
+
+    Bearer token accepted via `Authorization: Bearer` header OR
+    `?token=<>` query string — same _extract_token rule the Suite already
+    uses for the payslip download link, so the mobile client can open the
+    URL directly with `Linking.openURL(...)`.
+
+    404 if a target employee belongs to another admin_id (tenant isolation).
+    """
+    fmt = (request.GET.get('format') or 'pdf').strip().lower()
+    if fmt not in ('pdf', 'xlsx'):
+        fmt = 'pdf'
+
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+
+    # ---- Resolve the target employees (single or all) ----
+    emp_param = (request.GET.get('employee_id') or 'all').strip().lower()
+    if emp_param and emp_param != 'all':
+        try:
+            target = Employee.objects.get(pk=emp_param, admin_id=hr_admin_id)
+        except (Employee.DoesNotExist, ValueError, TypeError):
+            return JsonResponse(
+                {'success': False, 'error': 'Employee not found.'},
+                status=404,
+            )
+        target_employees = [target]
+        scope_label = f"{target.name} ({target.employee_id or target.pk})"
+        scope_slug  = target.employee_id or f'emp{target.pk}'
+    else:
+        target_employees = list(
+            Employee.objects.filter(admin_id=hr_admin_id).order_by('name'),
+        )
+        scope_label = 'All Employees'
+        scope_slug  = 'AllEmployees'
+
+    # ---- Resolve the window (custom range or current cycle) ----
+    df = (request.GET.get('date_from') or '').strip()
+    dt = (request.GET.get('date_to')   or '').strip()
+    try:
+        date_from = datetime.strptime(df, '%Y-%m-%d').date() if df else None
+    except ValueError:
+        date_from = None
+    try:
+        date_to = datetime.strptime(dt, '%Y-%m-%d').date() if dt else None
+    except ValueError:
+        date_to = None
+    if date_from is None or date_to is None:
+        cs, ce = _hr_attendance_report_cycle_default()
+        date_from = date_from or cs
+        date_to   = date_to   or ce
+    if date_from > date_to:
+        return JsonResponse(
+            {'success': False, 'error': 'date_from must be on or before date_to.'},
+            status=400,
+        )
+
+    rows, summary = _hr_attendance_report_rows(
+        hr_admin_id, target_employees, date_from, date_to,
+    )
+
+    period_label  = f"{date_from.isoformat()} to {date_to.isoformat()}"
+    filename_base = f"Attendance_Report_{scope_slug}_{date_from.isoformat()}_to_{date_to.isoformat()}"
+
+    if fmt == 'xlsx':
+        return _render_hr_attendance_xlsx(rows, summary, period_label, filename_base, scope_label)
+    return _render_hr_attendance_pdf(rows, summary, period_label, filename_base, scope_label)
+
+
+# ---------------------------------------------------------------------------
+# SPIM Lite HR Income Report — PDF / XLSX download, HR-gated, tenant-scoped
+# ---------------------------------------------------------------------------
+#
+# Filters (search / category / date_from / date_to) are applied by
+# `_hr_income_filtered_queryset` — the exact same helper `mobile_hr_income_list`
+# uses. Row-level fields are read via `_income_to_dict` (existing serializer)
+# so the report never diverges from the list. openpyxl / reportlab style
+# recipe mirrors the attendance report added in Phase 8.1.
+#
+# NOTE: Income has no Employee FK. The `search` param is the same substring
+# rule the mobile HR Income screen exposes today — it matches `payment_by`
+# (which is the "Party / Payer" field HR uses as the person tag). Passing no
+# `search` yields "all employees" (every income row in the tenant).
+# ---------------------------------------------------------------------------
+
+
+def _render_hr_income_xlsx(rows, total_amount, period_label, filename_base, scope_label):
+    """XLSX HttpResponse — same styling recipe as _render_hr_attendance_xlsx."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Income Report'
+
+    headers = [
+        'DATE', 'PARTY (PAYMENT_BY)', 'CATEGORY',
+        'LOCATION / SITE', 'PAYMENT MODE', 'DESCRIPTION', 'AMOUNT (Rs)',
+    ]
+    ws.append(headers)
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='1E293B')
+    for col_idx in range(1, len(headers) + 1):
+        c = ws.cell(row=1, column=col_idx)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal='center')
+
+    for r in rows:
+        ws.append([
+            r['date_display'],
+            r['payment_by'],
+            r['category'],
+            r['location'],
+            r['payment_mode'],
+            r['description'],
+            float(r['amount'] or 0),
+        ])
+
+    ws.append([])
+    ws.append([f'Scope: {scope_label}',   '', '', '', '', '', ''])
+    ws.append([f'Period: {period_label}', '', '', '', '', '', ''])
+    ws.append([f'Total Rows: {len(rows)}', '', '', '', '', 'Total Amount', float(total_amount or 0)])
+
+    widths = [16, 26, 20, 22, 18, 30, 16]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = HttpResponse(
+        buf.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.xlsx"'
+    return response
+
+
+def _render_hr_income_pdf(rows, total_amount, period_label, filename_base, scope_label):
+    """PDF HttpResponse — same styling recipe as _render_hr_attendance_pdf."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title14', parent=styles['Title'], fontSize=14, alignment=0)
+    sub_style   = ParagraphStyle('Sub8',    parent=styles['Normal'], fontSize=8)
+
+    story = [
+        Paragraph(f"Income Report — {period_label}", title_style),
+        Paragraph(f"Scope: {scope_label}", sub_style),
+        Paragraph(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            sub_style,
+        ),
+        Spacer(1, 6),
+    ]
+
+    table_data = [[
+        'DATE', 'PARTY (PAYMENT_BY)', 'CATEGORY',
+        'LOCATION / SITE', 'PAYMENT MODE', 'DESCRIPTION', 'AMOUNT (Rs)',
+    ]]
+    for r in rows:
+        table_data.append([
+            r['date_display'] or '-',
+            r['payment_by']   or '-',
+            r['category']     or '-',
+            r['location']     or '-',
+            r['payment_mode'] or '-',
+            r['description']  or '-',
+            '{:,.2f}'.format(float(r['amount'] or 0)),
+        ])
+    if not rows:
+        table_data.append(['-', '-', '-', '-', '-', '-', '-'])
+    table_data.append([
+        f'Total Rows: {len(rows)}', '', '', '', '', 'Total Amount',
+        '{:,.2f}'.format(float(total_amount or 0)),
+    ])
+
+    col_widths = [70, 120, 80, 100, 75, 165, 75]
+    tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
+        ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
+        ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, -1), 8),
+        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN',      (6, 1), (6, -1),  'RIGHT'),
+        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
+        ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
+        ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
+    ]))
+    story.append(tbl)
+    doc.build(story)
+
+    buf.seek(0)
+    response = HttpResponse(buf.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.pdf"'
+    return response
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_income_report(request):
+    """
+    GET /api/mobile/hr/income/report/
+        ?format=pdf|xlsx        (default: pdf)
+        &search=<substring>     (optional — party/payer text, matches
+                                 title/source/description/payment_by)
+        &category=<pk>          (optional — IncomeCategory pk)
+        &date_from=YYYY-MM-DD   (default: current 26→25 cycle start)
+        &date_to=YYYY-MM-DD     (default: current 26→25 cycle end)
+
+    Bearer token accepted via `?token=<>` (same _extract_token rule the
+    payslip + attendance report links use).
+    """
+    fmt = (request.GET.get('format') or 'pdf').strip().lower()
+    if fmt not in ('pdf', 'xlsx'):
+        fmt = 'pdf'
+
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+
+    # ---- Resolve the window (custom range or current cycle) ----
+    df = (request.GET.get('date_from') or '').strip()
+    dt = (request.GET.get('date_to')   or '').strip()
+    try:
+        date_from = datetime.strptime(df, '%Y-%m-%d').date() if df else None
+    except ValueError:
+        date_from = None
+    try:
+        date_to = datetime.strptime(dt, '%Y-%m-%d').date() if dt else None
+    except ValueError:
+        date_to = None
+    if date_from is None or date_to is None:
+        cs, ce = _hr_attendance_report_cycle_default()
+        date_from = date_from or cs
+        date_to   = date_to   or ce
+    if date_from > date_to:
+        return JsonResponse(
+            {'success': False, 'error': 'date_from must be on or before date_to.'},
+            status=400,
+        )
+
+    # Reuse the exact same filter block the list endpoint uses. Override
+    # date_from / date_to with the resolved ISO strings so the default
+    # cycle also flows through the shared helper.
+    filter_params = {
+        'search':    (request.GET.get('search')   or '').strip(),
+        'category':  (request.GET.get('category') or '').strip(),
+        'date_from': date_from.isoformat(),
+        'date_to':   date_to.isoformat(),
+    }
+    qs = _hr_income_filtered_queryset(hr_admin_id, filter_params)
+
+    # Serialize + total via the same dict the list uses — no field access
+    # duplication.
+    rows = [_hr_income_payload_dict(i) for i in qs]
+    total_amount = 0.0
+    for r in rows:
+        try:
+            total_amount += float(r.get('amount') or 0)
+        except (TypeError, ValueError):
+            pass
+
+    # Scope + filename
+    search_txt = filter_params['search']
+    if search_txt:
+        scope_label = f'Party matches "{search_txt}"'
+        safe_search = ''.join(ch if ch.isalnum() else '_' for ch in search_txt)[:32]
+        scope_slug  = f'party_{safe_search}' if safe_search else 'party'
+    else:
+        scope_label = 'All Employees / Parties'
+        scope_slug  = 'AllParties'
+
+    period_label  = f"{date_from.isoformat()} to {date_to.isoformat()}"
+    filename_base = f"Income_Report_{scope_slug}_{date_from.isoformat()}_to_{date_to.isoformat()}"
+
+    if fmt == 'xlsx':
+        return _render_hr_income_xlsx(rows, total_amount, period_label, filename_base, scope_label)
+    return _render_hr_income_pdf(rows, total_amount, period_label, filename_base, scope_label)
+
+
+# ---------------------------------------------------------------------------
+# SPIM Lite HR Expense Report — PDF / XLSX download, HR-gated, tenant-scoped
+# ---------------------------------------------------------------------------
+#
+# Filters (search / category / date_from / date_to) are applied by
+# `_hr_expense_filtered_queryset` — the exact same helper `mobile_hr_expense_list`
+# uses. Row-level fields are read via `_expense_to_dict` (existing serializer)
+# so the report never diverges from the list. openpyxl / reportlab style
+# recipe mirrors the attendance + income reports.
+#
+# Search behavior is identical to `mobile_hr_expense_list` — substring across
+# description / vendor / reference / purpose / payment_by / income_source.
+# ---------------------------------------------------------------------------
+
+
+def _render_hr_expense_xlsx(rows, total_amount, period_label, filename_base, scope_label):
+    """XLSX HttpResponse — same styling recipe as _render_hr_income_xlsx."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Expense Report'
+
+    headers = [
+        'DATE', 'CATEGORY', 'EXPENSE TYPE', 'LOCATION / SITE',
+        'FROM (PAYMENT_BY)', 'TO (VENDOR)', 'PAYMENT MODE',
+        'DESCRIPTION', 'AMOUNT (Rs)',
+    ]
+    ws.append(headers)
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='1E293B')
+    for col_idx in range(1, len(headers) + 1):
+        c = ws.cell(row=1, column=col_idx)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal='center')
+
+    for r in rows:
+        ws.append([
+            r['date_display'],
+            r['category'],
+            r['expense_type'],
+            r['location'],
+            r['payment_by'],
+            r['payment_to'],
+            r['payment_mode'],
+            r['description'],
+            float(r['amount'] or 0),
+        ])
+
+    ws.append([])
+    ws.append([f'Scope: {scope_label}',   '', '', '', '', '', '', '', ''])
+    ws.append([f'Period: {period_label}', '', '', '', '', '', '', '', ''])
+    ws.append([
+        f'Total Rows: {len(rows)}', '', '', '', '', '', '',
+        'Total Amount', float(total_amount or 0),
+    ])
+
+    widths = [16, 18, 18, 22, 22, 22, 16, 30, 16]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = HttpResponse(
+        buf.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.xlsx"'
+    return response
+
+
+def _render_hr_expense_pdf(rows, total_amount, period_label, filename_base, scope_label):
+    """PDF HttpResponse — same styling recipe as _render_hr_income_pdf."""
+    from io import BytesIO
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title14', parent=styles['Title'], fontSize=14, alignment=0)
+    sub_style   = ParagraphStyle('Sub8',    parent=styles['Normal'], fontSize=8)
+
+    story = [
+        Paragraph(f"Expense Report — {period_label}", title_style),
+        Paragraph(f"Scope: {scope_label}", sub_style),
+        Paragraph(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            sub_style,
+        ),
+        Spacer(1, 6),
+    ]
+
+    table_data = [[
+        'DATE', 'CATEGORY', 'EXPENSE TYPE', 'LOCATION / SITE',
+        'FROM (PAYMENT_BY)', 'TO (VENDOR)', 'MODE',
+        'DESCRIPTION', 'AMOUNT (Rs)',
+    ]]
+    for r in rows:
+        table_data.append([
+            r['date_display'] or '-',
+            r['category']     or '-',
+            r['expense_type'] or '-',
+            r['location']     or '-',
+            r['payment_by']   or '-',
+            r['payment_to']   or '-',
+            r['payment_mode'] or '-',
+            r['description']  or '-',
+            '{:,.2f}'.format(float(r['amount'] or 0)),
+        ])
+    if not rows:
+        table_data.append(['-', '-', '-', '-', '-', '-', '-', '-', '-'])
+    table_data.append([
+        f'Total Rows: {len(rows)}', '', '', '', '', '', '',
+        'Total Amount',
+        '{:,.2f}'.format(float(total_amount or 0)),
+    ])
+
+    col_widths = [55, 60, 65, 75, 75, 75, 50, 155, 65]
+    tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
+        ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
+        ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, -1), 7),
+        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN',      (8, 1), (8, -1),  'RIGHT'),
+        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
+        ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
+        ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
+    ]))
+    story.append(tbl)
+    doc.build(story)
+
+    buf.seek(0)
+    response = HttpResponse(buf.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename_base}.pdf"'
+    return response
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_expense_report(request):
+    """
+    GET /api/mobile/hr/expense/report/
+        ?format=pdf|xlsx        (default: pdf)
+        &search=<substring>     (optional — matches description / vendor /
+                                 reference / purpose / payment_by /
+                                 income_source; same as the list endpoint)
+        &category=<pk>          (optional — finance.Category pk, type='expense')
+        &date_from=YYYY-MM-DD   (default: current 26→25 cycle start)
+        &date_to=YYYY-MM-DD     (default: current 26→25 cycle end)
+
+    Bearer token accepted via `?token=<>` (same _extract_token rule the
+    payslip + attendance + income report links use).
+    """
+    fmt = (request.GET.get('format') or 'pdf').strip().lower()
+    if fmt not in ('pdf', 'xlsx'):
+        fmt = 'pdf'
+
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+
+    # ---- Resolve the window (custom range or current cycle) ----
+    df = (request.GET.get('date_from') or '').strip()
+    dt = (request.GET.get('date_to')   or '').strip()
+    try:
+        date_from = datetime.strptime(df, '%Y-%m-%d').date() if df else None
+    except ValueError:
+        date_from = None
+    try:
+        date_to = datetime.strptime(dt, '%Y-%m-%d').date() if dt else None
+    except ValueError:
+        date_to = None
+    if date_from is None or date_to is None:
+        cs, ce = _hr_attendance_report_cycle_default()
+        date_from = date_from or cs
+        date_to   = date_to   or ce
+    if date_from > date_to:
+        return JsonResponse(
+            {'success': False, 'error': 'date_from must be on or before date_to.'},
+            status=400,
+        )
+
+    # Reuse the exact same filter block the list endpoint uses. Override
+    # date_from / date_to with the resolved ISO strings so the default
+    # cycle also flows through the shared helper.
+    filter_params = {
+        'search':    (request.GET.get('search')   or '').strip(),
+        'category':  (request.GET.get('category') or '').strip(),
+        'date_from': date_from.isoformat(),
+        'date_to':   date_to.isoformat(),
+    }
+    qs = _hr_expense_filtered_queryset(hr_admin_id, filter_params)
+
+    # Serialize + total via the same dict the list uses — no field access
+    # duplication.
+    rows = [_hr_expense_payload_dict(t) for t in qs]
+    total_amount = 0.0
+    for r in rows:
+        try:
+            total_amount += float(r.get('amount') or 0)
+        except (TypeError, ValueError):
+            pass
+
+    # Scope + filename
+    search_txt = filter_params['search']
+    if search_txt:
+        scope_label = f'Search matches "{search_txt}"'
+        safe_search = ''.join(ch if ch.isalnum() else '_' for ch in search_txt)[:32]
+        scope_slug  = f'search_{safe_search}' if safe_search else 'search'
+    else:
+        scope_label = 'All Expenses'
+        scope_slug  = 'AllExpenses'
+
+    period_label  = f"{date_from.isoformat()} to {date_to.isoformat()}"
+    filename_base = f"Expense_Report_{scope_slug}_{date_from.isoformat()}_to_{date_to.isoformat()}"
+
+    if fmt == 'xlsx':
+        return _render_hr_expense_xlsx(rows, total_amount, period_label, filename_base, scope_label)
+    return _render_hr_expense_pdf(rows, total_amount, period_label, filename_base, scope_label)
+
+
+# ---------------------------------------------------------------------------
+# SPIM Lite HR Dashboard — GET /api/mobile/hr/dashboard/today/
+# ---------------------------------------------------------------------------
+#
+# Single aggregated call powering the mobile HR dashboard's attendance tiles.
+# Reuses existing helpers only — no new attendance rules, no new querysets,
+# no per-employee fan-out.
+#
+# Reused logic:
+#   * mobile_hr_required        — auth + HR gate (unchanged)
+#   * _hr_effective_admin_id    — tenant resolver with PENDING fallback (unchanged)
+#   * Employee queryset filter  — same admin_id-scoped roster mobile_hr_employees uses
+#   * AttendanceRecord queryset — same admin_id-scoped filter shape mobile_hr_attendance uses
+#   * Raw status literals       — mapped by the existing STATUS_DISPLAY table
+#                                 ('present' → Present, 'absent' → Absent)
+#
+# The Suite schema has no "Late" concept (see _ATTENDANCE_REPORT_SUMMARY_LABELS
+# — Late is not among the recognised display labels). The endpoint therefore
+# returns "late": null, and the mobile client renders "—" for that tile.
+#
+# Efficiency: two queries total (Employee count, AttendanceRecord group-by-
+# status). No Python-side loop over employees.
+# ---------------------------------------------------------------------------
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_dashboard_today(request):
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+    today = date.today()
+
+    total_employees = Employee.objects.filter(admin_id=hr_admin_id).count()
+
+    # Group today's attendance rows by raw DB status. The two labels the
+    # dashboard needs ('present', 'absent') pass through display_status()
+    # unchanged, so aggregating on the raw column is equivalent and lets
+    # the database do the counting.
+    status_counts = dict(
+        AttendanceRecord.objects
+        .filter(admin_id=hr_admin_id, date=today)
+        .values_list('status')
+        .annotate(n=Count('id'))
+    )
+
+    return JsonResponse({
+        'success':         True,
+        'date':            today.isoformat(),
+        'total_employees': total_employees,
+        'present':         int(status_counts.get('present', 0)),
+        'absent':          int(status_counts.get('absent', 0)),
+        # Suite has no "Late" attendance status — return null so the mobile
+        # client renders "—" without inventing a rule server-side.
+        'late':            None,
     })

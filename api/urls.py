@@ -39,4 +39,16 @@ urlpatterns = [
     path('mobile/hr/expense/categories/', views.mobile_hr_expense_categories, name='mobile_hr_expense_categories'),
     path('mobile/hr/expense/',            views.mobile_hr_expense_list,       name='mobile_hr_expense_list'),
     path('mobile/hr/expense/<int:pk>/',   views.mobile_hr_expense_detail,     name='mobile_hr_expense_detail'),
+
+    # HR Attendance Report — PDF / XLSX download, tenant-scoped, HR-gated.
+    path('mobile/hr/attendance/report/',  views.mobile_hr_attendance_report,  name='mobile_hr_attendance_report'),
+
+    # HR Income Report — PDF / XLSX download, tenant-scoped, HR-gated.
+    path('mobile/hr/income/report/',      views.mobile_hr_income_report,      name='mobile_hr_income_report'),
+
+    # HR Expense Report — PDF / XLSX download, tenant-scoped, HR-gated.
+    path('mobile/hr/expense/report/',     views.mobile_hr_expense_report,     name='mobile_hr_expense_report'),
+
+    # HR Dashboard — aggregated today's attendance summary, HR-gated.
+    path('mobile/hr/dashboard/today/',    views.mobile_hr_dashboard_today,    name='mobile_hr_dashboard_today'),
 ]
