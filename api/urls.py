@@ -34,4 +34,9 @@ urlpatterns = [
     path('mobile/hr/income/categories/', views.mobile_hr_income_categories, name='mobile_hr_income_categories'),
     path('mobile/hr/income/',            views.mobile_hr_income_list,       name='mobile_hr_income_list'),
     path('mobile/hr/income/<int:pk>/',   views.mobile_hr_income_detail,     name='mobile_hr_income_detail'),
+
+    # HR Expense CRUD — read/write, tenant-scoped, HR-gated.
+    path('mobile/hr/expense/categories/', views.mobile_hr_expense_categories, name='mobile_hr_expense_categories'),
+    path('mobile/hr/expense/',            views.mobile_hr_expense_list,       name='mobile_hr_expense_list'),
+    path('mobile/hr/expense/<int:pk>/',   views.mobile_hr_expense_detail,     name='mobile_hr_expense_detail'),
 ]

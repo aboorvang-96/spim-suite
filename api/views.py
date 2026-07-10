@@ -1657,3 +1657,230 @@ def mobile_hr_income_detail(request, pk):
         'success': True,
         'income':  _hr_income_payload_dict(income),
     })
+
+
+# ---------------------------------------------------------------------------
+# SPIM Lite HR Expense endpoints — read/write, HR-gated, tenant-scoped
+# ---------------------------------------------------------------------------
+#
+# These endpoints wrap the existing Suite Expense module. The Suite stores
+# expenses as finance.Transaction rows with type='expense', so:
+#   * validation      → finance.forms.TransactionForm   (single source of truth)
+#   * serialization   → finance.views._expense_to_dict
+#   * queryset shape  → Transaction.objects.filter(admin_id=…, type='expense')
+#
+# Same admin_id-resolution + creator-user pattern as the HR Income endpoints
+# above; nothing new is duplicated.
+# ---------------------------------------------------------------------------
+
+
+def _hr_expense_payload_dict(t):
+    """
+    Thin wrapper over finance.views._expense_to_dict so the mobile response
+    uses the exact same serializer as the Suite web AJAX endpoint. Deferred
+    import avoids pulling finance into api's module-load path.
+    """
+    from finance.views import _expense_to_dict
+    return _expense_to_dict(t)
+
+
+@mobile_hr_required
+@require_http_methods(['GET'])
+def mobile_hr_expense_categories(request):
+    """
+    GET /api/mobile/hr/expense/categories/
+
+    Reused finance.Category queryset — filtered to type='expense' and the
+    caller's tenant, matching finance.views.transaction_list.
+    """
+    from finance.models import Category
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+    qs = Category.objects.filter(
+        admin_id=hr_admin_id, type='expense',
+    ).order_by('name')
+    categories = [{
+        'id':   c.id,
+        'name': c.name,
+    } for c in qs]
+    return JsonResponse({'success': True, 'categories': categories})
+
+
+@csrf_exempt
+@mobile_hr_required
+@require_http_methods(['GET', 'POST'])
+def mobile_hr_expense_list(request):
+    """
+    GET  /api/mobile/hr/expense/       — list (with filters)
+    POST /api/mobile/hr/expense/       — create
+
+    List filters (all optional, mirror finance.views.transaction_list):
+      * search       — matches description / vendor / reference / purpose
+                        / payment_by / income_source
+      * category     — finance.Category pk
+      * date_from    — YYYY-MM-DD
+      * date_to      — YYYY-MM-DD
+
+    Sort order: same as Transaction.Meta.ordering (-date, -created_at) —
+    "latest first" out of the box.
+
+    Response:
+      { success: True, expenses: [ _expense_to_dict(row), … ] }
+    """
+    from finance.models import Transaction
+    from finance.forms import TransactionForm
+    from branches.models import LocationSite
+    from django.db.models import Q
+
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+
+    if request.method == 'GET':
+        qs = Transaction.objects.filter(
+            admin_id=hr_admin_id, type='expense',
+        ).select_related('category', 'branch')
+
+        search    = (request.GET.get('search')    or '').strip()
+        category  = (request.GET.get('category')  or '').strip()
+        date_from = (request.GET.get('date_from') or '').strip()
+        date_to   = (request.GET.get('date_to')   or '').strip()
+
+        if search:
+            qs = qs.filter(
+                Q(description__icontains=search)
+                | Q(vendor__icontains=search)
+                | Q(reference__icontains=search)
+                | Q(purpose__icontains=search)
+                | Q(payment_by__icontains=search)
+                | Q(income_source__icontains=search)
+            )
+        if category:
+            try:
+                qs = qs.filter(category_id=int(category))
+            except (ValueError, TypeError):
+                pass
+        if date_from:
+            qs = qs.filter(date__gte=date_from)
+        if date_to:
+            qs = qs.filter(date__lte=date_to)
+
+        expenses = [_hr_expense_payload_dict(t) for t in qs]
+        return JsonResponse({'success': True, 'expenses': expenses})
+
+    # POST — create. Reuses TransactionForm verbatim; type is forced server-side.
+    creator = _hr_creator_user(request.employee)
+    if creator is None:
+        return JsonResponse({
+            'success': False,
+            'error': 'HR account is missing a tenant creator. Please contact your admin.',
+        }, status=500)
+
+    data = _json_body(request) or {}
+    # Mirror finance.add_transaction: pin type='expense' regardless of payload.
+    data = dict(data)
+    data['type'] = 'expense'
+
+    form = TransactionForm(creator, data)
+    if not form.is_valid():
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse(
+            {'success': False, 'errors': errors, 'message': first},
+            status=400,
+        )
+
+    t = form.save(commit=False)
+    t.user     = creator
+    t.type     = 'expense'
+    t.admin_id = hr_admin_id
+    t.save()
+    # Auto-register the LocationSite so it shows up in Suite dropdowns —
+    # same behavior as finance.add_transaction.
+    if t.location_site:
+        name = t.location_site.strip()
+        if name and not LocationSite.objects.filter(
+            admin_id=hr_admin_id, name__iexact=name,
+        ).exists():
+            LocationSite.objects.create(
+                admin_id=hr_admin_id, name=name, created_by=creator,
+            )
+
+    return JsonResponse({
+        'success': True,
+        'expense': _hr_expense_payload_dict(t),
+    }, status=201)
+
+
+@csrf_exempt
+@mobile_hr_required
+@require_http_methods(['GET', 'PUT', 'DELETE'])
+def mobile_hr_expense_detail(request, pk):
+    """
+    GET    /api/mobile/hr/expense/<pk>/  — retrieve
+    PUT    /api/mobile/hr/expense/<pk>/  — update
+    DELETE /api/mobile/hr/expense/<pk>/  — delete
+
+    Cross-tenant lookups return 404 to avoid leaking existence.
+    """
+    from finance.models import Transaction
+    from finance.forms import TransactionForm
+    from branches.models import LocationSite
+
+    hr_admin_id = _hr_effective_admin_id(request.employee)
+
+    try:
+        t = Transaction.objects.get(
+            pk=pk, admin_id=hr_admin_id, type='expense',
+        )
+    except (Transaction.DoesNotExist, ValueError, TypeError):
+        return JsonResponse(
+            {'success': False, 'error': 'Expense not found.'},
+            status=404,
+        )
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'success': True,
+            'expense': _hr_expense_payload_dict(t),
+        })
+
+    if request.method == 'DELETE':
+        t.delete()
+        return JsonResponse({'success': True})
+
+    # PUT — update via the same form the Suite uses.
+    creator = _hr_creator_user(request.employee)
+    if creator is None:
+        return JsonResponse({
+            'success': False,
+            'error': 'HR account is missing a tenant creator. Please contact your admin.',
+        }, status=500)
+
+    data = _json_body(request) or {}
+    data = dict(data)
+    data['type'] = 'expense'
+
+    form = TransactionForm(creator, data, instance=t)
+    if not form.is_valid():
+        errors = {f: [str(e) for e in errs] for f, errs in form.errors.items()}
+        first = next(iter(errors.values()), ['Invalid data.'])[0]
+        return JsonResponse(
+            {'success': False, 'errors': errors, 'message': first},
+            status=400,
+        )
+
+    obj = form.save(commit=False)
+    obj.type     = 'expense'
+    obj.admin_id = hr_admin_id  # never let the payload widen scope
+    obj.save()
+    if obj.location_site:
+        name = obj.location_site.strip()
+        if name and not LocationSite.objects.filter(
+            admin_id=hr_admin_id, name__iexact=name,
+        ).exists():
+            LocationSite.objects.create(
+                admin_id=hr_admin_id, name=name, created_by=creator,
+            )
+
+    return JsonResponse({
+        'success': True,
+        'expense': _hr_expense_payload_dict(obj),
+    })
