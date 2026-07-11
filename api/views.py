@@ -608,23 +608,78 @@ def mobile_payslips(request):
     List payslips for the authenticated employee. Every row is returned
     (admins may need visibility of pending months too), but only rows with
     is_generated=True are downloadable — see mobile_payslip_download.
+
+    Suite is the single source of truth for *which* payslip SPIM Lite must
+    display. The 26→25 attendance cycle is anchored on today and the
+    corresponding SalaryUpdate is identified by (year, month) of cycle-end
+    — the same convention `mobile_salary` uses. Two per-row flags are
+    emitted so the mobile client never compares months, sorts, or
+    otherwise derives payroll state:
+
+      * is_current_cycle    — the row whose month matches today's cycle-end
+      * is_latest_generated — the most-recent SalaryUpdate with is_payslip_generated=True
+
+    Plus a top-level `current_payslip_id` that picks:
+      1. the current-cycle payslip if it exists AND has been generated, OR
+      2. the latest generated previous payslip.
+
+    SPIM Lite renders exactly that id — no client-side selection logic.
     """
     emp = request.employee
-    rows = SalaryUpdate.objects.filter(employee=emp).order_by('-month')[:60]
+
+    # --- 26→25 cycle anchored on today (mirrors mobile_salary) ---
+    today = date.today()
+    if today.day >= 26:
+        if today.month == 12:
+            cycle_end = date(today.year + 1, 1, 25)
+        else:
+            cycle_end = date(today.year, today.month + 1, 25)
+    else:
+        cycle_end = today.replace(day=25)
+
+    rows = list(SalaryUpdate.objects.filter(employee=emp).order_by('-month')[:60])
+
+    # Identify the current-cycle row (may or may not be generated yet).
+    current_row = next(
+        (s for s in rows
+         if s.month.year == cycle_end.year and s.month.month == cycle_end.month),
+        None,
+    )
+
+    # Latest generated payslip anywhere in the history slice above.
+    latest_generated_row = next(
+        (s for s in rows if s.is_payslip_generated),
+        None,
+    )
+
+    # Which payslip should SPIM Lite render?
+    if current_row and current_row.is_payslip_generated:
+        current_payslip_id = current_row.id
+    elif latest_generated_row:
+        current_payslip_id = latest_generated_row.id
+    else:
+        current_payslip_id = None
+
     payslips = [{
-        'id':              s.id,
-        'is_generated':    s.is_payslip_generated,
-        'generated_at':    s.payslip_generated_at.isoformat() if s.payslip_generated_at else None,
-        'month':           s.month.strftime('%Y-%m'),
-        'basic_salary':    str(s.basic_salary),
-        'ot_allowance':    str(s.ot_allowance),
-        'advance_pay':     str(s.advance_pay),
-        'total_deduction': str(s.total_deduction),
-        'food_allowance':  str(s.food_allowance),
-        'food_usage':      str(s.food_usage),
-        'net_pay':         str(s.net_pay),
+        'id':                  s.id,
+        'is_generated':        s.is_payslip_generated,
+        'generated_at':        s.payslip_generated_at.isoformat() if s.payslip_generated_at else None,
+        'month':               s.month.strftime('%Y-%m'),
+        'basic_salary':        str(s.basic_salary),
+        'ot_allowance':        str(s.ot_allowance),
+        'advance_pay':         str(s.advance_pay),
+        'total_deduction':     str(s.total_deduction),
+        'food_allowance':      str(s.food_allowance),
+        'food_usage':          str(s.food_usage),
+        'net_pay':             str(s.net_pay),
+        'is_current_cycle':    bool(current_row and s.id == current_row.id),
+        'is_latest_generated': bool(latest_generated_row and s.id == latest_generated_row.id),
     } for s in rows]
-    return JsonResponse({'success': True, 'payslips': payslips})
+    return JsonResponse({
+        'success':            True,
+        'payslips':           payslips,
+        'current_payslip_id': current_payslip_id,
+    })
 
 
 @csrf_exempt
@@ -1315,8 +1370,13 @@ def mobile_hr_attendance(request):
                 hr_admin_id, date_from, backfill_to, employees=[target],
             )
 
+    # `employee=target` is already tenant-scoped — `target` was fetched with
+    # `admin_id=hr_admin_id` above. Filtering AttendanceRecord.admin_id here
+    # is redundant AND silently drops legacy / mobile-stamped rows whose
+    # row-level admin_id is 'PENDING' or blank (same rows the employee's own
+    # `mobile_attendance` GET shows, since that view queries only `employee=`).
     qs = AttendanceRecord.objects.filter(
-        admin_id=hr_admin_id, employee=target,
+        employee=target,
     ).select_related('employee')
     if date_from:
         qs = qs.filter(date__gte=date_from)
@@ -1981,8 +2041,12 @@ def _hr_attendance_report_rows(hr_admin_id, target_employees, date_from, date_to
             employees=list(target_employees),
         )
 
+    # `employee__in=target_employees` is already tenant-scoped — every
+    # target Employee was fetched with `admin_id=hr_admin_id`. Filtering
+    # AttendanceRecord.admin_id here would silently drop legacy or
+    # mobile-stamped rows carrying a mismatched row-level admin_id
+    # (same divergence fixed in `mobile_hr_attendance`).
     qs = AttendanceRecord.objects.filter(
-        admin_id=hr_admin_id,
         employee__in=target_employees,
         date__gte=date_from,
         date__lte=date_to,
