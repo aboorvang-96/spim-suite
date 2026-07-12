@@ -188,27 +188,33 @@ def _work_log_json(request, admin_id):
     if f_remarks:
         qs = qs.filter(remarks__icontains=f_remarks)
 
-    entries = []
-    for idx, log in enumerate(qs, start=1):
-        # Single prefetch-cache traversal so emp_ids / emp_names / tmp stay
-        # in lock-step:
-        #   - emp_ids / emp_names: every linked employee (admin needs to see
-        #     the full crew for edit/unlink even if some were absent).
-        #   - tmp: attendance-qualified count only (Phase 3 — matches the
-        #     Work Summary tab and the user-facing TMP rule: present /
-        #     half_day count; absent / leave / holiday / week_off / no_week_off
-        #     do not). _attendance_qualified_emps is the single source of
-        #     truth for this filter.
+    # Daily Work Log renders exactly one row per MachineLocation. If the
+    # DB still holds duplicate WorkLog rows for the same (admin_id, date,
+    # location) — possible before migration 0007 runs — the client's
+    # `logMap[e.location_id] = e` collapse would silently keep the LAST
+    # iterated row (oldest, per Meta.ordering), which is typically the
+    # empty stub from a legacy work_log_add / mobile race. Collapse here
+    # instead so the JSON carries at most one canonical entry per
+    # location: the FIRST hit under Meta.ordering `['-date','-created_at']`
+    # — i.e. the newest, which is the row Work Summary displays. Rows
+    # whose location was SET_NULL'd (location_id IS NULL) are omitted
+    # because they cannot be attached to any machine row on this tab.
+    entries_by_loc = {}
+    for log in qs:
+        loc_key = log.location_id
+        if not loc_key:
+            continue
+        if loc_key in entries_by_loc:
+            continue
         emps           = list(log.employees.all())
         emp_ids        = [e.pk for e in emps]
         emp_names      = [e.name for e in emps]
         qualified_emps = _attendance_qualified_emps(emps, log.date)
-        entries.append({
-            'sl':            idx,
+        entries_by_loc[loc_key] = {
             'id':            log.pk,
             'date':          log.date.strftime('%d-%m-%Y'),
             'date_iso':      log.date.isoformat(),
-            'location_id':   log.location_id or '',
+            'location_id':   loc_key,
             'location_name': log.location.name if log.location else '—',
             'site':          log.site or '',
             'work_details':  log.work_details or '',
@@ -217,7 +223,8 @@ def _work_log_json(request, admin_id):
             'employee_ids':  emp_ids,
             'employee_names': emp_names,
             'locked':        bool(getattr(log, 'locked', False)),
-        })
+        }
+    entries = [{'sl': i, **e} for i, e in enumerate(entries_by_loc.values(), start=1)]
 
     locations = list(MachineLocation.objects.filter(admin_id=admin_id).values('id', 'name'))
     statuses  = list(WorkStatus.objects.filter(admin_id=admin_id).values('id', 'name'))
@@ -811,3 +818,250 @@ def machine_monthly_report_export(request):
         return resp
 
     return HttpResponse('Unsupported format. Use ?format=xlsx or pdf.', status=400)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# [TEMP-DEBUG-WORKLOG-PAGE]  Admin-only diagnostic — remove after RCA.
+# Route: /projects/debug/worklog/
+# ═══════════════════════════════════════════════════════════════════════════
+@login_required
+def _debug_worklog(request):
+    from django.http import HttpResponse
+    from django.utils.html import escape as _esc
+    from datetime import date as _date_type
+    import json as _json
+
+    if not getattr(request.user, 'is_admin', False):
+        return HttpResponse('Forbidden', status=403)
+
+    admin_id = get_admin_id(request.user)
+
+    q_date = (request.GET.get('date') or '').strip()
+    q_loc  = (request.GET.get('location_id') or '').strip()
+
+    machines_all = list(
+        MachineLocation.objects.all().values('id', 'admin_id', 'name').order_by('admin_id', 'name')
+    )
+
+    def _fmt(v):
+        if v is None:
+            return '<em style="color:#888">NULL</em>'
+        return _esc(str(v))
+
+    body = []
+    body.append('<!doctype html><meta charset="utf-8"><title>WorkLog Debug</title>')
+    body.append('<style>body{font-family:monospace;padding:1rem;background:#0f172a;color:#e2e8f0}'
+                'table{border-collapse:collapse;margin:0.5rem 0;background:#1e293b}'
+                'th,td{border:1px solid #334155;padding:.35rem .6rem;vertical-align:top;font-size:12px}'
+                'th{background:#334155;text-align:left}'
+                'h2{margin-top:1.6rem;color:#93c5fd;border-bottom:1px solid #334155;padding-bottom:.25rem}'
+                'code,pre{background:#020617;color:#a5f3fc;padding:.15rem .3rem;border-radius:3px}'
+                'pre{padding:.75rem;white-space:pre-wrap;word-break:break-all}'
+                '.warn{color:#fca5a5;font-weight:bold}'
+                '.ok{color:#86efac}'
+                'form{background:#1e293b;padding:1rem;border-radius:6px;margin-bottom:1rem}'
+                'input,select,button{padding:.4rem .6rem;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:4px;font-family:inherit}'
+                'button{background:#3b82f6;cursor:pointer;border-color:#3b82f6}'
+                '</style>')
+    body.append('<h1>WorkLog Debug — TEMPORARY</h1>')
+    body.append(f'<p><strong>request.user</strong>: pk={request.user.pk}, email={_esc(getattr(request.user,"email","") or "")}, '
+                f'role={_esc(getattr(request.user,"role","") or "")}, '
+                f'user.admin_id (field)={_fmt(getattr(request.user,"admin_id", None))}<br>'
+                f'<strong>get_admin_id(request.user)</strong> = <code>{_esc(admin_id)}</code></p>')
+
+    # Form
+    body.append('<form method="get">')
+    body.append(f'<label>Date <input type="date" name="date" value="{_esc(q_date)}" required></label> &nbsp; ')
+    body.append('<label>Machine <select name="location_id" required>')
+    body.append('<option value="">— select —</option>')
+    for m in machines_all:
+        sel = ' selected' if str(m['id']) == q_loc else ''
+        body.append(f'<option value="{m["id"]}"{sel}>#{m["id"]} — {_esc(m["name"])} '
+                    f'(admin_id={_esc(m["admin_id"])})</option>')
+    body.append('</select></label> &nbsp; <button type="submit">Diagnose</button>')
+    body.append('</form>')
+
+    if not (q_date and q_loc):
+        return HttpResponse(''.join(body))
+
+    # === A. current admin_id ===
+    body.append('<h2>A. Current admin_id</h2>')
+    body.append(f'<pre>{_esc(admin_id)}</pre>')
+
+    # === B. MachineLocation ===
+    try:
+        loc_pk = int(q_loc)
+    except (TypeError, ValueError):
+        body.append('<p class="warn">Invalid location_id.</p>')
+        return HttpResponse(''.join(body))
+
+    m_obj = MachineLocation.objects.filter(pk=loc_pk).first()
+    body.append('<h2>B. MachineLocation</h2>')
+    if not m_obj:
+        body.append(f'<p class="warn">MachineLocation pk={loc_pk} DOES NOT EXIST.</p>')
+    else:
+        body.append('<table><tr><th>id</th><th>name</th><th>admin_id</th>'
+                    '<th>tenant match with request?</th></tr>')
+        tenant_match = (m_obj.admin_id == admin_id)
+        cls = 'ok' if tenant_match else 'warn'
+        body.append(f'<tr><td>{m_obj.pk}</td><td>{_esc(m_obj.name)}</td>'
+                    f'<td>{_esc(m_obj.admin_id)}</td>'
+                    f'<td class="{cls}">{"YES" if tenant_match else "NO — cross-tenant"}</td></tr></table>')
+        siblings = MachineLocation.objects.filter(name=m_obj.name).exclude(pk=m_obj.pk)
+        if siblings.exists():
+            body.append('<p class="warn">Other MachineLocation rows with the same name:</p><table>'
+                        '<tr><th>id</th><th>admin_id</th><th>name</th></tr>')
+            for s in siblings:
+                body.append(f'<tr><td>{s.pk}</td><td>{_esc(s.admin_id)}</td><td>{_esc(s.name)}</td></tr>')
+            body.append('</table>')
+
+    # === C. Every WorkLog row for (admin_id, date, location_id=loc_pk) ===
+    body.append('<h2>C. WorkLog rows for (current admin_id, chosen date, chosen location)</h2>')
+    match_qs = (
+        WorkLog.objects
+        .filter(admin_id=admin_id, date=q_date, location_id=loc_pk)
+        .prefetch_related('employees')
+        .order_by('pk')
+    )
+    match_count = match_qs.count()
+    body.append(f'<p>Row count = <code>{match_count}</code></p>')
+    if match_count:
+        body.append('<table><tr>'
+                    '<th>pk</th><th>admin_id</th><th>location_id</th><th>date</th>'
+                    '<th>site</th><th>work_details</th><th>tmp</th><th>remarks</th>'
+                    '<th>locked</th><th>created_at</th><th>updated_at</th><th>employees</th>'
+                    '</tr>')
+        for w in match_qs:
+            emps = list(w.employees.values_list('pk', 'employee_id', 'name'))
+            body.append('<tr>'
+                        f'<td>{w.pk}</td>'
+                        f'<td>{_esc(w.admin_id)}</td>'
+                        f'<td>{_fmt(w.location_id)}</td>'
+                        f'<td>{_esc(str(w.date))}</td>'
+                        f'<td>{_esc(w.site)}</td>'
+                        f'<td>{_esc(w.work_details)}</td>'
+                        f'<td>{w.tmp}</td>'
+                        f'<td>{_esc(w.remarks)}</td>'
+                        f'<td>{_fmt(getattr(w,"locked","MISSING"))}</td>'
+                        f'<td>{_esc(str(w.created_at))}</td>'
+                        f'<td>{_esc(str(w.updated_at))}</td>'
+                        f'<td>{_esc(str(emps))}</td>'
+                        '</tr>')
+        body.append('</table>')
+
+    # Also list every WorkLog for this date across all locations and admin_ids
+    body.append('<h2>C-extra. All WorkLog rows on this date (any admin_id, any location)</h2>')
+    all_on_date = (
+        WorkLog.objects.filter(date=q_date).prefetch_related('employees').order_by('pk')
+    )
+    body.append(f'<p>Row count on {_esc(q_date)} = <code>{all_on_date.count()}</code></p>')
+    if all_on_date.exists():
+        body.append('<table><tr>'
+                    '<th>pk</th><th>admin_id</th><th>location_id</th><th>site</th>'
+                    '<th>work_details</th><th>locked</th><th>created_at</th></tr>')
+        for w in all_on_date:
+            row_tenant = 'ok' if w.admin_id == admin_id else 'warn'
+            row_loc    = 'ok' if w.location_id == loc_pk else 'warn'
+            body.append('<tr>'
+                        f'<td>{w.pk}</td>'
+                        f'<td class="{row_tenant}">{_esc(w.admin_id)}</td>'
+                        f'<td class="{row_loc}">{_fmt(w.location_id)}</td>'
+                        f'<td>{_esc(w.site)}</td>'
+                        f'<td>{_esc(w.work_details)}</td>'
+                        f'<td>{_fmt(getattr(w,"locked","MISSING"))}</td>'
+                        f'<td>{_esc(str(w.created_at))}</td>'
+                        '</tr>')
+        body.append('</table>')
+
+    # === D. Exact JSON that _work_log_json would return ===
+    body.append('<h2>D. Exact JSON _work_log_json returns for this date</h2>')
+    try:
+        from django.test import RequestFactory as _RF
+        _rf = _RF()
+        _fake = _rf.get('/projects/', {'format': 'json', 'tab': 'log', 'date': q_date})
+        _fake.user = request.user
+        _fake.headers = {'X-Requested-With': 'XMLHttpRequest'}
+        _resp = _work_log_json(_fake, admin_id)
+        _payload = _json.loads(_resp.content.decode())
+    except Exception as _e:
+        _payload = {'ERROR': str(_e)}
+    body.append(f'<pre>{_esc(_json.dumps(_payload, indent=2, default=str))}</pre>')
+
+    entries_for_loc = [e for e in _payload.get('entries', []) if e.get('location_id') == loc_pk]
+    body.append(f'<p>Entries in payload matching location_id=<code>{loc_pk}</code>: '
+                f'<code>{len(entries_for_loc)}</code></p>')
+
+    # === E. Duplicate detection ===
+    body.append('<h2>E. Duplicate rows for (admin_id, date, location_id)</h2>')
+    if match_count > 1:
+        body.append(f'<p class="warn">DUPLICATES DETECTED — {match_count} rows share this key.</p>')
+    else:
+        body.append('<p class="ok">No duplicates for this key.</p>')
+
+    # === F. Which row _work_log_json selects as canonical ===
+    body.append('<h2>F. Canonical row picked by _work_log_json</h2>')
+    if entries_for_loc:
+        body.append(f'<pre>{_esc(_json.dumps(entries_for_loc[0], indent=2, default=str))}</pre>')
+    else:
+        body.append('<p class="warn">_work_log_json returned NO entry for this location_id.</p>')
+
+    # === G. Locked state ===
+    body.append('<h2>G. Locked state of the matching row</h2>')
+    if match_qs.exists():
+        for w in match_qs:
+            body.append(f'<p>pk={w.pk} → locked=<code>{_fmt(getattr(w,"locked","MISSING"))}</code></p>')
+    else:
+        body.append('<p>No matching row.</p>')
+
+    # === H. Orphan rows (location_id IS NULL) on this date ===
+    body.append('<h2>H. Orphan WorkLogs on this date (location_id IS NULL)</h2>')
+    orphans = WorkLog.objects.filter(date=q_date, location__isnull=True)
+    body.append(f'<p>count = <code>{orphans.count()}</code></p>')
+    if orphans.exists():
+        body.append('<table><tr><th>pk</th><th>admin_id</th><th>site</th><th>work_details</th>'
+                    '<th>remarks</th><th>tmp</th><th>locked</th><th>created_at</th></tr>')
+        for w in orphans:
+            body.append('<tr>'
+                        f'<td>{w.pk}</td><td>{_esc(w.admin_id)}</td><td>{_esc(w.site)}</td>'
+                        f'<td>{_esc(w.work_details)}</td><td>{_esc(w.remarks)}</td>'
+                        f'<td>{w.tmp}</td><td>{_fmt(getattr(w,"locked","MISSING"))}</td>'
+                        f'<td>{_esc(str(w.created_at))}</td></tr>')
+        body.append('</table>')
+
+    # === I. Queryset count from the exact filter _work_log_json uses ===
+    body.append('<h2>I. Exact queryset count used by _work_log_json (admin_id + date filter only)</h2>')
+    daily_qs = WorkLog.objects.filter(admin_id=admin_id, date=q_date)
+    body.append(f'<p>count = <code>{daily_qs.count()}</code></p>')
+    if daily_qs.exists():
+        body.append('<table><tr><th>pk</th><th>location_id</th><th>site</th>'
+                    '<th>work_details</th><th>locked</th><th>created_at</th></tr>')
+        for w in daily_qs.order_by('-created_at'):
+            body.append('<tr>'
+                        f'<td>{w.pk}</td><td>{_fmt(w.location_id)}</td><td>{_esc(w.site)}</td>'
+                        f'<td>{_esc(w.work_details)}</td>'
+                        f'<td>{_fmt(getattr(w,"locked","MISSING"))}</td>'
+                        f'<td>{_esc(str(w.created_at))}</td></tr>')
+        body.append('</table>')
+
+    # === J. What Work Summary would show for this date ===
+    body.append('<h2>J. Rows Work Summary would display for date_from=date_to=this date</h2>')
+    try:
+        _fake2 = _rf.get('/projects/', {'format': 'json', 'tab': 'summary',
+                                        'date_from': q_date, 'date_to': q_date})
+        _fake2.user = request.user
+        _fake2.headers = {'X-Requested-With': 'XMLHttpRequest'}
+        _resp2 = _work_summary_json(_fake2, admin_id)
+        _sum_payload = _json.loads(_resp2.content.decode())
+    except Exception as _e:
+        _sum_payload = {'ERROR': str(_e)}
+    body.append(f'<pre>{_esc(_json.dumps(_sum_payload, indent=2, default=str))}</pre>')
+
+    sum_rows_for_loc = [
+        r for r in _sum_payload.get('rows', [])
+        if m_obj and r.get('location_name') == m_obj.name
+    ]
+    body.append(f'<p>Summary rows matching this location by name: '
+                f'<code>{len(sum_rows_for_loc)}</code></p>')
+
+    return HttpResponse(''.join(body))
+

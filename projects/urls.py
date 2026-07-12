@@ -7,6 +7,9 @@ urlpatterns = [
     # ── Main entry: Work Log Dashboard (replaces bare project list) ──
     path('',                            views.work_log_dashboard,  name='list'),
 
+    # ── [TEMP-DEBUG-WORKLOG-PAGE] admin-only diagnostic — remove after RCA ──
+    path('debug/worklog/',              views._debug_worklog,      name='debug_worklog'),
+
     # ── Work Log CRUD (AJAX) ──
     path('log/',                        views.work_log_dashboard,  name='work_log'),
     path('log/add/',                    views.work_log_add,        name='work_log_add'),
