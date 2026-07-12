@@ -484,7 +484,6 @@
                             <th>Absent</th>
                             <th>Leave</th>
                             <th>Holiday</th>
-                            <th>Sunday</th>
                             <th>Weekly Off</th>
                             <th>Half Day</th>
                         </tr>
@@ -1638,7 +1637,6 @@ function _renderSummary() {
             <td><span class="sb sb-absent">${v.Absent||0}</span></td>
             <td><span class="sb sb-leave">${v.Leave||0}</span></td>
             <td><span class="sb sb-holiday">${v.Holiday||0}</span></td>
-            <td><span class="sb sb-sunday">${v.Sunday||0}</span></td>
             <td><span class="sb sb-weeklyoff">${v['Weekly Off']||0}</span></td>
             <td><span class="sb sb-halfday">${v['Half Day']||0}</span></td>
         `;
@@ -1827,7 +1825,6 @@ function _renderDrawerContentInner(cycle) {
         <div class="emp-kpi kpi-holiday"><div class="val">${kpiCounts.Holiday}</div><div class="lbl">Holiday</div></div>
         <div class="emp-kpi kpi-weeklyoff"><div class="val">${kpiCounts['Weekly Off']}</div><div class="lbl">Weekly Off</div></div>
         <div class="emp-kpi kpi-halfday"><div class="val">${kpiCounts['Half Day']}</div><div class="lbl">Half Day</div></div>
-        <div class="emp-kpi kpi-sunday"><div class="val">${kpiCounts.Sunday}</div><div class="lbl">Sunday</div></div>
     `;
 
     if (baseSalary > 0) {
