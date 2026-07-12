@@ -13,6 +13,7 @@ urlpatterns = [
     path('log/upsert/',                 views.work_log_upsert,     name='work_log_upsert'),
     path('log/<int:pk>/edit/',          views.work_log_edit,       name='work_log_edit'),
     path('log/<int:pk>/delete/',        views.work_log_delete,     name='work_log_delete'),
+    path('log/<int:pk>/unlock/',        views.work_log_unlock,     name='work_log_unlock'),
 
     # ── Machine Location & Work Status registry ──
     path('locations/add/',              views.add_machine_location,   name='add_machine_location'),

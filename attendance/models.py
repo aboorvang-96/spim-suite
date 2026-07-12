@@ -30,6 +30,12 @@ class AttendanceRecord(models.Model):
     site         = models.CharField(max_length=150, blank=True, default='')
     working_site = models.CharField(max_length=200, blank=True, default='')
 
+    # Remarks persisted per (employee, date). Locked once saved with a
+    # non-empty value — editing requires an explicit unlock so a bulk save
+    # can't silently wipe an earlier note.
+    remarks         = models.CharField(max_length=500, blank=True, default='')
+    remarks_locked  = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)

@@ -116,6 +116,10 @@ class WorkLog(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, related_name='work_logs_created',
     )
+    # Locked once an entry is saved for (machine + date). While locked,
+    # save/edit/delete are blocked backend-side; the admin must call the
+    # unlock endpoint before further changes.
+    locked       = models.BooleanField(default=False)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
 

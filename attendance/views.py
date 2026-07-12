@@ -5,7 +5,7 @@ from django.core.exceptions import MultipleObjectsReturned
 from employees.models import Employee
 from accounts.views import get_admin_id
 from .models import AttendanceRecord
-from .utils import ensure_sunday_holidays, display_status
+from .utils import display_status
 import datetime
 import json
 
@@ -132,6 +132,24 @@ def save_attendance(request):
                 if working_site_val:
                     defaults['working_site'] = working_site_val
 
+                # Remarks: persist when supplied. Once a non-empty remark
+                # is saved the row is locked; further remark changes require
+                # an explicit unlock so a bulk save can't clobber the note.
+                remarks_raw = record.get('remarks')
+                remarks_val = (remarks_raw or '').strip() if remarks_raw is not None else None
+
+                existing = AttendanceRecord.objects.filter(
+                    employee=emp, date=date,
+                ).only('remarks', 'remarks_locked').first()
+
+                if remarks_val is not None:
+                    if existing and existing.remarks_locked:
+                        # Locked — keep existing remark, ignore incoming.
+                        pass
+                    else:
+                        defaults['remarks'] = remarks_val
+                        defaults['remarks_locked'] = bool(remarks_val)
+
                 AttendanceRecord.objects.update_or_create(
                     employee=emp,
                     date=date,
@@ -148,24 +166,6 @@ def load_attendance(request):
     admin_id = get_admin_id(request.user)
     date_from = request.GET.get('date_from', '')
     date_to   = request.GET.get('date_to', '')
-
-    # Lazy Sunday auto-Holiday backfill — every Sunday in the requested
-    # window gets a 'holiday' AttendanceRecord row per employee (skipping
-    # any existing rows so admin overrides survive). When `date_to` isn't
-    # supplied we default to "end of the current calendar month" so the
-    # default attendance page load still backfills the visible cycle.
-    if date_from:
-        backfill_to = date_to
-        if not backfill_to:
-            try:
-                df = datetime.datetime.strptime(date_from, '%Y-%m-%d').date()
-                # End of df's month — gives the summary tab a full window
-                next_month = df.replace(day=28) + datetime.timedelta(days=4)
-                backfill_to = (next_month.replace(day=1) - datetime.timedelta(days=1)).isoformat()
-            except ValueError:
-                backfill_to = ''
-        if backfill_to:
-            ensure_sunday_holidays(admin_id, date_from, backfill_to)
 
     qs = AttendanceRecord.objects.filter(admin_id=admin_id).select_related('employee')
     if date_from:
@@ -186,6 +186,8 @@ def load_attendance(request):
         # even before migration 0004 has been applied to the Suite DB.
         'site':        getattr(r, 'site',         '') or '',
         'workingSite': getattr(r, 'working_site', '') or '',
+        'remarks':        getattr(r, 'remarks', '') or '',
+        'remarksLocked':  bool(getattr(r, 'remarks_locked', False)),
     } for r in qs]
 
     return JsonResponse({'success': True, 'records': records})
@@ -228,3 +230,40 @@ def delete_attendance(request):
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
     return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+@login_required
+def unlock_remarks(request):
+    """Clear the remarks_locked flag on a single (employee, date) row so
+    the admin can edit the remark. The remark text itself is preserved."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request'})
+    try:
+        data     = json.loads(request.body or '{}')
+        admin_id = get_admin_id(request.user)
+        emp_id   = data.get('empId')
+        emp_pk   = data.get('pk')
+        date     = data.get('date')
+        if not date:
+            return JsonResponse({'success': False, 'error': 'Date is required'})
+
+        emp = None
+        if emp_id:
+            try:
+                emp = Employee.objects.get(employee_id=emp_id, admin_id=admin_id)
+            except (Employee.DoesNotExist, MultipleObjectsReturned):
+                emp = None
+        if emp is None and emp_pk:
+            try:
+                emp = Employee.objects.get(pk=emp_pk, admin_id=admin_id)
+            except (Employee.DoesNotExist, MultipleObjectsReturned, ValueError, TypeError):
+                emp = None
+        if emp is None:
+            return JsonResponse({'success': False, 'error': 'Employee not found'})
+
+        updated = AttendanceRecord.objects.filter(
+            employee=emp, date=date, admin_id=admin_id,
+        ).update(remarks_locked=False)
+        return JsonResponse({'success': True, 'updated': updated})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})

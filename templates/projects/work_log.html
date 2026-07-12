@@ -641,14 +641,20 @@ function renderMachineRows() {
         const remarks    = entry.remarks       || '';
         const empIds     = entry.employee_ids  || [];
         const savedClass = entry.id ? ' row-saved' : '';
+        const isLocked   = !!entry.locked;
         // empCountLbl no longer used — display handled by custom dropdown
 
-        // Actions: saved rows show Edit+Del; new rows show Save
+        // Actions:
+        //   • Locked saved rows → Unlock only (Save/Edit/Del disabled).
+        //   • Unlocked saved rows → Edit + Del.
+        //   • New rows → Save.
         const actionsCells = entry.id
-            ? `<button class="btn-row-edit"   id="act-edit-${m.id}"   onclick="editRow(${m.id})"        title="Edit entry">Edit</button>
-               <button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save changes" style="display:none;">Save</button>
-               <button class="btn-row-cancel" id="act-cancel-${m.id}" onclick="cancelEditRow(${m.id})"  title="Cancel edit"  style="display:none;">✕</button>
-               <button class="btn-row-del" id="act-del-${m.id}" onclick="deleteRow(${m.id},${entry.id})" title="Delete">Del</button>`
+            ? (isLocked
+                ? `<button class="btn-row-edit" id="act-unlock-${m.id}" onclick="unlockRow(${m.id},${entry.id})" title="Unlock to edit">🔒 Unlock</button>`
+                : `<button class="btn-row-edit"   id="act-edit-${m.id}"   onclick="editRow(${m.id})"        title="Edit entry">Edit</button>
+                   <button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save changes" style="display:none;">Save</button>
+                   <button class="btn-row-cancel" id="act-cancel-${m.id}" onclick="cancelEditRow(${m.id})"  title="Cancel edit"  style="display:none;">✕</button>
+                   <button class="btn-row-del" id="act-del-${m.id}" onclick="deleteRow(${m.id},${entry.id})" title="Delete">Del</button>`)
             : `<button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save entry">Save</button>`;
 
         return `
@@ -1098,6 +1104,27 @@ function onTmpChange(locId) {
     const count = getSelectedEmpIds(locId).length;
     if (tmpVal > 0 && count > tmpVal) {
         showToast(`TMP is now ${tmpVal} but ${count} employee(s) are selected. Please remove excess.`, 'error');
+    }
+}
+
+// ── Unlock locked row ──────────────────────────────────────────────────────
+async function unlockRow(locId, logId) {
+    if (!logId) return;
+    if (!confirm('Unlock this entry for editing?')) return;
+    try {
+        const res = await fetch(`/projects/log/${logId}/unlock/`, {
+            method:  'POST',
+            headers: { 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const result = await res.json();
+        if (result.success) {
+            showToast('Unlocked. You can now edit or delete this entry.');
+            loadLogForDate();
+        } else {
+            showToast(result.error || 'Unlock failed.', 'error');
+        }
+    } catch (e) {
+        showToast('Network error.', 'error');
     }
 }
 

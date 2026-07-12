@@ -216,6 +216,7 @@ def _work_log_json(request, admin_id):
             'remarks':       log.remarks or '',
             'employee_ids':  emp_ids,
             'employee_names': emp_names,
+            'locked':        bool(getattr(log, 'locked', False)),
         })
 
     locations = list(MachineLocation.objects.filter(admin_id=admin_id).values('id', 'name'))
@@ -331,6 +332,8 @@ def work_log_edit(request, pk):
     try:
         admin_id    = get_admin_id(request.user)
         log         = get_object_or_404(WorkLog, pk=pk, admin_id=admin_id)
+        if getattr(log, 'locked', False):
+            return JsonResponse({'success': False, 'error': 'Entry is locked. Unlock to edit.', 'locked': True})
         data        = json.loads(request.body)
         location_id = data.get('location_id') or None
         location    = None
@@ -356,6 +359,10 @@ def work_log_delete(request, pk):
     """Delete a WorkLog entry via AJAX or form POST."""
     admin_id = get_admin_id(request.user)
     log = get_object_or_404(WorkLog, pk=pk, admin_id=admin_id)
+    if getattr(log, 'locked', False):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'error': 'Entry is locked. Unlock to delete.', 'locked': True})
+        return redirect('projects:list')
     log.delete()
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'success': True})
@@ -400,6 +407,19 @@ def work_log_upsert(request):
                 'error': f'Employee count ({len(employee_ids)}) exceeds TMP limit ({tmp}).',
             })
 
+        # Machine + date lock: once an entry exists and is locked, block
+        # further save/edit until the admin explicitly unlocks it.
+        existing = WorkLog.objects.filter(
+            admin_id=admin_id, date=date_str, location=location,
+        ).only('id', 'locked').first()
+        if existing and getattr(existing, 'locked', False):
+            return JsonResponse({
+                'success': False,
+                'error': 'Entry is locked. Unlock to edit.',
+                'locked': True,
+                'id': existing.pk,
+            })
+
         log, created = WorkLog.objects.update_or_create(
             admin_id=admin_id,
             date=date_str,
@@ -410,6 +430,7 @@ def work_log_upsert(request):
                 'tmp':          tmp,
                 'remarks':      remarks,
                 'created_by':   request.user,
+                'locked':       True,
             },
         )
 
@@ -420,6 +441,20 @@ def work_log_upsert(request):
             log.employees.clear()
 
         return JsonResponse({'success': True, 'id': log.pk, 'created': created})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_POST
+def work_log_unlock(request, pk):
+    """Clear the locked flag on a WorkLog row so the admin can edit/delete."""
+    try:
+        admin_id = get_admin_id(request.user)
+        log = get_object_or_404(WorkLog, pk=pk, admin_id=admin_id)
+        log.locked = False
+        log.save(update_fields=['locked', 'updated_at'])
+        return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 

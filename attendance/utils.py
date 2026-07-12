@@ -64,87 +64,10 @@ def ensure_sunday_holidays(
     *,
     employees: Iterable | None = None,
 ) -> int:
-    """
-    Idempotently create AttendanceRecord(status='holiday', source='admin')
-    rows for every Sunday in [date_from, date_to] × every employee.
-
-    Parameters
-    ----------
-    admin_id : str
-        Tenant scope. Required; no-op if falsy. New rows are stamped with
-        this admin_id so multi-tenant filtering keeps working.
-    date_from, date_to : date | str
-        Inclusive window. Strings parsed as 'YYYY-MM-DD'. If either is
-        missing or `date_from > date_to`, the call is a no-op.
-    employees : iterable of Employee, optional
-        Restrict the backfill to a specific set (e.g. the single employee
-        hitting the mobile endpoint). When None, every Employee under
-        `admin_id` is targeted.
-
-    Returns
-    -------
-    int
-        Number of rows the database actually inserted. Existing rows
-        (admin overrides, prior auto-fills) are preserved via
-        ignore_conflicts so this is safe to call on every page load.
-    """
-    if not admin_id:
-        return 0
-
-    df = _coerce_date(date_from)
-    dt = _coerce_date(date_to)
-    if df is None or dt is None or df > dt:
-        return 0
-
-    # Cap the backfill window at today — never pre-fill future Sundays as
-    # Holiday. Existing rows for any date (admin overrides, prior auto-
-    # fills) are preserved unconditionally by the bulk_create(..., ignore_
-    # conflicts=True) call below, so this only prevents NEW rows from
-    # being created for dates that haven't arrived yet.
-    today = datetime.date.today()
-    if dt > today:
-        dt = today
-    if df > dt:
-        return 0
-
-    sundays = _sundays_between(df, dt)
-    if not sundays:
-        return 0
-
-    if employees is None:
-        # Lazy import keeps attendance.utils free of an employees app dependency
-        # at import time, which matters because attendance.models is imported
-        # by employees.views during salary calculations.
-        from employees.models import Employee
-        emp_list = list(Employee.objects.filter(admin_id=admin_id))
-    else:
-        emp_list = [e for e in employees if e is not None]
-
-    if not emp_list:
-        return 0
-
-    rows = [
-        AttendanceRecord(
-            admin_id=admin_id,
-            employee=emp,
-            date=sun,
-            status='holiday',
-            source='admin',
-        )
-        for emp in emp_list
-        for sun in sundays
-    ]
-
-    # ignore_conflicts honours the (employee, date) unique-together — so
-    # any pre-existing row (admin override, employee self-mark, prior
-    # auto-fill) survives untouched. Return the actual insert count for
-    # callers that want to log/telemetry.
-    created = AttendanceRecord.objects.bulk_create(rows, ignore_conflicts=True)
-    # On databases that don't return PKs from bulk_create+ignore_conflicts
-    # (e.g. older MySQL), `created` is still the list passed in; counting
-    # objects with non-None pk gives the actual insert count where the
-    # backend supports it, otherwise it's a best-effort upper bound.
-    return sum(1 for r in created if getattr(r, 'pk', None) is not None) or 0
+    """No-op. Sunday auto-generation has been removed — attendance rows
+    (including Sundays) now exist only when entered manually. The signature
+    is preserved so existing callers stay import-safe."""
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -174,22 +97,5 @@ STATUS_DISPLAY = {
 
 
 def display_status(r):
-    # Display-only translation for auto-marked Sundays. The lazy
-    # ensure_sunday_holidays backfill writes rows with
-    # (status='holiday', source='admin', created_by=NULL) — the same
-    # fingerprint api.views.mobile_attendance already uses to detect
-    # auto-fills. When that fingerprint matches on a Sunday date, surface
-    # the display label as 'Sunday' so the Suite UI (Summary / drawer /
-    # calendar) shows "Sunday" by default. Manual admin edits set
-    # created_by via save_attendance, so any admin override (including
-    # explicitly picking Holiday for a Sunday) falls through unchanged.
-    # DB rows, choices, payroll and the mobile API are all untouched.
-    label = STATUS_DISPLAY.get(r.status, 'Present')
-    if (
-        label == 'Holiday'
-        and r.source == 'admin'
-        and r.created_by_id is None
-        and r.date.weekday() == 6
-    ):
-        return 'Sunday'
-    return label
+    # Sundays are treated exactly like any other day — no auto-remap.
+    return STATUS_DISPLAY.get(r.status, 'Present')
