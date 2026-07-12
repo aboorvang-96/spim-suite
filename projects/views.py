@@ -295,7 +295,9 @@ def _work_summary_json(request, admin_id):
 @login_required
 @require_POST
 def work_log_add(request):
-    """AJAX: create a new WorkLog entry."""
+    """AJAX: legacy create endpoint — now routes through the same upsert
+    as `work_log_upsert` so the (admin_id, date, location) uniqueness and
+    the locked-on-save invariant hold for every write path."""
     try:
         data         = json.loads(request.body)
         admin_id     = get_admin_id(request.user)
@@ -314,11 +316,30 @@ def work_log_add(request):
         if location_id:
             location = get_object_or_404(MachineLocation, pk=location_id, admin_id=admin_id)
 
-        log = WorkLog.objects.create(
+        existing = WorkLog.objects.filter(
             admin_id=admin_id, date=date_str, location=location,
-            site=site, work_details=work_details, tmp=tmp,
-            company_name=company_name, remarks=remarks,
-            created_by=request.user,
+        ).only('id', 'locked').first()
+        if existing and getattr(existing, 'locked', False):
+            return JsonResponse({
+                'success': False,
+                'error':   'Entry is locked. Unlock to edit.',
+                'locked':  True,
+                'id':      existing.pk,
+            })
+
+        log, _created = WorkLog.objects.update_or_create(
+            admin_id=admin_id,
+            date=date_str,
+            location=location,
+            defaults={
+                'site':         site,
+                'work_details': work_details,
+                'tmp':          tmp,
+                'company_name': company_name,
+                'remarks':      remarks,
+                'created_by':   request.user,
+                'locked':       True,
+            },
         )
         return JsonResponse({'success': True, 'id': log.pk})
     except Exception as e:

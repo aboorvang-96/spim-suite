@@ -125,6 +125,12 @@ class WorkLog(models.Model):
 
     class Meta:
         ordering = ['-date', '-created_at']
+        # DB-level guarantee that Daily Work Log and Work Summary always see
+        # exactly one row per (tenant, date, machine). Kills the duplicate
+        # window in every write path — admin upsert, mobile get_or_create,
+        # legacy work_log_add — at the database instead of trusting each
+        # caller to route through update_or_create.
+        unique_together = (('admin_id', 'date', 'location'),)
 
     def __str__(self):
         loc = self.location.name if self.location else '—'

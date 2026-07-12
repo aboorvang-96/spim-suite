@@ -137,7 +137,7 @@
         <!-- Date selector bar -->
         <div class="wl-date-bar">
             <label>Date</label>
-            <input type="date" id="wl-date" class="wl-input" title="Select date to view/enter work log">
+            <input type="date" id="wl-date" class="wl-input" title="Select date to view/enter work log" onchange="loadLogForDate()">
             <button class="btn btn-outline btn-sm" onclick="loadLogForDate()" style="height:34px;">Load</button>
             <button class="btn btn-outline btn-sm" onclick="openAddLocationModal()" style="height:34px;" title="Add machine number">+ Add Location</button>
             <button class="btn btn-outline btn-sm" onclick="openAddStatusModal()" style="height:34px;" title="Add work status type">+ Add Status</button>
@@ -642,6 +642,10 @@ function renderMachineRows() {
         const empIds     = entry.employee_ids  || [];
         const savedClass = entry.id ? ' row-saved' : '';
         const isLocked   = !!entry.locked;
+        // Locked rows: every input/select in the row is disabled so the
+        // saved values are visible but read-only. Only the row-level Unlock
+        // button below can re-enable editing.
+        const dis        = isLocked ? 'disabled' : '';
         // empCountLbl no longer used — display handled by custom dropdown
 
         // Actions:
@@ -658,42 +662,42 @@ function renderMachineRows() {
             : `<button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save entry">Save</button>`;
 
         return `
-        <tr id="row-m${m.id}" data-loc-id="${m.id}" data-log-id="${entry.id || ''}" class="${savedClass}">
+        <tr id="row-m${m.id}" data-loc-id="${m.id}" data-log-id="${entry.id || ''}" class="${savedClass}${isLocked ? ' row-locked' : ''}">
             <td style="text-align:center;">
-                <input type="checkbox" class="row-chk" data-loc-id="${m.id}">
+                <input type="checkbox" class="row-chk" data-loc-id="${m.id}" ${dis}>
             </td>
             <td><span class="loc-chip">${escHtml(m.name)}</span></td>
             <td>
                 <div class="wd-wrap">
-                    <select class="wl-select" id="site-${m.id}" title="Site">
+                    <select class="wl-select" id="site-${m.id}" title="Site" ${dis}>
                         ${buildSiteOptions(site)}
                     </select>
-                    <button class="btn-add-status" onclick="openAddSiteModal(${m.id})" title="Add new global site">+</button>
+                    <button class="btn-add-status" onclick="openAddSiteModal(${m.id})" title="Add new global site" ${dis}>+</button>
                 </div>
             </td>
             <td>
                 <input type="date" class="wl-input" id="date-${m.id}"
-                    value="${entryDate}" max="${TODAY_ISO}" title="Past/today only">
+                    value="${entryDate}" max="${TODAY_ISO}" title="Past/today only" ${dis}>
             </td>
             <td>
                 <div class="wd-wrap">
-                    <select class="wl-select" id="wd-${m.id}" title="Work type">
+                    <select class="wl-select" id="wd-${m.id}" title="Work type" ${dis}>
                         ${buildStatusOptions(workDet)}
                     </select>
-                    <button class="btn-add-status" onclick="openAddStatusModal(${m.id})" title="Add new work status">+</button>
+                    <button class="btn-add-status" onclick="openAddStatusModal(${m.id})" title="Add new work status" ${dis}>+</button>
                 </div>
             </td>
             <td>
                 <input type="number" class="wl-input" id="tmp-${m.id}" value="${tmp}" min="0"
                     style="width:62px;text-align:center;"
-                    onchange="onTmpChange(${m.id})">
+                    onchange="onTmpChange(${m.id})" ${dis}>
             </td>
             <td>
                 ${buildEmpDropdown(m.id, empIds, tmp)}
             </td>
             <td>
                 <input type="text" class="wl-input" id="rmk-${m.id}"
-                    value="${escAttr(remarks)}" placeholder="Remarks…">
+                    value="${escAttr(remarks)}" placeholder="Remarks…" ${dis}>
             </td>
             <td style="text-align:right;white-space:nowrap;">
                 ${actionsCells}

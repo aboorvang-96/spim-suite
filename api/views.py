@@ -763,6 +763,26 @@ def mobile_worklogs(request):
             },
         )
         if not created:
+            # Respect the admin lock — an admin-saved (locked) row is
+            # read-only from every path. The mobile employee can still be
+            # associated via the M2M (they *did* work that machine), but
+            # site / work_details / remarks / tmp are preserved as-is.
+            if getattr(wl, 'locked', False):
+                wl.employees.add(emp)
+                return JsonResponse({
+                    'success': True,
+                    'created': False,
+                    'locked':  True,
+                    'worklog': {
+                        'id':           wl.id,
+                        'date':         str(wl.date),
+                        'location':     wl.location.name if wl.location_id else '',
+                        'site':         wl.site,
+                        'work_details': wl.work_details,
+                        'remarks':      wl.remarks,
+                        'tmp':          wl.tmp,
+                    },
+                })
             # Merge — non-empty values overwrite existing, TMP grows.
             dirty = []
             if site_val and site_val != (wl.site or ''):
