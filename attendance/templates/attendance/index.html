@@ -1820,16 +1820,6 @@ function _renderDrawerContentInner(cycle) {
     // the salary module uses, so the on-screen per-day rate equals the payslip.
     const cycleDays = calendarDays(start, end);
 
-    // Count un-recorded Sundays inside the cycle so the Sunday KPI shows
-    // the calendar-true count (admin override would have created a record
-    // and bumped the matching status counter above instead).
-    {
-        let curS = new Date(start);
-        while (curS <= end) {
-            if (curS.getDay() === 0 && !recMap[dateToStr(curS)]) kpiCounts.Sunday++;
-            curS.setDate(curS.getDate() + 1);
-        }
-    }
 
     document.getElementById('drawerKpis').innerHTML = `
         <div class="emp-kpi kpi-present"><div class="val">${kpiCounts.Present}</div><div class="lbl">Present</div></div>
@@ -1887,15 +1877,10 @@ function _renderDrawerContentInner(cycle) {
                 <div class="ds">${statusLbl}</div>
                 ${salaryLine ? `<div class="dc">${salaryLine}</div>` : ''}
             </div>`;
-        } else if (dow === 0) {
-            // Defensive fallback for the rare case where the server backfill
-            // hasn't yet created the Sunday-Holiday row (e.g. a cycle no user
-            // has ever viewed). The next load_attendance request creates it.
-            calHtml += `<div class="cal-day cal-sunday${isToday ? ' cal-today' : ''}">
-                <div class="dn">${cur.getDate()}</div>
-                <div class="ds">Sunday</div>
-            </div>`;
         } else {
+            // Sundays behave like every other day — no auto "Sunday" label
+            // for empty cells. Any date without an AttendanceRecord renders
+            // as an unmarked '-' cell.
             calHtml += `<div class="cal-day cal-none${isToday ? ' cal-today' : ''}">
                 <div class="dn">${cur.getDate()}</div>
                 <div class="ds">-</div>
