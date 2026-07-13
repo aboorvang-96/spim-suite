@@ -1050,33 +1050,70 @@ def mobile_salary(request):
     net_salary_amount, paid_days_dec = _compute_attendance_breakdown(
         emp, cycle_end.replace(day=1), float(emp.base_salary),
     )
-    net_salary   = str(round(net_salary_amount, 2))
     paid_days    = float(paid_days_dec)
     basic_salary = str(emp.base_salary)
     hra          = '0.00'  # not modelled on SalaryUpdate
 
+    # Cycle-length denominator — same divisor _compute_attendance_breakdown
+    # uses (calendar days in the 26→25 window). Surfacing it here means the
+    # mobile client displays the exact Suite figure instead of guessing 30.
+    total_working_days = (cycle_end - cycle_start).days + 1
+
+    # Attendance earnings = attendance-prorated basic (basic × paid ÷ cycle).
+    # This is the number the client's "Attendance Earnings" row displays;
+    # returning it explicitly removes the client-side fallback formula and
+    # keeps the client purely a pass-through.
+    attendance_earnings = str(round(net_salary_amount, 2))
+    daily_rate = (
+        str(round(float(emp.base_salary) / total_working_days, 2))
+        if total_working_days else '0.00'
+    )
+
     # Allowances + deductions still come from the SalaryUpdate row (the
     # admin-entered figures); fall back to 0.00 when no row exists yet.
     if sal:
-        allowances = str(sal.extra_allowance + sal.ot_allowance + sal.food_allowance)
-        deductions = str(sal.total_deduction)
+        allowances         = str(sal.extra_allowance + sal.ot_allowance + sal.food_allowance)
+        deductions         = str(sal.total_deduction)
+        ot_allowance       = str(sal.ot_allowance)
+        food_allowance     = str(sal.food_allowance)
+        advance_deduction  = str(sal.advance_deduction)
     else:
-        allowances = '0.00'
-        deductions = '0.00'
+        allowances         = '0.00'
+        deductions         = '0.00'
+        ot_allowance       = '0.00'
+        food_allowance     = '0.00'
+        advance_deduction  = '0.00'
+
+    # Live net = attendance earnings + OT + food − deductions (advance is
+    # already inside total_deduction on SalaryUpdate; see manage_ajax save).
+    net_salary_final = round(
+        float(attendance_earnings)
+        + float(ot_allowance)
+        + float(food_allowance)
+        - float(deductions),
+        2,
+    )
+    net_salary = str(net_salary_final)
 
     return JsonResponse({
         'success': True,
         'salary': {
-            'basic_salary': basic_salary,
-            'hra':          hra,
-            'allowances':   allowances,
-            'deductions':   deductions,
-            'net_salary':   net_salary,
-            'paid_days':    paid_days,
-            'present_days': present_days,
-            'absent_days':  absent_days,
-            'cycle_start':  str(cycle_start),
-            'cycle_end':    str(cycle_end),
+            'basic_salary':        basic_salary,
+            'hra':                 hra,
+            'allowances':          allowances,
+            'deductions':          deductions,
+            'net_salary':          net_salary,
+            'paid_days':           paid_days,
+            'present_days':        present_days,
+            'absent_days':         absent_days,
+            'cycle_start':         str(cycle_start),
+            'cycle_end':           str(cycle_end),
+            'attendance_earnings': attendance_earnings,
+            'daily_rate':          daily_rate,
+            'total_working_days':  total_working_days,
+            'overtime_allowance':  ot_allowance,
+            'food_allowance':      food_allowance,
+            'advance_deduction':   advance_deduction,
         },
     })
 
