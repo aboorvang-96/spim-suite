@@ -12,6 +12,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="{% static 'css/salary_manager.css' %}">
 <style>
+/* Header "Download" dropdown was clipped by the global
+   .action-toolbar { overflow-x: auto } scroll container in
+   static/css/style.css (overflow-x:auto forces overflow-y:auto,
+   making the toolbar clip every descendant — the absolute-positioned
+   #dl-dropdown included). Scope this override to this page only so
+   the dropdown paints outside the toolbar's box. */
+.action-toolbar { overflow: visible; }
+
 /* ── Tab bar ── */
 .wl-tab-bar{display:flex;gap:0;border-bottom:2px solid #e2e8f0;margin-bottom:1.5rem;}
 .wl-tab{padding:.6rem 1.25rem;font-size:.8125rem;font-weight:600;color:#64748b;background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;}
@@ -432,9 +440,12 @@ function switchTab(tab) {
 // ── Download Dropdown ──────────────────────────────────────────────────────
 function toggleDl() {
     const dd = document.getElementById('dl-dropdown');
+    if (!dd) return;
     dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
 }
-function closeDl() { document.getElementById('dl-dropdown').style.display = 'none'; }
+function closeDl() {
+    document.getElementById('dl-dropdown').style.display = 'none';
+}
 document.addEventListener('click', e => {
     const w = document.getElementById('dl-wrapper');
     if (w && !w.contains(e.target)) closeDl();
@@ -1013,6 +1024,7 @@ function resetSummaryFilters() {
 
 // ── Export: PDF ────────────────────────────────────────────────────────────
 function generatePDF() {
+    if (!window.jspdf) { showToast('PDF library unavailable.', 'error'); return; }
     const { jsPDF } = window.jspdf;
     const isLog = activeTab === 'log';
     const doc   = new jsPDF('l', 'mm', 'a4');
@@ -1048,6 +1060,7 @@ function generatePDF() {
 
 // ── Export: Excel ──────────────────────────────────────────────────────────
 function generateExcel() {
+    if (typeof XLSX === 'undefined') { showToast('XLSX library unavailable.', 'error'); return; }
     const isLog = activeTab === 'log';
     const title = isLog ? 'Daily Work Log' : 'Work Summary';
 
@@ -1272,12 +1285,10 @@ async function generateReport() {
         if (!data.success) { showToast(data.error || 'Failed to load report.', 'error'); return; }
 
         reportData = data;
-
         document.getElementById('report-preview-wrap').style.display = '';
         document.getElementById('report-empty-msg').style.display    = 'none';
         document.getElementById('btn-rpt-pdf').style.display         = '';
         document.getElementById('btn-rpt-xlsx').style.display        = '';
-
         renderReportPreview(data);
     } catch(e) {
         showToast('Network error loading report.', 'error');
@@ -1337,112 +1348,28 @@ function renderReportPreview(d) {
 function thS() { return 'padding:4px 5px;border:1px solid #334155;font-size:.68rem;white-space:nowrap;'; }
 function tdS() { return 'padding:3px 4px;border:1px solid #e2e8f0;font-size:.7rem;'; }
 
-// ── Download Report PDF ────────────────────────────────────────────────────
-function downloadReportPDF() {
+// ── Download Report (server-side) ──────────────────────────────────────────
+// The download hits the server-side export view (openpyxl + reportlab),
+// which produces the file with no CDN dependency. The earlier client-side
+// path via jsPDF + SheetJS from cdnjs.cloudflare.com silently no-op'd on
+// networks that block cdnjs (same failure mode fixed for the salary report
+// — see employees/views.py:788).
+function _downloadReport(fmt) {
     if (!reportData) { showToast('Generate report first.', 'error'); return; }
-    const d = reportData;
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
-
-    const N       = d.days_in_month;
-    const margin  = 10;
-    let   cursorY = margin;
-
-    // ── Header ──
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-    doc.text(d.company_name || 'SPIM Suite', doc.internal.pageSize.width / 2, cursorY + 5, { align: 'center' });
-    cursorY += 9;
-
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-    doc.text('Machine-Wise Monthly Work Attendance Summary', doc.internal.pageSize.width / 2, cursorY + 4, { align: 'center' });
-    cursorY += 8;
-
-    doc.setFontSize(8);
-    doc.text(`Location: ${d.location}    Site: ${d.site || '—'}    Period: ${d.month_name} ${d.year}`, margin, cursorY + 4);
-    cursorY += 9;
-
-    // ── Table ──
-    const dateHeaders = d.dates.map(String);
-    const head = [['SL', 'Employee Name', ...dateHeaders]];
-
-    const body = d.emp_rows.map(row => [row.sl, row.name, ...row.cells]);
-    body.push(['—', 'TMP', ...d.tmp_row.map(v => v !== '' ? String(v) : '—')]);
-
-    // Each date column ~6.2 mm; name col wider
-    const dateColW    = 6.2;
-    const nameColW    = 38;
-    const slColW      = 10;
-    const columnStyles = { 0: { cellWidth: slColW }, 1: { cellWidth: nameColW } };
-    for (let i = 2; i < N + 2; i++) columnStyles[i] = { cellWidth: dateColW, halign: 'center' };
-
-    doc.autoTable({
-        startY: cursorY,
-        head,
-        body,
-        theme: 'grid',
-        styles:      { fontSize: 6.5, cellPadding: 1.5, overflow: 'ellipsize' },
-        headStyles:  { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
-        columnStyles,
-        didParseCell(data) {
-            if (data.section === 'body') {
-                const val = data.cell.raw;
-                if (val === '✓')  { data.cell.styles.textColor = [5, 150, 105]; data.cell.styles.fontStyle = 'bold'; }
-                if (data.row.index === body.length - 1) {
-                    data.cell.styles.fillColor = [248, 250, 252];
-                    data.cell.styles.fontStyle = 'bold';
-                    if (data.column.index >= 2 && val && val !== '—') data.cell.styles.textColor = [37, 99, 235];
-                }
-            }
-        },
-        margin: { left: margin, right: margin },
-    });
-
-    const fname = `SPIM_MachineReport_${d.location}_${d.month_name}_${d.year}.pdf`;
-    doc.save(fname);
+    const month = document.getElementById('r-month').value;
+    const year  = document.getElementById('r-year').value;
+    const locId = document.getElementById('r-location').value;
+    const site  = document.getElementById('r-site').value.trim();
+    if (!month || !year || !locId) {
+        showToast('Month, year, and location are required.', 'error'); return;
+    }
+    const url = `{% url 'projects:machine_monthly_report_export' %}`
+              + `?year=${year}&month=${month}&location=${locId}`
+              + `&site=${encodeURIComponent(site)}&format=${fmt}`;
+    window.location.href = url;
 }
-
-// ── Download Report XLSX ───────────────────────────────────────────────────
-function downloadReportXLSX() {
-    if (!reportData) { showToast('Generate report first.', 'error'); return; }
-    const d  = reportData;
-    const wb = XLSX.utils.book_new();
-    const N  = d.days_in_month;
-
-    // Build 2-D array
-    const rows = [];
-    rows.push([d.company_name || 'SPIM Suite']);
-    rows.push(['Machine-Wise Monthly Work Attendance Summary']);
-    rows.push([`Location: ${d.location}`, '', `Site: ${d.site || '—'}`]);
-    rows.push([`Period: ${d.month_name} ${d.year}`]);
-    rows.push([]);  // blank spacer
-
-    // Header row
-    rows.push(['SL', 'Employee Name', ...d.dates]);
-
-    // Employee rows
-    d.emp_rows.forEach(row => {
-        rows.push([row.sl, row.name, ...row.cells]);
-    });
-
-    // TMP row
-    rows.push(['—', 'TMP', ...d.tmp_row.map(v => v !== '' ? v : '')]);
-
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-
-    // Column widths: SL=5, Name=22, dates=4 each
-    ws['!cols'] = [{ wch: 5 }, { wch: 22 }, ...Array(N).fill({ wch: 4 })];
-
-    // Merge title rows across all columns
-    const totalCols = N + 2;
-    ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } },
-        { s: { r: 3, c: 0 }, e: { r: 3, c: totalCols - 1 } },
-    ];
-
-    XLSX.utils.book_append_sheet(wb, ws, `${d.location} ${d.month_name}`);
-    XLSX.writeFile(wb, `SPIM_MachineReport_${d.location}_${d.month_name}_${d.year}.xlsx`);
-}
+function downloadReportPDF()  { _downloadReport('pdf');  }
+function downloadReportXLSX() { _downloadReport('xlsx'); }
 
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
