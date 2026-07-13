@@ -1370,6 +1370,7 @@ function saveBulkAttendance() {
             status:      s,
             site:        siteOut,
             workingSite: wsOut,
+            remarks:     tr.querySelector('.row-remarks').value.trim(),
         });
     });
     syncRecordsToServer(serverRecords);
@@ -1474,6 +1475,7 @@ function updateAttendance() {
         pk:     updated.empPk || '',
         date:   updated.date,
         status: updated.status,
+        remarks: updated.remarks || '',
     }]);
     closeEditModal();
 }
