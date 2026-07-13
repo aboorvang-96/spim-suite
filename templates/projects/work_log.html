@@ -218,49 +218,6 @@
             <button class="btn btn-outline btn-sm" style="height:38px;align-self:flex-end;" onclick="resetSummaryFilters()">Reset</button>
         </div>
 
-        <!-- Summary Stats -->
-        <div class="sum-stat-bar">
-            <div class="sum-stat">
-                <div class="stat-icon icon-blue">
-                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-                </div>
-                <div>
-                    <div class="sum-stat-lbl">Total Entries</div>
-                    <div class="sum-stat-val" id="s-total-entries">0</div>
-                </div>
-            </div>
-            <div class="sum-stat">
-                <div class="stat-icon icon-emerald">
-                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                </div>
-                <div>
-                    <div class="sum-stat-lbl">Total Manpower (TMP)</div>
-                    <div class="sum-stat-val" id="s-total-tmp">0</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Summary Table -->
-        <div class="table-container">
-            <table class="salary-table" id="summary-table">
-                <thead>
-                    <tr>
-                        <th>SL</th>
-                        <th>Date</th>
-                        <th>Location</th>
-                        <th>Site</th>
-                        <th>Work Details</th>
-                        <th>TMP</th>
-                        <th>Employees</th>
-                        <th>Remarks</th>
-                    </tr>
-                </thead>
-                <tbody id="summary-tbody">
-                    <tr><td colspan="8" style="padding:3rem;text-align:center;color:#94a3b8;">Loading…</td></tr>
-                </tbody>
-            </table>
-        </div>
-
         <!-- ── Monthly Report Generator ── -->
         <div class="report-section" style="margin-top:1.5rem;border-top:2px solid #e2e8f0;padding-top:1.25rem;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem;flex-wrap:wrap;gap:.5rem;">
@@ -324,6 +281,32 @@
             <div id="report-empty-msg" style="display:none;padding:1.5rem;text-align:center;color:#94a3b8;font-size:.82rem;">
                 No work log entries found for the selected period and location.
             </div>
+        </div>
+
+        <!-- Legacy stat placeholders (cards removed from UI; nodes retained so
+             fetchSummaryData()'s existing textContent assignments do not throw). -->
+        <span id="s-total-entries" hidden></span>
+        <span id="s-total-tmp"     hidden></span>
+
+        <!-- Summary Table -->
+        <div class="table-container" style="margin-top:1.5rem;">
+            <table class="salary-table" id="summary-table">
+                <thead>
+                    <tr>
+                        <th>SL</th>
+                        <th>Date</th>
+                        <th>Location</th>
+                        <th>Site</th>
+                        <th>Work Details</th>
+                        <th>TMP</th>
+                        <th>Employees</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody id="summary-tbody">
+                    <tr><td colspan="8" style="padding:3rem;text-align:center;color:#94a3b8;">Loading…</td></tr>
+                </tbody>
+            </table>
         </div>
 
     </div><!-- /tab-summary -->
