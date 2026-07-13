@@ -2145,80 +2145,190 @@ def _render_hr_attendance_xlsx(rows, summary, period_label, filename_base, scope
     return response
 
 
-def _render_hr_attendance_pdf(rows, summary, period_label, filename_base, scope_label):
-    """PDF HttpResponse — same styling recipe as _render_salary_pdf."""
+# ---------------------------------------------------------------------------
+# Monthly Attendance Register (matrix) — server-side ReportLab twin of the
+# client-side html2pdf export in attendance/templates/attendance/index.html
+# (see exportRegisterPDF / _buildRegisterMatrix / REGISTER_STATUS_CODE).
+#
+# Suite generates the register client-side in the browser; the SPIM Lite HR
+# report endpoint has no browser to run that JS in, so this helper reproduces
+# the same matrix, headers, codes, and layout on the server. Keep it in step
+# with the Suite JS — the two PDFs must remain visually identical.
+# ---------------------------------------------------------------------------
+
+_REGISTER_STATUS_CODE = {
+    # Keys match display_status() output; values match REGISTER_STATUS_CODE
+    # in attendance/templates/attendance/index.html.
+    'Present':      'P',
+    'Absent':       'A',
+    'Half Day':     'HD',
+    'Leave':        'L',
+    'Holiday':      'H',
+    'Sunday':       'S',
+    'Weekly Off':   'WO',
+    'No Week Off':  'NWO',
+}
+
+
+def _hr_attendance_register_matrix(hr_admin_id, target_employees, date_from, date_to):
+    """Mirror of _buildRegisterMatrix() in the Suite web template.
+
+    Returns (dates, rows):
+      dates = [{'iso': 'YYYY-MM-DD', 'dom': int}, ...] every day in the window.
+      rows  = [{'label': 'EMP_ID / EMP_NAME', 'cells': ['P', '', ...],
+                'present': int}, ...] one entry per employee in the order
+              the caller passed them in (mirroring Suite's loadEmployees()
+              order, which the mobile endpoint sorts by employee name).
+    """
+    if target_employees:
+        ensure_sunday_holidays(
+            hr_admin_id,
+            date_from.isoformat(),
+            date_to.isoformat(),
+            employees=list(target_employees),
+        )
+
+    qs = AttendanceRecord.objects.filter(
+        employee__in=target_employees,
+        date__gte=date_from,
+        date__lte=date_to,
+    ).select_related('employee')
+
+    rec_map = {}
+    for r in qs:
+        rec_map[(r.employee_id, r.date.isoformat())] = display_status(r)
+
+    dates = []
+    cur = date_from
+    while cur <= date_to:
+        dates.append({'iso': cur.isoformat(), 'dom': cur.day})
+        cur += timedelta(days=1)
+
+    rows = []
+    for emp in target_employees:
+        present = 0
+        cells = []
+        for d in dates:
+            label = rec_map.get((emp.pk, d['iso']))
+            if label == 'Present':
+                present += 1
+            cells.append(_REGISTER_STATUS_CODE.get(label or '', ''))
+        rows.append({
+            'label':   f"{emp.employee_id or ''} / {emp.name or ''}",
+            'cells':   cells,
+            'present': present,
+        })
+    return dates, rows
+
+
+def _render_hr_attendance_pdf(dates, matrix_rows, cycle_label, filename_base):
+    """PDF HttpResponse — Monthly Attendance Register matrix.
+
+    Layout mirrors exportRegisterPDF() in Suite's attendance/templates/
+    attendance/index.html so the mobile-downloaded PDF is
+    indistinguishable from the one Suite produces client-side.
+    """
     from io import BytesIO
     from django.http import HttpResponse
     from reportlab.lib.pagesizes import landscape, A4
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+    )
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=landscape(A4),
-        leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18,
+        leftMargin=22, rightMargin=22, topMargin=22, bottomMargin=22,
+        title='Monthly Attendance Register',
     )
+
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('Title14', parent=styles['Title'], fontSize=14, alignment=0)
-    sub_style   = ParagraphStyle('Sub8',    parent=styles['Normal'], fontSize=8)
+    title_style = ParagraphStyle(
+        'RegisterTitle', parent=styles['Title'],
+        fontName='Helvetica-Bold', fontSize=14, alignment=TA_CENTER,
+        leading=16, spaceAfter=4,
+    )
+    cycle_style = ParagraphStyle(
+        'RegisterCycle', parent=styles['Normal'],
+        fontName='Helvetica', fontSize=10, alignment=TA_CENTER,
+        spaceAfter=10,
+    )
 
     story = [
-        Paragraph(f"Attendance Report — {period_label}", title_style),
-        Paragraph(f"Scope: {scope_label}", sub_style),
-        Paragraph(
-            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            sub_style,
-        ),
-        Spacer(1, 6),
+        Paragraph('MONTHLY ATTENDANCE REGISTER', title_style),
+        Paragraph(f'Attendance Cycle: {cycle_label}', cycle_style),
     ]
 
-    table_data = [['EMP ID', 'EMP NAME', 'DATE', 'STATUS', 'SITE', 'WORKING SITE']]
-    for r in rows:
-        table_data.append([
-            r['emp_id']       or '-',
-            r['emp_name']     or '-',
-            r['date_display'] or '-',
-            r['status']       or '-',
-            r['site']         or '-',
-            r['working_site'] or '-',
-        ])
-    if not rows:
-        table_data.append(['-', '-', '-', '-', '-', '-'])
+    num_date_cols = len(dates)
+    remarks_col = num_date_cols + 1  # 0 = label, 1..N = dates, N+1 = remarks
 
-    col_widths = [70, 150, 90, 80, 130, 130]
-    tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+    # Two-row header — matches Suite JS rowspan/colspan layout:
+    #   ┌───────────────┬──── Attendance Dates ────┬──────────┐
+    #   │ EMP ID / NAME ├── 26 │ 27 │ … │ 25 ─────┤ Remarks  │
+    header_a = ['EMP ID / EMP NAME', 'Attendance Dates']
+    header_a.extend([''] * (num_date_cols - 1))
+    header_a.append('Remarks')
+
+    header_b = ['']
+    header_b.extend(str(d['dom']) for d in dates)
+    header_b.append('')
+
+    data = [header_a, header_b]
+    if matrix_rows:
+        for r in matrix_rows:
+            data.append([
+                r['label'],
+                *r['cells'],
+                f"Total Present Days: {r['present']}",
+            ])
+    else:
+        data.append(['-'] + [''] * num_date_cols + ['Total Present Days: 0'])
+
+    # Column widths — mirrors Suite JS colWidths (26/5/…/5/26 wch):
+    # label & remarks wide, date cells narrow. Scaled to landscape A4's
+    # usable width so the register fits regardless of cycle length.
+    label_w, remarks_w = 130, 130
+    usable = landscape(A4)[0] - 44  # subtract left+right margins
+    day_w = max(14, (usable - label_w - remarks_w) / max(num_date_cols, 1))
+    col_widths = [label_w] + [day_w] * num_date_cols + [remarks_w]
+
+    tbl = Table(data, colWidths=col_widths, repeatRows=2)
     tbl.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
-        ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
-        ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
-        ('FONTSIZE',   (0, 0), (-1, -1), 8),
-        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+        # 1px #333 grid — Suite HTML uses `border:1px solid #333`.
+        ('GRID',       (0, 0), (-1, -1), 0.5, colors.HexColor('#333333')),
+        # Header backgrounds — #f1f5f9 (row 0) and #f8fafc (day-number row).
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
+        ('BACKGROUND', (1, 1), (num_date_cols, 1), colors.HexColor('#F8FAFC')),
+        # Merges (rowspan / colspan equivalents from the Suite HTML):
+        #   EMP ID / EMP NAME spans both header rows.
+        ('SPAN', (0, 0), (0, 1)),
+        #   Attendance Dates spans every day column in row 0.
+        ('SPAN', (1, 0), (num_date_cols, 0)),
+        #   Remarks spans both header rows.
+        ('SPAN', (remarks_col, 0), (remarks_col, 1)),
+        # Header typography — bold, centered, size 8 to match the compact
+        # register look Suite JS produces (9px HTML rendered at scale 2).
+        ('FONTNAME', (0, 0), (-1, 1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('ALIGN',    (0, 0), (-1, 1), 'CENTER'),
+        ('VALIGN',   (0, 0), (-1, -1), 'MIDDLE'),
+        # Body: label left-aligned & bold, date codes centered, remarks left.
+        ('FONTNAME', (0, 2), (0, -1), 'Helvetica-Bold'),
+        ('ALIGN',    (0, 2), (0, -1), 'LEFT'),
+        ('ALIGN',    (1, 2), (num_date_cols, -1), 'CENTER'),
+        ('ALIGN',    (remarks_col, 2), (remarks_col, -1), 'LEFT'),
+        # Comfortable padding — matches the 2–4px padding on the HTML cells.
+        ('LEFTPADDING',   (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
+        ('TOPPADDING',    (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
     ]))
     story.append(tbl)
-    story.append(Spacer(1, 10))
 
-    # Summary block — mirrors the viewer's Attendance Summary card.
-    summary_data = [['STATUS', 'COUNT']]
-    for lbl in _ATTENDANCE_REPORT_SUMMARY_LABELS:
-        summary_data.append([lbl, str(summary.get(lbl, 0))])
-    summary_data.append(['TOTAL ROWS', str(len(rows))])
-    sum_tbl = Table(summary_data, colWidths=[120, 60], repeatRows=1)
-    sum_tbl.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
-        ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
-        ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
-        ('FONTSIZE',   (0, 0), (-1, -1), 8),
-        ('ALIGN',      (1, 1), (1, -1),  'RIGHT'),
-        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
-        ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
-        ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
-    ]))
-    story.append(sum_tbl)
     doc.build(story)
-
     buf.seek(0)
     response = HttpResponse(buf.read(), content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{filename_base}.pdf"'
@@ -2289,16 +2399,30 @@ def mobile_hr_attendance_report(request):
             status=400,
         )
 
-    rows, summary = _hr_attendance_report_rows(
-        hr_admin_id, target_employees, date_from, date_to,
-    )
-
     period_label  = f"{date_from.isoformat()} to {date_to.isoformat()}"
     filename_base = f"Attendance_Report_{scope_slug}_{date_from.isoformat()}_to_{date_to.isoformat()}"
 
     if fmt == 'xlsx':
-        return _render_hr_attendance_xlsx(rows, summary, period_label, filename_base, scope_label)
-    return _render_hr_attendance_pdf(rows, summary, period_label, filename_base, scope_label)
+        # XLSX stays row-wise (existing behavior) — the register-matrix
+        # parity work is scoped to the PDF, which is what the SPIM Lite
+        # HR download screen presents as the primary format.
+        rows, summary = _hr_attendance_report_rows(
+            hr_admin_id, target_employees, date_from, date_to,
+        )
+        return _render_hr_attendance_xlsx(
+            rows, summary, period_label, filename_base, scope_label,
+        )
+
+    # PDF: build the Monthly Attendance Register matrix — same shape as
+    # Suite's client-side exportRegisterPDF() so the two PDFs match.
+    dates, matrix_rows = _hr_attendance_register_matrix(
+        hr_admin_id, target_employees, date_from, date_to,
+    )
+    cycle_label = (
+        f"{date_from.strftime('%d %b %Y')} – "  # en-dash matches Suite
+        f"{date_to.strftime('%d %b %Y')}"
+    )
+    return _render_hr_attendance_pdf(dates, matrix_rows, cycle_label, filename_base)
 
 
 # ---------------------------------------------------------------------------
