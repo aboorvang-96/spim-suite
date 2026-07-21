@@ -1076,7 +1076,11 @@ def mobile_salary(request):
         deductions         = str(sal.total_deduction)
         ot_allowance       = str(sal.ot_allowance)
         food_allowance     = str(sal.food_allowance)
-        advance_deduction  = str(sal.advance_deduction)
+        # SalaryUpdate persists the advance figure under `advance_pay`.
+        # The old `sal.advance_deduction` reference raised AttributeError
+        # (500) for every employee that had a SalaryUpdate row for the
+        # current cycle — mobile then rendered every salary field as "—".
+        advance_deduction  = str(sal.advance_pay)
     else:
         allowances         = '0.00'
         deductions         = '0.00'
