@@ -445,7 +445,7 @@ def export_excel_employees(request):
     ws.title = 'Employees'
 
     headers = [
-        'Employee ID', 'Employee Name', 'Mobile', 'Role', 'Level',
+        'Employee ID', 'Password', 'Employee Name', 'Mobile', 'Role', 'Level',
         'Department', 'Designation', 'Branch', 'Location', 'Site',
         'Status', 'Joining Date', 'Salary Type', 'Base Salary',
         'Fixed Allowance', 'Bank Details Status', 'PF Status',
@@ -475,6 +475,7 @@ def export_excel_employees(request):
 
         ws.append([
             emp.employee_id or '',
+            emp.mobile_app_password or '',
             emp.name or '',
             emp.mobile or '',
             role_name,
@@ -494,11 +495,11 @@ def export_excel_employees(request):
         ])
 
     # Format Joining Date column as text-date and salaries as numeric
-    for row in ws.iter_rows(min_row=2, min_col=12, max_col=12):
+    for row in ws.iter_rows(min_row=2, min_col=13, max_col=13):
         for cell in row:
             if cell.value:
                 cell.number_format = 'yyyy-mm-dd'
-    for row in ws.iter_rows(min_row=2, min_col=14, max_col=15):
+    for row in ws.iter_rows(min_row=2, min_col=15, max_col=16):
         for cell in row:
             cell.number_format = '#,##0.00'
 
