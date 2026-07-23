@@ -406,6 +406,132 @@ def export_json_employees(request):
 
 
 @login_required
+def export_excel_employees(request):
+    """Download the Employee Master list for this tenant as an XLSX file.
+
+    Mirrors the Employee Master (`employee_list`) queryset so the export
+    always reflects what the admin sees on screen: same tenant scope, same
+    optional q/location/site filters, same model-default ordering by name.
+    """
+    from io import BytesIO
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    admin_id = get_admin_id(request.user)
+    search_q   = request.GET.get('q', '')
+    location_f = request.GET.get('location', '')
+    site_f     = request.GET.get('site', '')
+
+    employees = (
+        Employee.objects.filter(admin_id=admin_id)
+        .select_related('job_role', 'bank_details', 'pf_details')
+    )
+    if search_q:
+        employees = employees.filter(
+            Q(name__icontains=search_q) |
+            Q(employee_id__icontains=search_q) |
+            Q(designation__icontains=search_q)
+        )
+    if location_f:
+        employees = employees.filter(location=location_f)
+    if site_f:
+        employees = employees.filter(site=site_f)
+    # Employee.Meta.ordering = ['name'] — match Master page exactly.
+    employees = employees.order_by('name')
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Employees'
+
+    headers = [
+        'Employee ID', 'Employee Name', 'Mobile', 'Role', 'Level',
+        'Department', 'Designation', 'Branch', 'Location', 'Site',
+        'Status', 'Joining Date', 'Salary Type', 'Base Salary',
+        'Fixed Allowance', 'Bank Details Status', 'PF Status',
+    ]
+    ws.append(headers)
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='1E293B')
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    for emp in employees:
+        role_name = emp.job_role.name if emp.job_role_id else ''
+        bank_status = ''
+        if hasattr(emp, 'bank_details'):
+            bank_status = emp.bank_details.get_status_display() or 'Added'
+        else:
+            bank_status = 'Not Added'
+        pf_status = ''
+        if hasattr(emp, 'pf_details'):
+            pf_status = emp.pf_details.get_status_display() or 'Added'
+        else:
+            pf_status = 'Not Added'
+
+        ws.append([
+            emp.employee_id or '',
+            emp.name or '',
+            emp.mobile or '',
+            role_name,
+            emp.level or '',
+            emp.department or '',
+            emp.designation or '',
+            emp.branch or '',
+            emp.location or '',
+            emp.site or '',
+            emp.get_status_display() if emp.status else '',
+            emp.joining_date,
+            emp.get_salary_type_display() if emp.salary_type else '',
+            float(emp.base_salary) if emp.base_salary is not None else 0,
+            float(emp.fixed_allowance) if emp.fixed_allowance is not None else 0,
+            bank_status,
+            pf_status,
+        ])
+
+    # Format Joining Date column as text-date and salaries as numeric
+    for row in ws.iter_rows(min_row=2, min_col=12, max_col=12):
+        for cell in row:
+            if cell.value:
+                cell.number_format = 'yyyy-mm-dd'
+    for row in ws.iter_rows(min_row=2, min_col=14, max_col=15):
+        for cell in row:
+            cell.number_format = '#,##0.00'
+
+    # Auto-fit column widths based on the longest cell value per column
+    for col_idx, column_cells in enumerate(ws.columns, start=1):
+        max_len = 0
+        for cell in column_cells:
+            val = cell.value
+            if val is None:
+                continue
+            if hasattr(val, 'strftime'):
+                length = len(val.strftime('%Y-%m-%d'))
+            else:
+                length = len(str(val))
+            if length > max_len:
+                max_len = length
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = min(max_len + 2, 40)
+
+    ws.freeze_panes = 'A2'
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = HttpResponse(
+        buf.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    filename = f"Employee_Master_{timezone.localdate().strftime('%Y-%m-%d')}.xlsx"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
 @require_POST
 def import_excel_employees(request):
     """Stub: accept Excel file upload (full implementation coming soon)."""

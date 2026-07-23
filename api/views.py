@@ -1007,6 +1007,30 @@ def mobile_salary(request):
       * `deductions` = total_deduction (kept as a single rolled-up figure
         to match how the Suite UI shows it).
     """
+    # -- TEMPORARY DEBUG INSTRUMENTATION (Phase: regression triage) ----
+    # Wrap the entire body so any exception is emitted with a full
+    # traceback + the exact employee / cycle context. Nothing else in
+    # the function is altered. Remove this whole wrapper once the
+    # regression is identified.
+    import traceback as _tb
+    try:
+        return _mobile_salary_impl(request)
+    except Exception as _exc:  # noqa: BLE001
+        emp_dbg = getattr(request, 'employee', None)
+        _log.error(
+            '[MOBILE_SALARY_500] emp_pk=%s emp_id=%s name=%s exc=%r\n%s',
+            getattr(emp_dbg, 'pk', None),
+            getattr(emp_dbg, 'employee_id', None),
+            getattr(emp_dbg, 'name', None),
+            _exc,
+            _tb.format_exc(),
+        )
+        raise
+
+
+def _mobile_salary_impl(request):
+    """Original mobile_salary body — kept intact so the try/except wrapper
+    above logs any regression without altering behavior."""
     emp   = request.employee
     today = date.today()
 
@@ -1030,6 +1054,15 @@ def mobile_salary(request):
         month__month=cycle_end.month,
     ).first()
 
+    # -- TEMPORARY DEBUG: per-step state snapshot ----------------------
+    _log.info(
+        '[MOBILE_SALARY_STEP1] emp_pk=%s emp_id=%s name=%s '
+        'cycle_start=%s cycle_end=%s sal_present=%s sal_pk=%s base_salary=%r',
+        emp.pk, emp.employee_id, emp.name,
+        cycle_start, cycle_end,
+        sal is not None, getattr(sal, 'pk', None), emp.base_salary,
+    )
+
     # Attendance counts inside the cycle window (drives present/absent days).
     att_qs = AttendanceRecord.objects.filter(
         employee=emp,
@@ -1047,8 +1080,19 @@ def mobile_salary(request):
     # already depends on employees.models — keeping this import inside the
     # function avoids any chance of an import-time cycle through api.views.
     from employees.views import _compute_attendance_breakdown
+    _log.info(
+        '[MOBILE_SALARY_STEP2] emp_pk=%s pre_compute base_salary_type=%s '
+        'value=%r present_days=%s absent_days=%s',
+        emp.pk, type(emp.base_salary).__name__, emp.base_salary,
+        present_days, absent_days,
+    )
     net_salary_amount, paid_days_dec = _compute_attendance_breakdown(
         emp, cycle_end.replace(day=1), float(emp.base_salary),
+    )
+    _log.info(
+        '[MOBILE_SALARY_STEP3] emp_pk=%s post_compute '
+        'net_salary_amount=%r paid_days_dec=%r',
+        emp.pk, net_salary_amount, paid_days_dec,
     )
     paid_days    = float(paid_days_dec)
     basic_salary = str(emp.base_salary)
@@ -1072,6 +1116,16 @@ def mobile_salary(request):
     # Allowances + deductions still come from the SalaryUpdate row (the
     # admin-entered figures); fall back to 0.00 when no row exists yet.
     if sal:
+        # -- TEMPORARY DEBUG: dump raw SalaryUpdate field values so a
+        #    None on any nullable-in-DB Decimal is visible in the log. --
+        _log.info(
+            '[MOBILE_SALARY_STEP4a] emp_pk=%s sal_pk=%s '
+            'extra_allowance=%r ot_allowance=%r food_allowance=%r '
+            'total_deduction=%r advance_pay=%r',
+            emp.pk, sal.pk,
+            sal.extra_allowance, sal.ot_allowance, sal.food_allowance,
+            sal.total_deduction, sal.advance_pay,
+        )
         allowances         = str(sal.extra_allowance + sal.ot_allowance + sal.food_allowance)
         deductions         = str(sal.total_deduction)
         ot_allowance       = str(sal.ot_allowance)
@@ -1088,6 +1142,16 @@ def mobile_salary(request):
         food_allowance     = '0.00'
         advance_deduction  = '0.00'
 
+    # -- TEMPORARY DEBUG: values entering the float() calls below -----
+    _log.info(
+        '[MOBILE_SALARY_STEP4b] emp_pk=%s branch=%s '
+        'attendance_earnings=%r ot_allowance=%r food_allowance=%r '
+        'deductions=%r advance_deduction=%r',
+        emp.pk, 'if_sal' if sal else 'else',
+        attendance_earnings, ot_allowance, food_allowance,
+        deductions, advance_deduction,
+    )
+
     # Live net = attendance earnings + OT + food − deductions (advance is
     # already inside total_deduction on SalaryUpdate; see manage_ajax save).
     net_salary_final = round(
@@ -1098,6 +1162,11 @@ def mobile_salary(request):
         2,
     )
     net_salary = str(net_salary_final)
+
+    _log.info(
+        '[MOBILE_SALARY_STEP5] emp_pk=%s net_salary=%s',
+        emp.pk, net_salary,
+    )
 
     return JsonResponse({
         'success': True,

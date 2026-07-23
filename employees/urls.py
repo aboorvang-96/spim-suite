@@ -15,6 +15,7 @@ urlpatterns = [
     path('<int:pk>/salary/', views.salary_management, name='salary_management'),
     path('salary/add/', views.add_salary, name='add_salary'),
     path('export/json/', views.export_json_employees, name='export_json'),
+    path('export/excel/', views.export_excel_employees, name='export_excel'),
     path('import/excel/', views.import_excel_employees, name='import_excel'),
     path('import/json/', views.import_json_employees, name='import_json'),
     path('api/', views.employee_list_json, name='api_list'),

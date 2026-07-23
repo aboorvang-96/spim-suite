@@ -294,9 +294,13 @@ Included by list.html.
         </div>
         <div class="modal-body">
             <p class="modal-label" style="margin-bottom:8px;">Export</p>
-            <a href="{% url 'employees:export_json' %}" class="btn-save-green" style="display:block;text-align:center;text-decoration:none;margin-bottom:20px;">
+            <a href="{% url 'employees:export_json' %}" class="btn-save-green" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="display:inline;vertical-align:middle;margin-right:6px;"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 Download Employees as JSON
+            </a>
+            <a href="{% url 'employees:export_excel' %}?q={{ search_q|urlencode }}&location={{ location_f|urlencode }}&site={{ site_f|urlencode }}" class="btn-save-green" style="display:block;text-align:center;text-decoration:none;margin-bottom:20px;background:#16a34a;">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="display:inline;vertical-align:middle;margin-right:6px;"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Export Employees as Excel
             </a>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:20px;">
             <form method="post" enctype="multipart/form-data" action="{% url 'employees:import_json' %}">
