@@ -101,6 +101,7 @@ def mobile_auth_required(view_func):
 # ---------------------------------------------------------------------------
 
 @csrf_exempt
+@require_app_version
 @require_POST
 def mobile_login(request):
     """
@@ -162,6 +163,7 @@ def mobile_login(request):
 
 
 @csrf_exempt
+@require_app_version
 @require_POST
 @mobile_auth_required
 def mobile_change_password(request):
@@ -248,6 +250,7 @@ def mobile_reset_password(request):
 # Mobile data endpoints — STRICTLY scoped to request.employee
 # ---------------------------------------------------------------------------
 
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_profile(request):
@@ -603,6 +606,7 @@ def mobile_attendance(request):
     return JsonResponse({'success': True, 'attendance': records})
 
 
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_payslips(request):
@@ -833,6 +837,7 @@ def mobile_worklogs(request):
     return JsonResponse({'success': True, 'worklogs': logs})
 
 
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_machines(request):
@@ -849,6 +854,7 @@ def mobile_machines(request):
     return JsonResponse({'success': True, 'machines': machines})
 
 
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_sites(request):
@@ -896,6 +902,7 @@ def mobile_sites(request):
     })
 
 
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_payslip_download(request, pk):
@@ -923,6 +930,7 @@ def mobile_payslip_download(request, pk):
 
 
 @csrf_exempt
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET', 'POST'])
 def mobile_bank_details(request):
@@ -977,6 +985,7 @@ def mobile_bank_details(request):
     })
 
 
+@require_app_version
 @mobile_auth_required
 @require_POST
 def mobile_logout(request):
@@ -989,6 +998,7 @@ def mobile_logout(request):
 # Salary cycle summary (26th prev month -> 25th current month)
 # ---------------------------------------------------------------------------
 
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_salary(request):
@@ -1198,6 +1208,7 @@ def _mobile_salary_impl(request):
 # Dashboard summary (lightweight; for SPIM Lite home tab)
 # ---------------------------------------------------------------------------
 
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_dashboard(request):
@@ -1424,6 +1435,7 @@ def mobile_hr_required(view_func):
     return _wrapped
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_employees(request):
@@ -1532,6 +1544,7 @@ def mobile_hr_attendance(request):
     return JsonResponse({'success': True, 'records': records})
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_salary(request):
@@ -1715,6 +1728,7 @@ def _hr_income_filtered_queryset(hr_admin_id, get_params):
     return qs
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_income_categories(request):
@@ -1737,6 +1751,7 @@ def mobile_hr_income_categories(request):
 
 
 @csrf_exempt
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET', 'POST'])
 def mobile_hr_income_list(request):
@@ -1804,6 +1819,7 @@ def mobile_hr_income_list(request):
 
 
 @csrf_exempt
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET', 'PUT', 'DELETE'])
 def mobile_hr_income_detail(request, pk):
@@ -1939,6 +1955,7 @@ def _hr_expense_filtered_queryset(hr_admin_id, get_params):
     return qs
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_expense_categories(request):
@@ -1961,6 +1978,7 @@ def mobile_hr_expense_categories(request):
 
 
 @csrf_exempt
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET', 'POST'])
 def mobile_hr_expense_list(request):
@@ -2036,6 +2054,7 @@ def mobile_hr_expense_list(request):
 
 
 @csrf_exempt
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET', 'PUT', 'DELETE'])
 def mobile_hr_expense_detail(request, pk):
@@ -2684,6 +2703,7 @@ def _render_hr_income_pdf(rows, total_amount, period_label, filename_base, scope
     return response
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_income_report(request):
@@ -2917,6 +2937,7 @@ def _render_hr_expense_pdf(rows, total_amount, period_label, filename_base, scop
     return response
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_expense_report(request):
@@ -3024,6 +3045,7 @@ def mobile_hr_expense_report(request):
 # ---------------------------------------------------------------------------
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_dashboard_today(request):
