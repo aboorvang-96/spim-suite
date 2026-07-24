@@ -34,6 +34,7 @@ from attendance.models import AttendanceRecord
 from attendance.utils import ensure_sunday_holidays, display_status
 from projects.models import WorkLog, MachineLocation
 from .models import MobileAuthToken
+from .version_check import require_app_version
 
 # Dedicated logger for the SPIM Lite mobile API. Surfaces silent save
 # failures (admin_id mismatch, DB errors, lock conflicts) in Railway logs
@@ -366,6 +367,7 @@ def mobile_profile(request):
 
 
 @csrf_exempt
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET', 'POST'])
 def mobile_attendance(request):
@@ -683,6 +685,7 @@ def mobile_payslips(request):
 
 
 @csrf_exempt
+@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET', 'POST'])
 def mobile_worklogs(request):
@@ -1448,6 +1451,7 @@ def mobile_hr_employees(request):
     return JsonResponse({'success': True, 'employees': employees})
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_attendance(request):
@@ -2445,6 +2449,7 @@ def _render_hr_attendance_pdf(dates, matrix_rows, cycle_label, filename_base):
     return response
 
 
+@require_app_version
 @mobile_hr_required
 @require_http_methods(['GET'])
 def mobile_hr_attendance_report(request):

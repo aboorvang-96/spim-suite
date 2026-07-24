@@ -166,6 +166,19 @@ CURRENCY_SYMBOL = '₹'
 CURRENCY_CODE = 'INR'
 
 # -------------------------------------------------------------------
+# SPIM LITE APP VERSION GATE
+# -------------------------------------------------------------------
+# Single source of truth for the SPIM Lite (mobile APK) version policy.
+# Bumping either value here is the ONLY change needed to shift the gate;
+# all API-side checks read from these constants via api.version_check.
+#
+#   CURRENT_APP_VERSION        — latest APK build published to users.
+#   MINIMUM_SUPPORTED_VERSION  — oldest APK still allowed to hit the API.
+#                                Anything older is force-updated (HTTP 426).
+SPIM_LITE_CURRENT_APP_VERSION       = "1.0.0"
+SPIM_LITE_MINIMUM_SUPPORTED_VERSION = "1.0.0"
+
+# -------------------------------------------------------------------
 # STATIC FILES
 # -------------------------------------------------------------------
 
