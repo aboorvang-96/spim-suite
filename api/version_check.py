@@ -132,6 +132,13 @@ def require_app_version(view_func):
     """
     @wraps(view_func)
     def _wrapped(request, *args, **kwargs):
+        # Master kill-switch. When False, every request is allowed through
+        # untouched — used while legacy APKs (no App-Version header) are
+        # still in the field. Flip settings.SPIM_LITE_ENFORCE_VERSION_GATE
+        # back to True once the new versioned APK ships.
+        if not getattr(settings, 'SPIM_LITE_ENFORCE_VERSION_GATE', False):
+            return view_func(request, *args, **kwargs)
+
         raw = request.headers.get('App-Version', '')
         minimum = getattr(settings, 'SPIM_LITE_MINIMUM_SUPPORTED_VERSION', '0.0.0')
 

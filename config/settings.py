@@ -175,8 +175,13 @@ CURRENCY_CODE = 'INR'
 #   CURRENT_APP_VERSION        — latest APK build published to users.
 #   MINIMUM_SUPPORTED_VERSION  — oldest APK still allowed to hit the API.
 #                                Anything older is force-updated (HTTP 426).
-SPIM_LITE_CURRENT_APP_VERSION       = "1.0.0"
-SPIM_LITE_MINIMUM_SUPPORTED_VERSION = "1.0.0"
+SPIM_LITE_CURRENT_APP_VERSION       = "2.0.0"
+SPIM_LITE_MINIMUM_SUPPORTED_VERSION = "2.0.0"
+
+# Master switch for the App-Version gate. Version 2.0.0 is the sole
+# supported SPIM Lite release; every older APK is now permanently blocked
+# with HTTP 426 by the existing decorator + helper module.
+SPIM_LITE_ENFORCE_VERSION_GATE = True
 
 # -------------------------------------------------------------------
 # STATIC FILES
