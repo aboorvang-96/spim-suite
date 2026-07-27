@@ -351,6 +351,8 @@ def _work_summary_json(request, admin_id):
         total_tmp += emp_count
         emp_names = ', '.join(e.name for e in emps) or '—'
         rows.append({
+            'id':            log.pk,
+            'locked':        bool(getattr(log, 'locked', False)),
             'sl':            idx,
             'date':          log.date.strftime('%d-%m-%Y'),
             'location_name': log.location.name if log.location else '—',
@@ -468,6 +470,33 @@ def work_log_delete(request, pk):
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'success': True})
     return redirect('projects:list')
+
+
+@admin_required
+@require_POST
+def work_log_summary_delete(request, pk):
+    """
+    AJAX: delete a WorkLog entry from the Work Summary tab.
+
+    Distinct from `work_log_delete` in that this endpoint is admin-only
+    (the Summary tab exposes cross-cycle history) and always returns JSON.
+    Locked entries are refused with an actionable message pointing the
+    admin at the Daily Work Log tab's Unlock control; the M2M links to
+    employees are removed automatically by Django's cascade — employees
+    themselves are not touched. AttendanceRecord rows referencing the
+    same machine + date live in a separate module and are not modified.
+    """
+    admin_id = get_admin_id(request.user)
+    log = get_object_or_404(WorkLog, pk=pk, admin_id=admin_id)
+    if getattr(log, 'locked', False):
+        return JsonResponse(
+            {'success': False,
+             'error': 'Cannot delete — this entry is locked. '
+                      'Unlock it from the Daily Work Log tab first.'},
+            status=400,
+        )
+    log.delete()
+    return JsonResponse({'success': True, 'id': pk})
 
 
 @login_required

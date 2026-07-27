@@ -148,6 +148,30 @@
 .wl-site-body.open{display:block;}
 .wl-site-empty{padding:.6rem;font-size:.72rem;color:#94a3b8;font-style:italic;}
 
+/* ── Work Summary tab compaction (scoped to #tab-summary so global
+   .filter-card / .salary-table / .filter-input / .filter-select styles
+   from the base sheet stay untouched for other tabs and other pages) ── */
+#tab-summary .filter-card{padding:.5rem .65rem;gap:.5rem;flex-wrap:wrap;}
+#tab-summary .filter-card .filter-group{margin:0;}
+#tab-summary .filter-card .filter-group label{font-size:.68rem;margin:0 0 .15rem;color:#475569;font-weight:600;}
+#tab-summary .filter-input,
+#tab-summary .filter-select{font-size:.75rem;padding:.28rem .4rem;height:32px;}
+#tab-summary .btn-sm{height:32px !important;padding:.25rem .65rem;font-size:.72rem;align-self:flex-end;}
+/* Report section (Machine-Wise Monthly Attendance) gets the same treatment. */
+#tab-summary .report-section h4{font-size:.8rem;}
+/* Summary table */
+#tab-summary #summary-table{font-size:.8rem;table-layout:fixed;width:100%;}
+#tab-summary #summary-table th,
+#tab-summary #summary-table td{padding:.375rem .5rem;vertical-align:top;}
+#tab-summary #summary-table th{font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:#64748b;}
+#tab-summary .sum-wd-cell{white-space:normal;font-size:.76rem;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+#tab-summary .sum-emps-cell{font-size:.74rem;line-height:1.35;color:#334155;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;cursor:help;}
+#tab-summary .btn-sum-del{background:transparent;border:1px solid transparent;color:#dc2626;
+    cursor:pointer;padding:.15rem .4rem;font-size:.9rem;line-height:1;border-radius:4px;}
+#tab-summary .btn-sum-del:hover{background:#fef2f2;border-color:#fca5a5;}
+
 /* Work Details autocomplete panel */
 .wd-ac-wrap{position:relative;width:100%;}
 .wd-ac-input{width:100%;font-size:.75rem;padding:.28rem .4rem;border:1px solid #e2e8f0;border-radius:5px;background:#fff;color:#1e293b;}
@@ -331,19 +355,23 @@
         <span id="s-total-entries" hidden></span>
         <span id="s-total-tmp"     hidden></span>
 
+        <!-- Inline error banner for summary-tab delete failures (locked, network, etc.) -->
+        <div id="summary-err-banner" class="entity-del-banner" style="margin-top:1rem;"></div>
+
         <!-- Summary Table -->
         <div class="table-container" style="margin-top:1.5rem;">
             <table class="salary-table" id="summary-table">
                 <thead>
                     <tr>
-                        <th>SL</th>
-                        <th>Date</th>
-                        <th>Location</th>
-                        <th>Site</th>
-                        <th>Work Details</th>
-                        <th>TMP</th>
-                        <th>Employees</th>
-                        <th>Remarks</th>
+                        <th style="width:50px;">SL</th>
+                        <th style="width:110px;">Date</th>
+                        <th style="width:130px;">Location</th>
+                        <th style="width:140px;">Site</th>
+                        <th style="width:200px;">Work Details</th>
+                        <th style="width:60px;">TMP</th>
+                        <th style="width:280px;">Employees</th>
+                        <th style="width:150px;">Remarks</th>
+                        <th style="width:80px;text-align:right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="summary-tbody">
@@ -544,6 +572,28 @@
         <div class="modal-footer">
             <button class="btn btn-outline" onclick="cancelEntityDelete()">Cancel</button>
             <button class="btn btn-primary" id="entity-delete-btn" onclick="confirmEntityDelete()"
+                style="background:#dc2626;border-color:#dc2626;">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Work Summary — confirm delete of a WorkLog entry ══ -->
+<div id="summary-delete-modal" class="modal">
+    <div class="modal-content" style="max-width:440px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Delete Work Log entry?</h3>
+            <button onclick="closeSummaryDeleteModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="summary-delete-msg" style="font-size:.82rem;color:#1e293b;margin:0;"></p>
+            <p style="font-size:.72rem;color:#64748b;margin:.6rem 0 0;">
+                This will remove the entry and all attached employee links. This cannot be undone.
+            </p>
+            <div class="entity-del-banner" id="summary-delete-error"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeSummaryDeleteModal()">Cancel</button>
+            <button class="btn btn-primary" id="summary-delete-btn" onclick="confirmSummaryDelete()"
                 style="background:#dc2626;border-color:#dc2626;">Delete</button>
         </div>
     </div>
@@ -1713,24 +1763,107 @@ function syncSummaryLocationDropdown(locs) {
     syncReportLocationDropdown(locs);  // keep report dropdown in sync
 }
 
+// ── Work Summary — per-row delete ────────────────────────────────────────
+let _summaryDeleteId = null;
+
+function openSummaryDeleteModal(logId, dateStr, machineName) {
+    _summaryDeleteId = logId;
+    document.getElementById('summary-delete-msg').textContent =
+        `Date: ${dateStr}  •  Machine: ${machineName}`;
+    const errEl = document.getElementById('summary-delete-error');
+    errEl.style.display = 'none'; errEl.textContent = '';
+    // Any prior inline banner from an earlier failed delete is stale now.
+    const bannerEl = document.getElementById('summary-err-banner');
+    if (bannerEl) { bannerEl.style.display = 'none'; bannerEl.textContent = ''; }
+    document.getElementById('summary-delete-modal').classList.add('active');
+}
+
+function closeSummaryDeleteModal() {
+    document.getElementById('summary-delete-modal').classList.remove('active');
+    _summaryDeleteId = null;
+}
+
+async function confirmSummaryDelete() {
+    if (!_summaryDeleteId) return;
+    const id = _summaryDeleteId;
+    const errEl = document.getElementById('summary-delete-error');
+    const btn   = document.getElementById('summary-delete-btn');
+    btn.disabled = true;
+    try {
+        const res = await fetch(`/projects/log/${id}/summary-delete/`, {
+            method:  'POST',
+            headers: { 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const result = await res.json();
+        if (!result.success) {
+            // Server refused (locked / not found). Show inline; keep the
+            // dialog open so the admin can Cancel out and follow the hint.
+            errEl.textContent = result.error || 'Delete failed.';
+            errEl.style.display = 'block';
+            return;
+        }
+        _removeSummaryRow(id);
+        closeSummaryDeleteModal();
+        showToast('Work Log entry deleted.');
+    } catch (e) {
+        errEl.textContent = 'Network error.';
+        errEl.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function _removeSummaryRow(logId) {
+    // Fade the row, then splice out of summaryRows and rewrite SL numbers
+    // in place so the caller doesn't have to re-fetch the whole tab.
+    const tr = document.querySelector(`#summary-tbody tr[data-log-id="${logId}"]`);
+    if (tr) {
+        tr.style.transition = 'opacity .25s';
+        tr.style.opacity = '0';
+        setTimeout(() => tr.remove(), 260);
+    }
+    const idx = summaryRows.findIndex(r => r.id === logId);
+    if (idx >= 0) summaryRows.splice(idx, 1);
+    // Renumber the client-side SL column so the sequence stays contiguous
+    // after removal. Server also renumbers on next fetchSummaryData.
+    summaryRows.forEach((r, i) => { r.sl = i + 1; });
+    // Cheap re-label without full re-render: SL cell is the first <td>.
+    setTimeout(() => {
+        [...document.querySelectorAll('#summary-tbody tr')].forEach((row, i) => {
+            const cell = row.querySelector('td strong');
+            if (cell) cell.textContent = (i + 1);
+        });
+    }, 280);
+}
+
 function renderSummaryTable() {
     const tbody = document.getElementById('summary-tbody');
     if (!summaryRows.length) {
-        tbody.innerHTML = `<tr><td colspan="8" style="padding:3rem;text-align:center;color:#94a3b8;">No records match the selected filters.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="padding:3rem;text-align:center;color:#94a3b8;">No records match the selected filters.</td></tr>`;
         return;
     }
-    tbody.innerHTML = summaryRows.map(r => `
-        <tr>
+    tbody.innerHTML = summaryRows.map(r => {
+        // Employees list gets capped by CSS (.sum-emps-cell) with an
+        // ellipsis; the full comma-separated list stays on the title
+        // attribute so hovering reveals every name. Skips the em-dash
+        // placeholder returned when no employees are linked.
+        const empsFull = (r.employees && r.employees !== '—') ? r.employees : '';
+        const delBtn = IS_ADMIN ? `<button type="button" class="btn-sum-del"
+            title="Delete this Work Log entry"
+            onclick="openSummaryDeleteModal(${r.id}, ${jsonAttr(r.date)}, ${jsonAttr(r.location_name)})">🗑️</button>` : '';
+        return `
+        <tr data-log-id="${r.id}">
             <td><strong>${r.sl}</strong></td>
             <td>${r.date}</td>
             <td style="font-weight:700;color:#2563eb;">${escHtml(r.location_name)}</td>
             <td>${escHtml(r.site)}</td>
-            <td style="max-width:200px;white-space:normal;font-size:.78rem;">${escHtml(r.work_details)}</td>
-            <td style="font-weight:700;color:#059669;">${r.tmp}</td>
-            <td style="font-size:.75rem;">${escHtml(r.employees)}</td>
+            <td class="sum-wd-cell">${escHtml(r.work_details)}</td>
+            <td style="font-weight:700;color:#059669;text-align:center;">${r.tmp}</td>
+            <td class="sum-emps-cell" title="${escAttr(empsFull)}">${escHtml(r.employees)}</td>
             <td>${escHtml(r.remarks)}</td>
-        </tr>
-    `).join('');
+            <td style="text-align:right;">${delBtn}</td>
+        </tr>`;
+    }).join('');
 }
 
 // ── Add Client / Site / Machine modals ────────────────────────────────────
