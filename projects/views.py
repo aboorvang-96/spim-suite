@@ -9,6 +9,7 @@ from .models import (
 )
 from .forms import ProjectForm, TaskForm
 from .decorators import admin_required
+from .utils import bump_work_detail_suggestion
 from accounts.views import get_admin_id
 from employees.models import Employee
 from branches.models import LocationSite
@@ -416,7 +417,7 @@ def work_log_add(request):
                 'locked':       True,
             },
         )
-        _bump_work_detail_suggestion(admin_id, work_details, request.user)
+        bump_work_detail_suggestion(admin_id, work_details, request.user)
         return JsonResponse({'success': True, 'id': log.pk})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
@@ -553,43 +554,10 @@ def work_log_upsert(request):
         else:
             log.employees.clear()
 
-        _bump_work_detail_suggestion(admin_id, work_details, request.user)
+        bump_work_detail_suggestion(admin_id, work_details, request.user)
         return JsonResponse({'success': True, 'id': log.pk, 'created': created})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
-
-
-def _bump_work_detail_suggestion(admin_id, text, user):
-    """
-    Insert or increment a WorkDetailSuggestion row for `text`.
-    Case-insensitive; preserves the first-seen casing. No-op for blanks.
-    Best-effort — never bubbles an error to the caller.
-    """
-    text = (text or '').strip()
-    if not text:
-        return
-    try:
-        existing = (
-            WorkDetailSuggestion.objects
-            .filter(admin_id=admin_id, text__iexact=text)
-            .first()
-        )
-        now = timezone.now()
-        if existing:
-            WorkDetailSuggestion.objects.filter(pk=existing.pk).update(
-                usage_count=F('usage_count') + 1,
-                last_used_at=now,
-            )
-        else:
-            WorkDetailSuggestion.objects.create(
-                admin_id=admin_id,
-                text=text,
-                usage_count=1,
-                last_used_at=now,
-                created_by=user if getattr(user, 'is_authenticated', False) else None,
-            )
-    except Exception:
-        return
 
 
 @login_required

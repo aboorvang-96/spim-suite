@@ -36,6 +36,18 @@ class AttendanceRecord(models.Model):
     remarks         = models.CharField(max_length=500, blank=True, default='')
     remarks_locked  = models.BooleanField(default=False)
 
+    # Optional link to the machine the employee worked on that day, plus the
+    # free-text work description. When both are set on save, the attendance
+    # write also upserts a projects.WorkLog so the Projects module tree stays
+    # in sync (see attendance.services.apply_worklog_sideeffect).
+    machine = models.ForeignKey(
+        'projects.MachineLocation',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='attendance_entries',
+    )
+    work_details = models.TextField(blank=True, default='')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)

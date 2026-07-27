@@ -8,6 +8,30 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
+/* ── Autocomplete (Machine + Work Details columns) ── */
+.ac-wrap { position: relative; width: 100%; }
+.ac-input { width: 100%; }
+.ac-panel {
+    position: fixed; z-index: 1200; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.13);
+    min-width: 180px; max-height: 220px; overflow-y: auto;
+}
+.ac-item {
+    padding: .35rem .55rem; font-size: .78rem;
+    color: #1e293b; cursor: pointer;
+}
+.ac-item:hover, .ac-item.active { background: #eff6ff; color: #1d4ed8; }
+.ac-item.ac-add {
+    border-top: 1px solid #e2e8f0;
+    color: #0369a1; font-weight: 600;
+}
+.ac-empty { padding: .45rem .55rem; font-size: .74rem; color: #94a3b8; text-align: center; }
+.ac-hint {
+    margin-top: .18rem; font-size: .68rem; color: #b45309;
+    font-style: italic; line-height: 1.2;
+}
+
 /* ── Layout ── */
 .att-wrap { width: 100%; }
 
@@ -418,7 +442,8 @@
                                 </th>
                                 <th style="min-width:180px;">Emp ID / Name</th>
                                 <th style="min-width:170px;">Site</th>
-                                <th style="min-width:160px;">Working Site</th>
+                                <th style="min-width:150px;">Machine</th>
+                                <th style="min-width:180px;">Work Details</th>
                                 <th style="width:135px;">Date</th>
                                 <th style="width:128px;">Status</th>
                                 <th>Remarks</th>
@@ -555,8 +580,17 @@
                 <input type="text" id="editEmployee" class="form-input w-full bg-slate-50" readonly>
             </div>
             <div class="form-group">
-                <label class="text-xs font-semibold text-slate-600">Working Site</label>
-                <input type="text" id="editWorkingSite" class="form-input w-full">
+                <label class="text-xs font-semibold text-slate-600">Machine</label>
+                <div class="ac-wrap" data-role="machine" data-edit="1">
+                    <input type="text" id="editMachineName" class="form-input w-full ac-input"
+                        placeholder="Machine…" autocomplete="off"
+                        oninput="onMachineInput(this)"
+                        onfocus="onMachineInput(this)"
+                        onkeydown="onAcKey(event, this)"
+                        onblur="onAcBlur(this)">
+                    <input type="hidden" id="editMachineId" class="row-machine-id" value="">
+                    <div class="ac-panel" style="display:none;"></div>
+                </div>
             </div>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-3">
@@ -577,6 +611,18 @@
             </div>
         </div>
         <div class="form-group mb-3">
+            <label class="text-xs font-semibold text-slate-600">Work Details</label>
+            <div class="ac-wrap" data-role="workdetails" data-edit="1">
+                <input type="text" id="editWorkDetails" class="form-input w-full ac-input"
+                    placeholder="Work details…" autocomplete="off"
+                    oninput="onWorkDetailsInput(this)"
+                    onfocus="onWorkDetailsInput(this)"
+                    onkeydown="onAcKey(event, this)"
+                    onblur="onAcBlur(this)">
+                <div class="ac-panel" style="display:none;"></div>
+            </div>
+        </div>
+        <div class="form-group mb-3">
             <label class="text-xs font-semibold text-slate-600">
                 Remarks
                 <span id="editRemarksLockBadge" style="display:none;color:#b45309;font-weight:600;margin-left:.4rem;">🔒 locked</span>
@@ -587,6 +633,29 @@
             <button class="btn btn-secondary btn-sm" onclick="closeEditModal()">Cancel</button>
             <button class="btn btn-outline btn-sm" id="editRemarksUnlockBtn" style="display:none;" onclick="unlockRemarksFromModal()">Unlock Remarks</button>
             <button class="btn btn-primary btn-sm" onclick="updateAttendance()">Update</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════ Add Machine Modal (admin-only, opened from Machine autocomplete) ═══════════ -->
+<div id="addMachineModal" class="modal-overlay fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[1000] items-center justify-center">
+    <div class="att-card" style="width:100%; max-width:420px; margin:1rem; z-index:1001;">
+        <h3 class="att-card-title">Add Machine</h3>
+        <p style="font-size:.75rem;color:#64748b;margin-bottom:.8rem;">
+            Registers a new machine in the Projects module. It will appear in the
+            Projects tree under the selected site.
+        </p>
+        <div class="form-group mb-3">
+            <label class="text-xs font-semibold text-slate-600">Machine Name <span style="color:#e11d48">*</span></label>
+            <input type="text" id="amName" class="form-input w-full" placeholder="e.g. G-606">
+        </div>
+        <div class="form-group mb-3">
+            <label class="text-xs font-semibold text-slate-600">Site <span style="color:#e11d48">*</span></label>
+            <select id="amSite" class="form-select w-full"></select>
+        </div>
+        <div class="flex justify-end gap-2">
+            <button class="btn btn-secondary btn-sm" onclick="closeAddMachineModal()">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="amCreateBtn" onclick="createMachineInline()">Create</button>
         </div>
     </div>
 </div>
@@ -613,7 +682,6 @@ const EMPLOYEE_KEY    = 'employees';
 const ATTENDANCE_KEY  = 'attendance';
 const LOCATIONS_KEY   = 'locations';
 const SITES_KEY       = 'sites';
-const WORKING_SITES_KEY = 'workingSites';
 const STATUS_OPTIONS  = ['Present', 'Leave', 'Holiday', 'Weekly Off', 'Half Day', 'No Week Off'];
 const DAY_NAMES       = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTH_NAMES     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -641,7 +709,13 @@ var DB_STATUS_DISPLAY = {
     'leave':    'Leave'
 };
 
-/* ─── Sync a list of {empId, date, status} records to the backend ─── */
+/* ─── Sync a list of records to the backend.
+   Handles per-row failures returned by the server (2026-07 Attendance ↔
+   Projects integration): each record now runs in its own atomic block so
+   one bad row (e.g. cross-tenant machine id) can't abort the rest of the
+   save. The server response includes `failures: [{rowIndex, employeeId,
+   error}]`; surface them inline so the admin knows which rows to fix
+   without silently losing the rest of the save. ─── */
 function syncRecordsToServer(records) {
     if (!records || !records.length) return;
     fetch('/attendance/save/', {
@@ -652,7 +726,19 @@ function syncRecordsToServer(records) {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(records)
-    }).catch(function() {});
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data || !Array.isArray(data.failures) || !data.failures.length) return;
+        var lines = data.failures.map(function(f) {
+            var eid  = f.employeeId || ('row ' + (f.rowIndex + 1));
+            return eid + ' — ' + (f.error || 'save failed');
+        });
+        var msg = (data.saved || 0) + ' record(s) saved. '
+                + data.failures.length + ' failed: ' + lines.join('; ');
+        showAlert('attAlert', msg, 'error');
+    })
+    .catch(function() {});
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -717,6 +803,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     mainLocation: '',
                     site:         r.site        || '',
                     workingSite:  r.workingSite || '',
+                    machineId:    r.machineId   || null,
+                    machineName:  r.machineName || '',
+                    workDetails:  r.workDetails || '',
                     date: r.date, status: r.status,
                     remarks: r.remarks || '',
                     remarksLocked: !!r.remarksLocked,
@@ -859,14 +948,6 @@ function addCentralSite(v) {
     const a = getCentralSites();
     if (v && !a.includes(v)) { a.push(v); localStorage.setItem(SITES_KEY, JSON.stringify(a)); }
 }
-function loadWorkingSites() {
-    return JSON.parse(localStorage.getItem(WORKING_SITES_KEY) || '["Client Site","Temporary Field Site","Branch Visit"]');
-}
-function addWorkingSite(v) {
-    const a = loadWorkingSites();
-    if (v && !a.includes(v)) { a.push(v); localStorage.setItem(WORKING_SITES_KEY, JSON.stringify(a)); }
-}
-
 /* ═══════════════════════════════════════════════
    DROPDOWN BUILDERS
 ═══════════════════════════════════════════════ */
@@ -887,14 +968,6 @@ function buildLocationSiteOptions(selLoc, selSite) {
         opts += `<option value="${p}" ${isSel ? 'selected' : ''}>${label}</option>`;
     });
     opts += '<option value="__add_new">+ Add New Location/Site</option>';
-    return opts;
-}
-
-function buildWorkingSiteOptions(selVal) {
-    const sites = loadWorkingSites();
-    let opts = '<option value="">-- Select --</option>';
-    sites.forEach(s => opts += `<option value="${s}" ${selVal===s?'selected':''}>${s}</option>`);
-    opts += '<option value="__add_new">+ Add New Site</option>';
     return opts;
 }
 
@@ -1008,9 +1081,28 @@ function loadBulkAttendanceTable() {
                 </select>
             </td>
             <td>
-                <select class="row-workingsite form-select" onchange="handleWorkingSiteChange(this)">
-                    ${buildWorkingSiteOptions('')}
-                </select>
+                <div class="ac-wrap" data-role="machine">
+                    <input type="text" class="row-machine form-input ac-input"
+                        placeholder="Machine…" autocomplete="off"
+                        oninput="onMachineInput(this)"
+                        onfocus="onMachineInput(this)"
+                        onkeydown="onAcKey(event, this)"
+                        onblur="onAcBlur(this)">
+                    <input type="hidden" class="row-machine-id" value="">
+                    <div class="ac-panel" style="display:none;"></div>
+                </div>
+            </td>
+            <td>
+                <div class="ac-wrap" data-role="workdetails">
+                    <input type="text" class="row-workdetails form-input ac-input"
+                        placeholder="Work details…" autocomplete="off"
+                        oninput="onWorkDetailsInput(this)"
+                        onfocus="onWorkDetailsInput(this)"
+                        onkeydown="onAcKey(event, this)"
+                        onblur="onAcBlur(this)">
+                    <div class="ac-panel" style="display:none;"></div>
+                    <div class="ac-hint" style="display:none;">Add work details to create a Work Log entry.</div>
+                </div>
             </td>
             <td>
                 <input type="date" class="row-date form-input" value="${date}">
@@ -1091,16 +1183,220 @@ function handleSiteChange(sel) {
     sel.value = site.trim();
 }
 
-function handleWorkingSiteChange(sel) {
-    if (sel.value !== '__add_new') return;
-    const val = prompt('Enter new Working Site:');
-    if (!val) { sel.value = ''; return; }
-    addWorkingSite(val.trim());
-    document.querySelectorAll('#bulkAttBody .row-workingsite').forEach(s => {
-        const cur = s.value === '__add_new' ? '' : s.value;
-        s.innerHTML = buildWorkingSiteOptions(cur);
+/* ═══════════════════════════════════════════════
+   MACHINE + WORK DETAILS AUTOCOMPLETE (2026-07)
+   Shared fixed-position dropdown pattern. Machine suggestions come from
+   /attendance/machines/suggest/ (tenant-scoped MachineLocation); Work
+   Details from the Projects module's suggestion corpus. Both debounce
+   200ms. The Machine dropdown offers an admin-only "+ Add" row when the
+   typed text matches nothing.
+═══════════════════════════════════════════════ */
+const IS_ADMIN = {{ is_admin|yesno:'true,false' }};
+// Projects-module registry embedded at render (read-only) — feeds the
+// Add-Machine modal's site dropdown, grouped by client.
+const PROJECT_CLIENTS = {{ project_clients_json|safe }};
+const PROJECT_SITES   = {{ project_sites_json|safe }};
+const _acDebounce = new WeakMap();   // input el → timeout id
+let   _acActiveInput = null;         // input whose panel is open
+let   _acActiveIndex = -1;
+
+function _acPanelFor(input) {
+    return input.closest('.ac-wrap')?.querySelector('.ac-panel') || null;
+}
+
+function _acShowPanel(input, itemsHtml) {
+    const panel = _acPanelFor(input);
+    if (!panel) return;
+    panel.innerHTML = itemsHtml;
+    const rect = input.getBoundingClientRect();
+    panel.style.top  = (rect.bottom + 2) + 'px';
+    panel.style.left = rect.left + 'px';
+    panel.style.minWidth = rect.width + 'px';
+    panel.style.display = 'block';
+    _acActiveInput = input;
+    _acActiveIndex = -1;
+}
+
+function _acHidePanel(input) {
+    const panel = _acPanelFor(input);
+    if (panel) panel.style.display = 'none';
+    if (_acActiveInput === input) { _acActiveInput = null; _acActiveIndex = -1; }
+}
+
+function onAcBlur(input) {
+    // Delay so a mousedown on a panel item wins the race against blur.
+    setTimeout(() => _acHidePanel(input), 180);
+}
+
+function onAcKey(e, input) {
+    const panel = _acPanelFor(input);
+    if (!panel || panel.style.display === 'none') return;
+    const items = [...panel.querySelectorAll('.ac-item')];
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        _acActiveIndex = Math.min(_acActiveIndex + 1, items.length - 1);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        _acActiveIndex = Math.max(_acActiveIndex - 1, 0);
+    } else if (e.key === 'Enter') {
+        if (_acActiveIndex >= 0) { e.preventDefault(); items[_acActiveIndex].dispatchEvent(new Event('mousedown')); }
+        return;
+    } else if (e.key === 'Escape') {
+        _acHidePanel(input); return;
+    } else { return; }
+    items.forEach((el, i) => el.classList.toggle('active', i === _acActiveIndex));
+}
+
+/* ── Machine autocomplete ── */
+function onMachineInput(input) {
+    // Manual typing invalidates the previously chosen machine id until a
+    // suggestion is picked again — prevents a stale id riding along with
+    // an edited name.
+    const hidden = input.closest('.ac-wrap')?.querySelector('.row-machine-id');
+    if (hidden) hidden.value = '';
+    refreshMachineHint(input.closest('tr'));
+
+    if (_acDebounce.has(input)) clearTimeout(_acDebounce.get(input));
+    _acDebounce.set(input, setTimeout(async () => {
+        const q = input.value.trim();
+        let items = [];
+        try {
+            const res = await fetch('/attendance/machines/suggest/?q=' + encodeURIComponent(q),
+                { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            items = await res.json();
+        } catch (e) { items = []; }
+
+        let html = items.map(it =>
+            `<div class="ac-item" onmousedown="pickMachine(this, ${it.id}, '${escAttr(it.name)}')">${escHtml(it.name)}</div>`
+        ).join('');
+
+        const exact = items.some(it => it.name.toLowerCase() === q.toLowerCase());
+        if (IS_ADMIN && q && !exact) {
+            html += `<div class="ac-item ac-add" onmousedown="openAddMachineInline(this, '${escAttr(q)}')">+ Add '${escHtml(q)}' as new machine</div>`;
+        }
+        if (!html) html = `<div class="ac-empty">No machines found.</div>`;
+        _acShowPanel(input, html);
+    }, 200));
+}
+
+function pickMachine(itemEl, id, name) {
+    const wrap  = itemEl.closest('.ac-wrap');
+    const input = wrap.querySelector('.ac-input');
+    const hidden = wrap.querySelector('.row-machine-id');
+    input.value = name;
+    if (hidden) hidden.value = String(id);
+    _acHidePanel(input);
+    refreshMachineHint(input.closest('tr'));
+}
+
+/* ── Work Details autocomplete ── */
+function onWorkDetailsInput(input) {
+    refreshMachineHint(input.closest('tr'));
+    if (_acDebounce.has(input)) clearTimeout(_acDebounce.get(input));
+    _acDebounce.set(input, setTimeout(async () => {
+        const q = input.value.trim();
+        let items = [];
+        try {
+            const res = await fetch('/api/projects/work-details/suggest/?q=' + encodeURIComponent(q),
+                { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            items = await res.json();
+        } catch (e) { items = []; }
+        if (!items.length) { _acHidePanel(input); return; }
+        const html = items.map(it =>
+            `<div class="ac-item" onmousedown="pickWorkDetails(this, '${escAttr(it.text)}')">${escHtml(it.text)}</div>`
+        ).join('');
+        _acShowPanel(input, html);
+    }, 200));
+}
+
+function pickWorkDetails(itemEl, text) {
+    const wrap  = itemEl.closest('.ac-wrap');
+    const input = wrap.querySelector('.ac-input');
+    input.value = text;
+    _acHidePanel(input);
+    refreshMachineHint(input.closest('tr'));
+}
+
+/* ── UX hint: machine chosen but no work details yet ── */
+function refreshMachineHint(tr) {
+    if (!tr) return;
+    const hint    = tr.querySelector('.ac-hint');
+    if (!hint) return;
+    const machineId = tr.querySelector('.row-machine-id')?.value || '';
+    const wd        = (tr.querySelector('.row-workdetails')?.value || '').trim();
+    hint.style.display = (machineId && !wd) ? 'block' : 'none';
+}
+
+/* ── Inline Add-Machine modal (admin-only) ── */
+let _addMachineTargetWrap = null;
+
+function openAddMachineInline(itemEl, typedName) {
+    _addMachineTargetWrap = itemEl.closest('.ac-wrap');
+    const input = _addMachineTargetWrap.querySelector('.ac-input');
+    _acHidePanel(input);
+
+    document.getElementById('amName').value = typedName || '';
+    _populateAmSiteDropdown();
+    document.getElementById('addMachineModal').classList.add('active');
+    setTimeout(() => document.getElementById('amName').focus(), 100);
+}
+
+function closeAddMachineModal() {
+    document.getElementById('addMachineModal').classList.remove('active');
+    _addMachineTargetWrap = null;
+}
+
+function _populateAmSiteDropdown() {
+    // PROJECT_CLIENTS / PROJECT_SITES are embedded at page render from the
+    // Projects module's registry (read-only import in attendance.views.index).
+    // Grouped by client for readability — same layout as the Projects
+    // module's own Add Machine modal.
+    const sel = document.getElementById('amSite');
+    let html = '';
+    PROJECT_CLIENTS.forEach(c => {
+        const sites = PROJECT_SITES.filter(s => s.client_id === c.id);
+        if (!sites.length) return;
+        html += `<optgroup label="${escAttr(c.name)}">`;
+        sites.forEach(s => { html += `<option value="${s.id}">${escHtml(s.name)}</option>`; });
+        html += '</optgroup>';
     });
-    sel.value = val.trim();
+    sel.innerHTML = html || '<option value="" disabled selected>No sites — add one in Projects first</option>';
+    document.getElementById('amCreateBtn').disabled = !html;
+}
+
+async function createMachineInline() {
+    const name   = document.getElementById('amName').value.trim();
+    const siteId = parseInt(document.getElementById('amSite').value) || null;
+    if (!name)   { showAlert('attAlert', 'Machine name is required.', 'error'); return; }
+    if (!siteId) { showAlert('attAlert', 'Site is required.', 'error'); return; }
+    try {
+        const res = await fetch('/projects/machines/add/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ name, site_id: siteId }),
+        });
+        const result = await res.json();
+        if (result.success) {
+            if (_addMachineTargetWrap) {
+                const input  = _addMachineTargetWrap.querySelector('.ac-input');
+                const hidden = _addMachineTargetWrap.querySelector('.row-machine-id');
+                if (input)  input.value  = result.name;
+                if (hidden) hidden.value = String(result.id);
+                refreshMachineHint(input?.closest('tr'));
+            }
+            closeAddMachineModal();
+            showAlert('attAlert', 'Machine "' + result.name + '" created.', 'success');
+        } else {
+            showAlert('attAlert', result.error || 'Failed to create machine.', 'error');
+        }
+    } catch (e) {
+        showAlert('attAlert', 'Network error.', 'error');
+    }
 }
 
 /* ═══════════════════════════════════════════════
@@ -1149,6 +1445,20 @@ function applyAttendanceLocks() {
             if (empId !== '' && a.empId === empId) return true;
             return false;
         });
+        if (existing) {
+            // Prefill Machine + Work Details from the persisted record so
+            // a page reload / cycle switch preserves what was saved. Kept
+            // in a separate step from lockRow because both locked and
+            // editable rows want the prefill (edit mode shows the saved
+            // value the admin might tweak).
+            var mInput  = tr.querySelector('.row-machine');
+            var mHidden = tr.querySelector('.row-machine-id');
+            var wdInput = tr.querySelector('.row-workdetails');
+            if (mInput)  mInput.value  = existing.machineName || '';
+            if (mHidden) mHidden.value = existing.machineId   || '';
+            if (wdInput) wdInput.value = existing.workDetails || '';
+            refreshMachineHint(tr);
+        }
         if (existing && !editAttendanceMode) {
             lockRow(tr, existing.status);
         } else {
@@ -1172,7 +1482,7 @@ function lockRow(tr, status) {
         badge.style.display = 'inline-block';
     }
     tr.querySelectorAll(
-        'select.row-site, select.row-locsite, select.row-workingsite, input.row-date, textarea.row-remarks'
+        'select.row-site, select.row-locsite, input.row-machine, input.row-workdetails, input.row-date, textarea.row-remarks'
     ).forEach(function(el) { el.disabled = true; });
 }
 
@@ -1185,7 +1495,7 @@ function unlockRow(tr) {
     if (sel) sel.style.display = '';
     if (badge) badge.style.display = 'none';
     tr.querySelectorAll(
-        'select.row-site, select.row-locsite, select.row-workingsite, input.row-date, textarea.row-remarks'
+        'select.row-site, select.row-locsite, input.row-machine, input.row-workdetails, input.row-date, textarea.row-remarks'
     ).forEach(function(el) { el.disabled = false; });
 }
 
@@ -1305,8 +1615,10 @@ function saveBulkAttendance() {
         } else {
             site = (siteRaw && siteRaw !== '__add_new') ? siteRaw : '';
         }
-        const wsRaw  = tr.querySelector('.row-workingsite').value;
-        const ws     = (wsRaw === '__add_new') ? '' : wsRaw;
+        // New (2026-07): Machine FK + Work Details replace the Working Site dropdown.
+        const machineName = (tr.querySelector('.row-machine')?.value || '').trim();
+        const machineId   = parseInt(tr.querySelector('.row-machine-id')?.value) || null;
+        const workDetails = (tr.querySelector('.row-workdetails')?.value || '').trim();
         const date   = tr.querySelector('.row-date').value;
         const status = tr.querySelector('.row-status').value;
         const remarks = tr.querySelector('.row-remarks').value.trim();
@@ -1324,7 +1636,9 @@ function saveBulkAttendance() {
             baseSalary:   parseFloat(tr.dataset.baseSalary) || 0,
             mainLocation: mainLocation || '',
             site:         site || '',
-            workingSite:  ws === '__add_new' ? '' : ws,
+            machineId:    machineId,
+            machineName:  machineName,
+            workDetails:  workDetails,
             date, status, remarks,
             hours: calculateHours(status)
         };
@@ -1361,15 +1675,16 @@ function saveBulkAttendance() {
         } else {
             siteOut = (siteRaw && siteRaw !== '__add_new') ? siteRaw : '';
         }
-        var wsRaw  = tr.querySelector('.row-workingsite').value;
-        var wsOut  = (wsRaw === '__add_new') ? '' : wsRaw;
+        var mId   = parseInt(tr.querySelector('.row-machine-id')?.value) || null;
+        var wdOut = (tr.querySelector('.row-workdetails')?.value || '').trim();
         serverRecords.push({
             empId:       tr.dataset.empId,
             pk:          tr.dataset.empPk || '',
             date:        d,
             status:      s,
             site:        siteOut,
-            workingSite: wsOut,
+            machineId:   mId,
+            workDetails: wdOut,
             remarks:     tr.querySelector('.row-remarks').value.trim(),
         });
     });
@@ -1394,8 +1709,10 @@ function saveBulkAttendance() {
 function editAttendance(idx) {
     editingIndex = idx;
     const att = loadAttendance()[idx];
-    document.getElementById('editEmployee').value   = att.empId + ' / ' + att.empName;
-    document.getElementById('editWorkingSite').value = att.workingSite || '';
+    document.getElementById('editEmployee').value    = att.empId + ' / ' + att.empName;
+    document.getElementById('editMachineName').value = att.machineName || '';
+    document.getElementById('editMachineId').value   = att.machineId ? String(att.machineId) : '';
+    document.getElementById('editWorkDetails').value = att.workDetails || '';
     document.getElementById('editDate').value        = att.date;
     // Auto-marked Sundays surface as 'Sunday' (a display-only value not
     // present in STATUS_OPTIONS). Map back to 'Holiday' for the edit
@@ -1459,9 +1776,13 @@ function closeEditModal() { document.getElementById('editModal').classList.remov
 function updateAttendance() {
     let att = loadAttendance();
     const status = document.getElementById('editStatus').value;
+    const machineIdRaw = document.getElementById('editMachineId').value;
+    const machineId    = machineIdRaw ? parseInt(machineIdRaw) : null;
     att[editingIndex] = {
         ...att[editingIndex],
-        workingSite: document.getElementById('editWorkingSite').value,
+        machineId:   machineId,
+        machineName: document.getElementById('editMachineName').value.trim(),
+        workDetails: document.getElementById('editWorkDetails').value.trim(),
         date:        document.getElementById('editDate').value,
         status, remarks: document.getElementById('editRemarks').value,
         hours: calculateHours(status)
@@ -1475,6 +1796,8 @@ function updateAttendance() {
         pk:     updated.empPk || '',
         date:   updated.date,
         status: updated.status,
+        machineId:   updated.machineId,
+        workDetails: updated.workDetails || '',
         remarks: updated.remarks || '',
     }]);
     closeEditModal();
@@ -1539,6 +1862,9 @@ function ensureServerDataFetched(fromDate, toDate, cb) {
                 mainLocation: '',
                 site:        r.site        || '',
                 workingSite: r.workingSite || '',
+                machineId:   r.machineId   || null,
+                machineName: r.machineName || '',
+                workDetails: r.workDetails || '',
                 date: r.date, status: r.status,
                 remarks: r.remarks || '',
                 remarksLocked: !!r.remarksLocked,

@@ -9,4 +9,5 @@ urlpatterns = [
     path('save/', views.save_attendance, name='save_attendance'),
     path('delete/', views.delete_attendance, name='delete_attendance'),
     path('remarks/unlock/', views.unlock_remarks, name='unlock_remarks'),
+    path('machines/suggest/', views.machine_suggest, name='machine_suggest'),
 ]
