@@ -3,12 +3,18 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse
 from django.contrib import messages
-from .models import Project, Task, MachineLocation, WorkLog, WorkStatus
+from .models import (
+    Project, Task, MachineLocation, WorkLog, WorkStatus,
+    ProjectClient, Site, WorkDetailSuggestion,
+)
 from .forms import ProjectForm, TaskForm
+from .decorators import admin_required
 from accounts.views import get_admin_id
 from employees.models import Employee
 from branches.models import LocationSite
 from datetime import date as date_type
+from django.db.models import F
+from django.utils import timezone
 import json
 
 # Statuses that allow an employee's machine work to surface in reports.
@@ -157,17 +163,79 @@ def work_log_dashboard(request):
             return _work_summary_json(request, admin_id)
         return _work_log_json(request, admin_id)
 
+    # Flat lists — still needed for the Work Summary tab, exports, and
+    # legacy autocomplete of statuses.
     machines     = list(MachineLocation.objects.filter(admin_id=admin_id).values('id', 'name'))
     employees    = list(Employee.objects.filter(admin_id=admin_id, status='active').values('id', 'employee_id', 'name'))
     statuses     = list(WorkStatus.objects.filter(admin_id=admin_id).values('id', 'name'))
-    global_sites = list(LocationSite.objects.filter(admin_id=admin_id).values_list('name', flat=True))
+
+    # 3-level tree for the Daily Work Log tab: Client → Site → Machines.
+    # Only clients that have at least one site are surfaced; only sites
+    # that have at least one machine are shown as expandable rows. Empty
+    # clients / sites still exist in the DB so the Add-Site / Add-Machine
+    # modals can attach to them.
+    tree = _build_projects_tree(admin_id)
+    clients_flat = list(
+        ProjectClient.objects.filter(admin_id=admin_id, is_active=True)
+        .values('id', 'name').order_by('name')
+    )
+    sites_flat = list(
+        Site.objects.filter(admin_id=admin_id, is_active=True)
+        .values('id', 'name', 'client_id').order_by('name')
+    )
 
     return render(request, 'projects/work_log.html', {
-        'machines_json':     json.dumps(machines),
-        'employees_json':    json.dumps(employees),
-        'statuses_json':     json.dumps(statuses),
-        'global_sites_json': json.dumps(global_sites),
+        'machines_json':  json.dumps(machines),
+        'employees_json': json.dumps(employees),
+        'statuses_json':  json.dumps(statuses),
+        'tree_json':      json.dumps(tree),
+        'clients_json':   json.dumps(clients_flat),
+        'sites_json':     json.dumps(sites_flat),
     })
+
+
+def _build_projects_tree(admin_id):
+    """Return a list of {id, name, sites: [{id, name, machines: [...]}]}."""
+    clients = list(
+        ProjectClient.objects
+        .filter(admin_id=admin_id, is_active=True)
+        .order_by('name')
+    )
+    sites = list(
+        Site.objects
+        .filter(admin_id=admin_id, is_active=True)
+        .order_by('name')
+    )
+    machines = list(
+        MachineLocation.objects
+        .filter(admin_id=admin_id)
+        .order_by('name')
+    )
+
+    machines_by_site = {}
+    for m in machines:
+        machines_by_site.setdefault(m.site_id, []).append(
+            {'id': m.id, 'name': m.name}
+        )
+    sites_by_client = {}
+    for s in sites:
+        sites_by_client.setdefault(s.client_id, []).append({
+            'id':            s.id,
+            'name':          s.name,
+            'machines':      machines_by_site.get(s.id, []),
+            'machine_count': len(machines_by_site.get(s.id, [])),
+        })
+
+    tree = []
+    for c in clients:
+        c_sites = sites_by_client.get(c.id, [])
+        tree.append({
+            'id':         c.id,
+            'name':       c.name,
+            'sites':      c_sites,
+            'site_count': len(c_sites),
+        })
+    return tree
 
 
 def _work_log_json(request, admin_id):
@@ -348,6 +416,7 @@ def work_log_add(request):
                 'locked':       True,
             },
         )
+        _bump_work_detail_suggestion(admin_id, work_details, request.user)
         return JsonResponse({'success': True, 'id': log.pk})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
@@ -420,9 +489,25 @@ def work_log_upsert(request):
 
         location = None
         if location_id:
-            location = get_object_or_404(MachineLocation, pk=location_id, admin_id=admin_id)
+            location = get_object_or_404(
+                MachineLocation.objects.select_related('site'),
+                pk=location_id, admin_id=admin_id,
+            )
 
-        site         = (data.get('site') or '').strip()
+        # Desktop UI no longer collects site — server derives it from the
+        # machine's assigned Site so WorkLog.site stays populated for
+        # mobile back-compat. If the client did send a `site` string
+        # (legacy path / mobile crossover), it wins so we don't regress
+        # anything unexpected. Falls back to '' when the machine has no
+        # site (Unassigned parking) or when no machine is attached.
+        site_raw = (data.get('site') or '').strip()
+        if site_raw:
+            site = site_raw
+        elif location and location.site_id:
+            site = location.site.name
+        else:
+            site = ''
+
         work_details = (data.get('work_details') or '').strip()
         tmp          = int(data.get('tmp') or 0)
         remarks      = (data.get('remarks') or '').strip()
@@ -468,9 +553,43 @@ def work_log_upsert(request):
         else:
             log.employees.clear()
 
+        _bump_work_detail_suggestion(admin_id, work_details, request.user)
         return JsonResponse({'success': True, 'id': log.pk, 'created': created})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+def _bump_work_detail_suggestion(admin_id, text, user):
+    """
+    Insert or increment a WorkDetailSuggestion row for `text`.
+    Case-insensitive; preserves the first-seen casing. No-op for blanks.
+    Best-effort — never bubbles an error to the caller.
+    """
+    text = (text or '').strip()
+    if not text:
+        return
+    try:
+        existing = (
+            WorkDetailSuggestion.objects
+            .filter(admin_id=admin_id, text__iexact=text)
+            .first()
+        )
+        now = timezone.now()
+        if existing:
+            WorkDetailSuggestion.objects.filter(pk=existing.pk).update(
+                usage_count=F('usage_count') + 1,
+                last_used_at=now,
+            )
+        else:
+            WorkDetailSuggestion.objects.create(
+                admin_id=admin_id,
+                text=text,
+                usage_count=1,
+                last_used_at=now,
+                created_by=user if getattr(user, 'is_authenticated', False) else None,
+            )
+    except Exception:
+        return
 
 
 @login_required
@@ -487,10 +606,16 @@ def work_log_unlock(request, pk):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
-@login_required
+@admin_required
 @require_POST
 def add_work_status(request):
-    """AJAX: add a new WorkStatus option (e.g. Painting, Greasing)."""
+    """AJAX: add a new WorkStatus option (e.g. Painting, Greasing).
+
+    Retained for backward compatibility. The Work Log UI no longer surfaces
+    a "+ Add Status" button — Work Details suggestions grow from actual
+    usage via WorkDetailSuggestion. This endpoint stays reachable in case
+    external callers or scripts still POST to it.
+    """
     try:
         data     = json.loads(request.body)
         admin_id = get_admin_id(request.user)
@@ -503,20 +628,129 @@ def add_work_status(request):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
-@login_required
+@admin_required
 @require_POST
 def add_machine_location(request):
-    """AJAX: add a new machine number to the MachineLocation list (module-local)."""
+    """
+    AJAX: add a new machine number.
+
+    Post-restructure a Site FK is required — the tree UI can no longer
+    render a machine without knowing which Site it belongs under. The
+    "+ Add Machine" modal always sends `site_id`; callers that omit it
+    receive a 400 rather than silently landing under Unassigned.
+    """
     try:
         data     = json.loads(request.body)
         admin_id = get_admin_id(request.user)
         name     = (data.get('name') or '').strip()
+        site_id  = data.get('site_id')
         if not name:
             return JsonResponse({'success': False, 'error': 'Machine number is required.'})
-        loc, created = MachineLocation.objects.get_or_create(admin_id=admin_id, name=name)
-        return JsonResponse({'success': True, 'id': loc.pk, 'name': loc.name, 'created': created})
+        if not site_id:
+            return JsonResponse({'success': False, 'error': 'Site is required.'})
+        site = get_object_or_404(Site, pk=site_id, admin_id=admin_id)
+        existing = MachineLocation.objects.filter(admin_id=admin_id, name__iexact=name).first()
+        if existing:
+            # Same-name machine already exists — surface it rather than
+            # creating a case-different duplicate that unique_together
+            # would reject on MySQL and accept on SQLite.
+            return JsonResponse({
+                'success': False,
+                'error':   f'Machine "{existing.name}" already exists.',
+                'id':      existing.pk,
+            })
+        loc = MachineLocation.objects.create(
+            admin_id=admin_id, name=name, site=site,
+        )
+        return JsonResponse({
+            'success': True, 'id': loc.pk, 'name': loc.name,
+            'site_id': site.pk, 'created': True,
+        })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+# ── New admin endpoints (Projects restructure) ─────────────────────────────
+
+@admin_required
+@require_POST
+def add_project_client(request):
+    """AJAX: create a ProjectClient (Work Log tree Level 1)."""
+    try:
+        data     = json.loads(request.body)
+        admin_id = get_admin_id(request.user)
+        name     = (data.get('name') or '').strip()
+        is_active = bool(data.get('is_active', True))
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Client name is required.'})
+        existing = ProjectClient.objects.filter(admin_id=admin_id, name__iexact=name).first()
+        if existing:
+            return JsonResponse({
+                'success': False,
+                'error':   f'Client "{existing.name}" already exists.',
+                'id':      existing.pk,
+            })
+        c = ProjectClient.objects.create(
+            admin_id=admin_id, name=name, is_active=is_active,
+        )
+        return JsonResponse({
+            'success': True, 'id': c.pk, 'name': c.name,
+            'is_active': c.is_active, 'created': True,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@admin_required
+@require_POST
+def add_site(request):
+    """AJAX: create a Site under a ProjectClient (Work Log tree Level 2)."""
+    try:
+        data      = json.loads(request.body)
+        admin_id  = get_admin_id(request.user)
+        name      = (data.get('name') or '').strip()
+        client_id = data.get('client_id')
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Site name is required.'})
+        if not client_id:
+            return JsonResponse({'success': False, 'error': 'Client is required.'})
+        client = get_object_or_404(ProjectClient, pk=client_id, admin_id=admin_id)
+        existing = Site.objects.filter(admin_id=admin_id, name__iexact=name).first()
+        if existing:
+            return JsonResponse({
+                'success': False,
+                'error':   f'Site "{existing.name}" already exists.',
+                'id':      existing.pk,
+            })
+        s = Site.objects.create(
+            admin_id=admin_id, name=name, client=client, is_active=True,
+        )
+        return JsonResponse({
+            'success': True, 'id': s.pk, 'name': s.name,
+            'client_id': client.pk, 'created': True,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def work_details_suggest(request):
+    """
+    GET /projects/work-details/suggest/?q=<query>
+    Returns up to 10 matches ordered by usage_count desc, last_used_at desc.
+    Case-insensitive substring match. Also mounted at
+    /api/projects/work-details/suggest/ for external callers.
+    """
+    admin_id = get_admin_id(request.user)
+    q = (request.GET.get('q') or '').strip()
+    qs = WorkDetailSuggestion.objects.filter(admin_id=admin_id)
+    if q:
+        qs = qs.filter(text__icontains=q)
+    rows = list(
+        qs.order_by('-usage_count', '-last_used_at')
+          .values_list('text', flat=True)[:10]
+    )
+    return JsonResponse([{'text': t} for t in rows], safe=False)
 
 
 @login_required

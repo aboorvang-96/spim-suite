@@ -104,6 +104,37 @@
 .emp-dd-item input[type=checkbox]{width:13px;height:13px;margin:0;cursor:pointer;accent-color:#2563eb;flex-shrink:0;}
 .emp-dd-empty{padding:.6rem .55rem;font-size:.72rem;color:#94a3b8;text-align:center;}
 .emp-dd-limit-msg{padding:.22rem .55rem;font-size:.68rem;color:#dc2626;background:#fef2f2;border-top:1px solid #fecaca;border-radius:0 0 6px 6px;}
+
+/* ── Projects Tree (Client → Site → Machines) ── */
+.wl-tree{border:1px solid #e2e8f0;border-radius:6px;background:#fff;overflow:hidden;}
+.wl-tree-empty{padding:2rem;text-align:center;color:#94a3b8;font-size:.85rem;}
+.wl-client{border-bottom:1px solid #e2e8f0;}
+.wl-client:last-child{border-bottom:none;}
+.wl-client-header{display:flex;align-items:center;gap:.5rem;padding:.55rem .75rem;background:#1e293b;color:#fff;cursor:pointer;user-select:none;font-size:.78rem;font-weight:700;}
+.wl-client-header:hover{background:#334155;}
+.wl-client-header .wl-caret{display:inline-block;width:14px;text-align:center;transition:transform .15s;flex-shrink:0;}
+.wl-client-header.expanded .wl-caret{transform:rotate(90deg);}
+.wl-client-header .wl-count{margin-left:auto;font-size:.68rem;font-weight:600;color:#cbd5e1;background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:10px;}
+.wl-client-body{display:none;background:#f8fafc;}
+.wl-client-body.open{display:block;}
+.wl-site{border-top:1px solid #e2e8f0;}
+.wl-site-header{display:flex;align-items:center;gap:.5rem;padding:.45rem .75rem .45rem 1.75rem;background:#e2e8f0;cursor:pointer;user-select:none;font-size:.75rem;font-weight:700;color:#1e293b;}
+.wl-site-header:hover{background:#cbd5e1;}
+.wl-site-header .wl-caret{display:inline-block;width:14px;text-align:center;transition:transform .15s;flex-shrink:0;}
+.wl-site-header.expanded .wl-caret{transform:rotate(90deg);}
+.wl-site-header .wl-count{margin-left:auto;font-size:.66rem;font-weight:600;color:#475569;background:#fff;padding:.1rem .5rem;border-radius:10px;border:1px solid #cbd5e1;}
+.wl-site-body{display:none;background:#fff;padding:.35rem .5rem .55rem 2.25rem;}
+.wl-site-body.open{display:block;}
+.wl-site-empty{padding:.6rem;font-size:.72rem;color:#94a3b8;font-style:italic;}
+
+/* Work Details autocomplete panel */
+.wd-ac-wrap{position:relative;width:100%;}
+.wd-ac-input{width:100%;font-size:.75rem;padding:.28rem .4rem;border:1px solid #e2e8f0;border-radius:5px;background:#fff;color:#1e293b;}
+.wd-ac-input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.1);}
+.wd-ac-panel{position:fixed;z-index:1000;background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.13);min-width:180px;max-height:200px;overflow-y:auto;display:none;}
+.wd-ac-item{padding:.35rem .55rem;font-size:.73rem;cursor:pointer;color:#1e293b;}
+.wd-ac-item:hover,.wd-ac-item.active{background:#eff6ff;color:#1d4ed8;}
+.wd-ac-empty{padding:.5rem .55rem;font-size:.72rem;color:#94a3b8;text-align:center;}
 </style>
 {% endblock %}
 
@@ -147,8 +178,9 @@
             <label>Date</label>
             <input type="date" id="wl-date" class="wl-input" title="Select date to view/enter work log" onchange="loadLogForDate()">
             <button class="btn btn-outline btn-sm" onclick="loadLogForDate()" style="height:34px;">Load</button>
-            <button class="btn btn-outline btn-sm" onclick="openAddLocationModal()" style="height:34px;" title="Add machine number">+ Add Location</button>
-            <button class="btn btn-outline btn-sm" onclick="openAddStatusModal()" style="height:34px;" title="Add work status type">+ Add Status</button>
+            <button class="btn btn-outline btn-sm" onclick="openAddClientModal()" style="height:34px;" title="Add a client">+ Add Client</button>
+            <button class="btn btn-outline btn-sm" onclick="openAddSiteModal()" style="height:34px;" title="Add a site under a client">+ Add Site</button>
+            <button class="btn btn-outline btn-sm" onclick="openAddMachineModal()" style="height:34px;" title="Add a machine under a site">+ Add Machine</button>
         </div>
 
         <!-- Bulk toolbar -->
@@ -163,26 +195,9 @@
             <span id="wl-status-msg" style="font-size:.73rem;color:#64748b;"></span>
         </div>
 
-        <!-- Work Log Table -->
-        <div class="table-container">
-            <table class="wl-inline-table" id="log-table">
-                <thead>
-                    <tr>
-                        <th style="width:32px;"></th>
-                        <th style="min-width:90px;">Location</th>
-                        <th style="min-width:110px;">Site</th>
-                        <th style="min-width:118px;">Date</th>
-                        <th style="min-width:160px;">Work Details</th>
-                        <th style="min-width:62px;">TMP</th>
-                        <th style="min-width:130px;">Employees</th>
-                        <th style="min-width:110px;">Remarks</th>
-                        <th style="min-width:90px;text-align:right;">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="log-tbody">
-                    <tr><td colspan="9" class="empty-row">Loading…</td></tr>
-                </tbody>
-            </table>
+        <!-- Work Log Tree (Client → Site → Machines) -->
+        <div id="log-tree" class="wl-tree">
+            <div class="wl-tree-empty">Loading…</div>
         </div>
 
     </div><!-- /tab-log -->
@@ -313,72 +328,86 @@
 
 </div><!-- /salary-dashboard -->
 
-<!-- ══ MODAL: Add Machine Location ══ -->
-<div id="loc-modal" class="modal">
+<!-- ══ MODAL: Add Project Client ══ -->
+<div id="client-modal" class="modal">
     <div class="modal-content" style="max-width:400px;">
         <div class="modal-header">
-            <h3 class="text-base font-bold text-slate-800">Add Location</h3>
-            <button onclick="closeLocModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+            <h3 class="text-base font-bold text-slate-800">Add Client</h3>
+            <button onclick="closeAddClientModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
         </div>
         <div class="modal-body">
             <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
-                Enter the machine number / location name (e.g. G-606, WT-204, T-17).
+                Add a client to the Projects module tree (e.g. Suzlon, Nuclear Power Plant Kudankulam).
+                Sites and machines nest under a client.
             </p>
             <div class="form-group">
-                <label class="stat-label">Location Name <span style="color:#e11d48">*</span></label>
-                <input type="text" id="new-loc-name" class="filter-input" placeholder="e.g. G-606">
+                <label class="stat-label">Client Name <span style="color:#e11d48">*</span></label>
+                <input type="text" id="new-client-name" class="filter-input" placeholder="e.g. Suzlon">
+            </div>
+            <div class="form-group" style="margin-top:.75rem;">
+                <label style="display:inline-flex;align-items:center;gap:.4rem;font-size:.75rem;font-weight:600;color:#475569;">
+                    <input type="checkbox" id="new-client-active" checked>
+                    Active
+                </label>
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-outline" onclick="closeLocModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveLocation()">Add Location</button>
+            <button class="btn btn-outline" onclick="closeAddClientModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveProjectClient()">Add Client</button>
         </div>
     </div>
 </div>
 
-<!-- ══ MODAL: Add Work Status ══ -->
-<div id="status-modal" class="modal">
-    <div class="modal-content" style="max-width:380px;">
-        <div class="modal-header">
-            <h3 class="text-base font-bold text-slate-800">Add Work Status</h3>
-            <button onclick="closeStatusModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
-                Add a reusable work type (e.g. Painting, Greasing, Inspection).
-            </p>
-            <div class="form-group">
-                <label class="stat-label">Status Name <span style="color:#e11d48">*</span></label>
-                <input type="text" id="new-status-name" class="filter-input" placeholder="e.g. Greasing">
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" onclick="closeStatusModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveWorkStatus()">Add Status</button>
-        </div>
-    </div>
-</div>
-
-<!-- ══ MODAL: Add Global Site ══ -->
+<!-- ══ MODAL: Add Site (under a Project Client) ══ -->
 <div id="site-modal" class="modal">
-    <div class="modal-content" style="max-width:380px;">
+    <div class="modal-content" style="max-width:400px;">
         <div class="modal-header">
             <h3 class="text-base font-bold text-slate-800">Add Site</h3>
             <button onclick="closeAddSiteModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
         </div>
         <div class="modal-body">
             <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
-                Add a new site to the global location registry (e.g. Radhapuram, Valliyur, Kudankulam).
-                It will be immediately available across all modules.
+                Add a site under a specific client (e.g. Radhapuram under Suzlon).
             </p>
             <div class="form-group">
+                <label class="stat-label">Client <span style="color:#e11d48">*</span></label>
+                <select id="new-site-client" class="filter-select"></select>
+            </div>
+            <div class="form-group" style="margin-top:.75rem;">
                 <label class="stat-label">Site Name <span style="color:#e11d48">*</span></label>
                 <input type="text" id="new-site-name" class="filter-input" placeholder="e.g. Radhapuram">
             </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-outline" onclick="closeAddSiteModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveGlobalSite()">Add Site</button>
+            <button class="btn btn-primary" onclick="saveNewSite()">Add Site</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Add Machine (under a Site) ══ -->
+<div id="machine-modal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Add Machine</h3>
+            <button onclick="closeAddMachineModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
+                Register a machine (e.g. G-606, WT-204) under a specific site. Sites are grouped by client.
+            </p>
+            <div class="form-group">
+                <label class="stat-label">Site <span style="color:#e11d48">*</span></label>
+                <select id="new-machine-site" class="filter-select"></select>
+            </div>
+            <div class="form-group" style="margin-top:.75rem;">
+                <label class="stat-label">Machine Number <span style="color:#e11d48">*</span></label>
+                <input type="text" id="new-machine-name" class="filter-input" placeholder="e.g. G-606">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeAddMachineModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveNewMachine()">Add Machine</button>
         </div>
     </div>
 </div>
@@ -392,14 +421,21 @@
 // ── Server-side initial data ───────────────────────────────────────────────
 let machinesList  = {{ machines_json|safe }};
 let employeesList = {{ employees_json|safe }};
-let statusesList  = {{ statuses_json|safe }};
-let sitesList     = {{ global_sites_json|safe }};  // global LocationSite names
+let statusesList  = {{ statuses_json|safe }};   // legacy WorkStatus list — no longer surfaced in UI
+let treeData      = {{ tree_json|safe }};        // [{id, name, sites:[{id, name, machines:[...]}], site_count}]
+let clientsList   = {{ clients_json|safe }};     // flat: [{id, name}]
+let sitesList     = {{ sites_json|safe }};       // flat: [{id, name, client_id}]
 
 // ── State ──────────────────────────────────────────────────────────────────
 let logMap       = {};   // { location_id: entry } for the current date
 let summaryRows  = [];
 let activeTab    = 'log';
 const TODAY_ISO  = new Date().toISOString().split('T')[0];
+
+// Tree expand/collapse state — persisted across re-renders and reloads.
+const expandedClients = new Set();
+const expandedSites   = new Set();
+let _treeDefaultsApplied = false;
 
 // ── CSRF Helper ────────────────────────────────────────────────────────────
 function getCsrf() {
@@ -450,30 +486,6 @@ document.addEventListener('click', e => {
         }
     });
 });
-
-// ── Build option HTML helpers ──────────────────────────────────────────────
-function buildStatusOptions(selectedVal) {
-    let html = `<option value="">— Select —</option>`;
-    statusesList.forEach(s => {
-        const sel = s.name === selectedVal ? ' selected' : '';
-        html += `<option value="${escAttr(s.name)}"${sel}>${escHtml(s.name)}</option>`;
-    });
-    return html;
-}
-
-function buildSiteOptions(selectedVal) {
-    let html = `<option value="">— Select Site —</option>`;
-    // Include current value only if truly absent from global list (case-insensitive to prevent visual duplicates)
-    const _svLow = (selectedVal || '').toLowerCase();
-    if (selectedVal && !sitesList.some(s => s.toLowerCase() === _svLow)) {
-        html += `<option value="${escAttr(selectedVal)}" selected>${escHtml(selectedVal)}</option>`;
-    }
-    sitesList.forEach(s => {
-        const sel = s === selectedVal ? ' selected' : '';
-        html += `<option value="${escAttr(s)}"${sel}>${escHtml(s)}</option>`;
-    });
-    return html;
-}
 
 function empLabel(e) {
     return e.employee_id ? `${escHtml(e.employee_id)} - ${escHtml(e.name)}` : escHtml(e.name);
@@ -613,92 +625,277 @@ function updateEmpDisplay(locId) {
     if (el) el.innerHTML = buildEmpDisplayHtml(locId);
 }
 
-// ── Render inline machine rows ─────────────────────────────────────────────
+// ── Render Client → Site → Machines tree ───────────────────────────────────
 function renderMachineRows() {
     // Remove any panels teleported to body before destroying table rows
     document.querySelectorAll('body > .emp-dd-panel').forEach(p => p.remove());
+    document.querySelectorAll('body > .wd-ac-panel').forEach(p => p.remove());
 
-    const tbody  = document.getElementById('log-tbody');
-    const dateVal = document.getElementById('wl-date').value || TODAY_ISO;
+    const container = document.getElementById('log-tree');
+    if (!container) return;
 
-    if (!machinesList.length) {
-        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">No locations added yet. Click <strong>+ Add Location</strong> to register machine numbers.</td></tr>`;
+    if (!treeData.length) {
+        container.innerHTML = `<div class="wl-tree-empty">
+            No clients yet. Click <strong>+ Add Client</strong> to create one,
+            then <strong>+ Add Site</strong> and <strong>+ Add Machine</strong>.
+        </div>`;
         return;
     }
 
-    tbody.innerHTML = machinesList.map(m => {
-        const entry      = logMap[m.id] || {};
-        const entryDate  = entry.date_iso      || dateVal;
-        const site       = entry.site          || '';
-        const workDet    = entry.work_details  || '';
-        const tmp        = entry.tmp !== undefined ? entry.tmp : 0;
-        const remarks    = entry.remarks       || '';
-        const empIds     = entry.employee_ids  || [];
-        const savedClass = entry.id ? ' row-saved' : '';
-        const isLocked   = !!entry.locked;
-        // Locked rows: every input/select in the row is disabled so the
-        // saved values are visible but read-only. Only the row-level Unlock
-        // button below can re-enable editing.
-        const dis        = isLocked ? 'disabled' : '';
-        // empCountLbl no longer used — display handled by custom dropdown
+    // First render: auto-expand the first client and its first site.
+    if (!_treeDefaultsApplied) {
+        _treeDefaultsApplied = true;
+        const first = treeData[0];
+        if (first) {
+            expandedClients.add(first.id);
+            if (first.sites && first.sites[0]) {
+                expandedSites.add(first.sites[0].id);
+            }
+        }
+    }
 
-        // Actions:
-        //   • Locked saved rows → Unlock only (Save/Edit/Del disabled).
-        //   • Unlocked saved rows → Edit + Del.
-        //   • New rows → Save.
-        const actionsCells = entry.id
-            ? (isLocked
-                ? `<button class="btn-row-edit" id="act-unlock-${m.id}" onclick="unlockRow(${m.id},${entry.id})" title="Unlock to edit">🔒 Unlock</button>`
-                : `<button class="btn-row-edit"   id="act-edit-${m.id}"   onclick="editRow(${m.id})"        title="Edit entry">Edit</button>
-                   <button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save changes" style="display:none;">Save</button>
-                   <button class="btn-row-cancel" id="act-cancel-${m.id}" onclick="cancelEditRow(${m.id})"  title="Cancel edit"  style="display:none;">✕</button>
-                   <button class="btn-row-del" id="act-del-${m.id}" onclick="deleteRow(${m.id},${entry.id})" title="Delete">Del</button>`)
-            : `<button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save entry">Save</button>`;
-
+    container.innerHTML = treeData.map(client => {
+        const cOpen = expandedClients.has(client.id);
+        const sitesHtml = (client.sites || []).map(site => {
+            const sOpen = expandedSites.has(site.id);
+            return `
+              <div class="wl-site" data-site-id="${site.id}">
+                <div class="wl-site-header${sOpen ? ' expanded' : ''}" onclick="toggleSite(${site.id})">
+                    <span class="wl-caret">▶</span>
+                    <span>${escHtml(site.name)}</span>
+                    <span class="wl-count">${site.machine_count || 0} machine(s)</span>
+                </div>
+                <div class="wl-site-body${sOpen ? ' open' : ''}" id="site-body-${site.id}">
+                    ${renderSiteMachineTable(site)}
+                </div>
+              </div>`;
+        }).join('');
         return `
-        <tr id="row-m${m.id}" data-loc-id="${m.id}" data-log-id="${entry.id || ''}" class="${savedClass}${isLocked ? ' row-locked' : ''}">
-            <td style="text-align:center;">
-                <input type="checkbox" class="row-chk" data-loc-id="${m.id}" ${dis}>
-            </td>
-            <td><span class="loc-chip">${escHtml(m.name)}</span></td>
-            <td>
-                <div class="wd-wrap">
-                    <select class="wl-select" id="site-${m.id}" title="Site" ${dis}>
-                        ${buildSiteOptions(site)}
-                    </select>
-                    <button class="btn-add-status" onclick="openAddSiteModal(${m.id})" title="Add new global site" ${dis}>+</button>
-                </div>
-            </td>
-            <td>
-                <input type="date" class="wl-input" id="date-${m.id}"
-                    value="${entryDate}" max="${TODAY_ISO}" title="Past/today only" ${dis}>
-            </td>
-            <td>
-                <div class="wd-wrap">
-                    <select class="wl-select" id="wd-${m.id}" title="Work type" ${dis}>
-                        ${buildStatusOptions(workDet)}
-                    </select>
-                    <button class="btn-add-status" onclick="openAddStatusModal(${m.id})" title="Add new work status" ${dis}>+</button>
-                </div>
-            </td>
-            <td>
-                <input type="number" class="wl-input" id="tmp-${m.id}" value="${tmp}" min="0"
-                    style="width:62px;text-align:center;"
-                    onchange="onTmpChange(${m.id})" ${dis}>
-            </td>
-            <td>
-                ${buildEmpDropdown(m.id, empIds, tmp)}
-            </td>
-            <td>
-                <input type="text" class="wl-input" id="rmk-${m.id}"
-                    value="${escAttr(remarks)}" placeholder="Remarks…" ${dis}>
-            </td>
-            <td style="text-align:right;white-space:nowrap;">
-                ${actionsCells}
-            </td>
-        </tr>`;
+          <div class="wl-client" data-client-id="${client.id}">
+            <div class="wl-client-header${cOpen ? ' expanded' : ''}" onclick="toggleClient(${client.id})">
+                <span class="wl-caret">▶</span>
+                <span>${escHtml(client.name)}</span>
+                <span class="wl-count">${client.site_count || 0} site(s)</span>
+            </div>
+            <div class="wl-client-body${cOpen ? ' open' : ''}" id="client-body-${client.id}">
+                ${sitesHtml || '<div class="wl-site-empty">No sites yet under this client.</div>'}
+            </div>
+          </div>`;
     }).join('');
 }
+
+function renderSiteMachineTable(site) {
+    if (!site.machines || !site.machines.length) {
+        return `<div class="wl-site-empty">No machines registered for this site.</div>`;
+    }
+    const dateVal = document.getElementById('wl-date')?.value || TODAY_ISO;
+
+    const bodyRows = site.machines.map(m => renderMachineRow(m, dateVal)).join('');
+    return `
+      <div class="table-container">
+        <table class="wl-inline-table">
+            <thead>
+                <tr>
+                    <th style="width:32px;"></th>
+                    <th style="min-width:90px;">Machine</th>
+                    <th style="min-width:118px;">Date</th>
+                    <th style="min-width:180px;">Work Details</th>
+                    <th style="min-width:62px;">TMP</th>
+                    <th style="min-width:130px;">Employees</th>
+                    <th style="min-width:110px;">Remarks</th>
+                    <th style="min-width:90px;text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+        </table>
+      </div>`;
+}
+
+function renderMachineRow(m, dateVal) {
+    const entry      = logMap[m.id] || {};
+    const entryDate  = entry.date_iso      || dateVal;
+    const workDet    = entry.work_details  || '';
+    const tmp        = entry.tmp !== undefined ? entry.tmp : 0;
+    const remarks    = entry.remarks       || '';
+    const empIds     = entry.employee_ids  || [];
+    const savedClass = entry.id ? ' row-saved' : '';
+    const isLocked   = !!entry.locked;
+    const dis        = isLocked ? 'disabled' : '';
+
+    const actionsCells = entry.id
+        ? (isLocked
+            ? `<button class="btn-row-edit" id="act-unlock-${m.id}" onclick="unlockRow(${m.id},${entry.id})" title="Unlock to edit">🔒 Unlock</button>`
+            : `<button class="btn-row-edit"   id="act-edit-${m.id}"   onclick="editRow(${m.id})"        title="Edit entry">Edit</button>
+               <button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save changes" style="display:none;">Save</button>
+               <button class="btn-row-cancel" id="act-cancel-${m.id}" onclick="cancelEditRow(${m.id})"  title="Cancel edit"  style="display:none;">✕</button>
+               <button class="btn-row-del" id="act-del-${m.id}" onclick="deleteRow(${m.id},${entry.id})" title="Delete">Del</button>`)
+        : `<button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save entry">Save</button>`;
+
+    return `
+    <tr id="row-m${m.id}" data-loc-id="${m.id}" data-log-id="${entry.id || ''}" class="${savedClass}${isLocked ? ' row-locked' : ''}">
+        <td style="text-align:center;">
+            <input type="checkbox" class="row-chk" data-loc-id="${m.id}" ${dis}>
+        </td>
+        <td><span class="loc-chip">${escHtml(m.name)}</span></td>
+        <td>
+            <input type="date" class="wl-input" id="date-${m.id}"
+                value="${entryDate}" max="${TODAY_ISO}" title="Past/today only" ${dis}>
+        </td>
+        <td>
+            <div class="wd-ac-wrap" id="wd-wrap-${m.id}">
+                <input type="text" class="wd-ac-input" id="wd-${m.id}"
+                    value="${escAttr(workDet)}" placeholder="Type work details…" autocomplete="off"
+                    oninput="onWdInput(${m.id})"
+                    onfocus="onWdInput(${m.id})"
+                    onkeydown="onWdKey(event,${m.id})"
+                    ${dis}>
+                <div class="wd-ac-panel" id="wd-panel-${m.id}"></div>
+            </div>
+        </td>
+        <td>
+            <input type="number" class="wl-input" id="tmp-${m.id}" value="${tmp}" min="0"
+                style="width:62px;text-align:center;"
+                onchange="onTmpChange(${m.id})" ${dis}>
+        </td>
+        <td>
+            ${buildEmpDropdown(m.id, empIds, tmp)}
+        </td>
+        <td>
+            <input type="text" class="wl-input" id="rmk-${m.id}"
+                value="${escAttr(remarks)}" placeholder="Remarks…" ${dis}>
+        </td>
+        <td style="text-align:right;white-space:nowrap;">
+            ${actionsCells}
+        </td>
+    </tr>`;
+}
+
+function toggleClient(cid) {
+    if (expandedClients.has(cid)) expandedClients.delete(cid);
+    else expandedClients.add(cid);
+    const body   = document.getElementById(`client-body-${cid}`);
+    const header = document.querySelector(`.wl-client[data-client-id="${cid}"] .wl-client-header`);
+    if (body) body.classList.toggle('open', expandedClients.has(cid));
+    if (header) header.classList.toggle('expanded', expandedClients.has(cid));
+}
+
+function toggleSite(sid) {
+    if (expandedSites.has(sid)) expandedSites.delete(sid);
+    else expandedSites.add(sid);
+    const body   = document.getElementById(`site-body-${sid}`);
+    const header = document.querySelector(`.wl-site[data-site-id="${sid}"] .wl-site-header`);
+    if (body) body.classList.toggle('open', expandedSites.has(sid));
+    if (header) header.classList.toggle('expanded', expandedSites.has(sid));
+}
+
+// ── Work Details autocomplete ──────────────────────────────────────────────
+const _wdDebounce = {};   // locId → timeout handle
+const _wdCache    = {};   // query string → array of suggestions
+let   _wdActive   = null; // { locId, index }
+
+function onWdInput(locId) {
+    const input = document.getElementById(`wd-${locId}`);
+    if (!input) return;
+    const q = (input.value || '').trim();
+    if (_wdDebounce[locId]) clearTimeout(_wdDebounce[locId]);
+    _wdDebounce[locId] = setTimeout(() => fetchWdSuggest(locId, q), 200);
+}
+
+async function fetchWdSuggest(locId, q) {
+    let items;
+    if (_wdCache[q] !== undefined) {
+        items = _wdCache[q];
+    } else {
+        try {
+            const url = `{% url 'projects:work_details_suggest' %}?q=${encodeURIComponent(q)}`;
+            const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            items = await res.json();
+            _wdCache[q] = items;
+        } catch {
+            items = [];
+        }
+    }
+    showWdPanel(locId, items);
+}
+
+function showWdPanel(locId, items) {
+    const panel = document.getElementById(`wd-panel-${locId}`);
+    const input = document.getElementById(`wd-${locId}`);
+    if (!panel || !input) return;
+    if (!items || !items.length) { hideWdPanel(locId); return; }
+    panel.innerHTML = items.map((it, i) =>
+        `<div class="wd-ac-item" data-index="${i}"
+              onmousedown="pickWdItem(${locId}, ${i})"
+              onmouseover="highlightWdItem(${locId}, ${i})"
+         >${escHtml(it.text)}</div>`
+    ).join('');
+    panel._items = items;
+    const rect = input.getBoundingClientRect();
+    panel.style.top   = (rect.bottom + 2) + 'px';
+    panel.style.left  = rect.left + 'px';
+    panel.style.minWidth = rect.width + 'px';
+    document.body.appendChild(panel);
+    panel.style.display = 'block';
+    _wdActive = { locId, index: -1 };
+}
+
+function hideWdPanel(locId) {
+    const panel = document.getElementById(`wd-panel-${locId}`);
+    if (!panel) return;
+    panel.style.display = 'none';
+    const wrap = document.getElementById(`wd-wrap-${locId}`);
+    if (wrap && panel.parentNode !== wrap) wrap.appendChild(panel);
+    if (_wdActive && _wdActive.locId === locId) _wdActive = null;
+}
+
+function highlightWdItem(locId, index) {
+    const panel = document.getElementById(`wd-panel-${locId}`);
+    if (!panel) return;
+    panel.querySelectorAll('.wd-ac-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.index) === index);
+    });
+    _wdActive = { locId, index };
+}
+
+function pickWdItem(locId, index) {
+    const panel = document.getElementById(`wd-panel-${locId}`);
+    const input = document.getElementById(`wd-${locId}`);
+    if (!panel || !input || !panel._items || !panel._items[index]) return;
+    input.value = panel._items[index].text;
+    hideWdPanel(locId);
+    input.focus();
+}
+
+function onWdKey(e, locId) {
+    const panel = document.getElementById(`wd-panel-${locId}`);
+    if (!panel || panel.style.display === 'none') return;
+    const items = panel._items || [];
+    if (!items.length) return;
+    const cur = (_wdActive && _wdActive.locId === locId) ? _wdActive.index : -1;
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlightWdItem(locId, Math.min(cur + 1, items.length - 1));
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlightWdItem(locId, Math.max(cur - 1, 0));
+    } else if (e.key === 'Enter') {
+        if (cur >= 0) { e.preventDefault(); pickWdItem(locId, cur); }
+    } else if (e.key === 'Escape') {
+        hideWdPanel(locId);
+    }
+}
+
+// Close autocomplete on outside click
+document.addEventListener('click', e => {
+    document.querySelectorAll('.wd-ac-panel').forEach(panel => {
+        if (panel.style.display === 'none') return;
+        const locId = parseInt(panel.id.replace('wd-panel-', ''));
+        const wrap  = document.getElementById(`wd-wrap-${locId}`);
+        const input = document.getElementById(`wd-${locId}`);
+        if ((wrap && wrap.contains(e.target)) || panel.contains(e.target) || (input && input === e.target)) return;
+        hideWdPanel(locId);
+    });
+});
 
 // ── Load existing entries for selected date ────────────────────────────────
 async function loadLogForDate() {
@@ -730,8 +927,7 @@ async function loadLogForDate() {
 async function saveRow(locId) {
     const row    = document.getElementById(`row-m${locId}`);
     const date   = document.getElementById(`date-${locId}`).value;
-    const site   = document.getElementById(`site-${locId}`).value.trim();
-    const wd     = document.getElementById(`wd-${locId}`).value;
+    const wd     = document.getElementById(`wd-${locId}`).value.trim();
     const tmp    = parseInt(document.getElementById(`tmp-${locId}`).value) || 0;
     const rmk    = document.getElementById(`rmk-${locId}`).value.trim();
 
@@ -745,10 +941,10 @@ async function saveRow(locId) {
         showToast(`Max ${tmp} employee(s) allowed (TMP limit).`, 'error'); return;
     }
 
+    // No `site` in payload — server derives it from Machine.site.name.
     const payload = {
         date:         date,
         location_id:  locId,
-        site:         site,
         work_details: wd,
         tmp:          tmp,
         employee_ids: empIds,
@@ -817,11 +1013,11 @@ async function saveSelected() {
         // Skip rows exceeding TMP limit
         if (tmpVal > 0 && empIds.length > tmpVal) { errors++; continue; }
 
+        // No `site` in payload — server derives it from Machine.site.name.
         const payload = {
             date:         date,
             location_id:  locId,
-            site:         document.getElementById(`site-${locId}`).value.trim(),
-            work_details: document.getElementById(`wd-${locId}`).value,
+            work_details: document.getElementById(`wd-${locId}`).value.trim(),
             tmp:          tmpVal,
             employee_ids: empIds,
             remarks:      document.getElementById(`rmk-${locId}`).value.trim(),
@@ -912,83 +1108,168 @@ function renderSummaryTable() {
     `).join('');
 }
 
-// ── Add Location Modal ─────────────────────────────────────────────────────
-function openAddLocationModal() {
-    document.getElementById('new-loc-name').value = '';
-    document.getElementById('loc-modal').classList.add('active');
-    setTimeout(() => document.getElementById('new-loc-name').focus(), 100);
+// ── Add Client / Site / Machine modals ────────────────────────────────────
+
+function openAddClientModal() {
+    document.getElementById('new-client-name').value = '';
+    document.getElementById('new-client-active').checked = true;
+    document.getElementById('client-modal').classList.add('active');
+    setTimeout(() => document.getElementById('new-client-name').focus(), 100);
 }
-function closeLocModal() {
-    document.getElementById('loc-modal').classList.remove('active');
+function closeAddClientModal() {
+    document.getElementById('client-modal').classList.remove('active');
 }
-async function saveLocation() {
-    const name = document.getElementById('new-loc-name').value.trim();
-    if (!name) { showToast('Location name is required.', 'error'); return; }
+
+async function saveProjectClient() {
+    const name = document.getElementById('new-client-name').value.trim();
+    const active = document.getElementById('new-client-active').checked;
+    if (!name) { showToast('Client name is required.', 'error'); return; }
     try {
-        const res    = await fetch(`{% url 'projects:add_machine_location' %}`, {
+        const res = await fetch(`{% url 'projects:add_project_client' %}`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
-            body:    JSON.stringify({ name }),
+            body:    JSON.stringify({ name, is_active: active }),
         });
         const result = await res.json();
         if (result.success) {
-            if (result.created) {
-                machinesList.push({ id: result.id, name: result.name });
-                machinesList.sort((a, b) => a.name.localeCompare(b.name));
-            }
-            closeLocModal();
-            showToast(result.created ? `Added: ${result.name}` : `${result.name} already exists.`);
+            clientsList.push({ id: result.id, name: result.name });
+            clientsList.sort((a, b) => a.name.localeCompare(b.name));
+            closeAddClientModal();
+            showToast(`Added client: ${result.name}`);
+            // New client starts empty (no sites yet), so append to tree in place.
+            treeData.push({ id: result.id, name: result.name, sites: [], site_count: 0 });
+            treeData.sort((a, b) => a.name.localeCompare(b.name));
             renderMachineRows();
         } else {
-            showToast(result.error || 'Failed.', 'error');
+            showToast(result.error || 'Failed to add client.', 'error');
         }
     } catch(e) {
         showToast('Network error.', 'error');
     }
 }
 
-// ── Add Work Status Modal ──────────────────────────────────────────────────
-let _statusCallbackLocId = null;
+function openAddSiteModal(preselectClientId) {
+    if (!clientsList.length) {
+        showToast('Add a client first.', 'error');
+        return;
+    }
+    const sel = document.getElementById('new-site-client');
+    sel.innerHTML = clientsList.map(c =>
+        `<option value="${c.id}">${escHtml(c.name)}</option>`
+    ).join('');
+    if (preselectClientId) sel.value = String(preselectClientId);
+    document.getElementById('new-site-name').value = '';
+    document.getElementById('site-modal').classList.add('active');
+    setTimeout(() => document.getElementById('new-site-name').focus(), 100);
+}
+function closeAddSiteModal() {
+    document.getElementById('site-modal').classList.remove('active');
+}
 
-function openAddStatusModal(locId) {
-    _statusCallbackLocId = locId || null;
-    document.getElementById('new-status-name').value = '';
-    document.getElementById('status-modal').classList.add('active');
-    setTimeout(() => document.getElementById('new-status-name').focus(), 100);
-}
-function closeStatusModal() {
-    document.getElementById('status-modal').classList.remove('active');
-    _statusCallbackLocId = null;
-}
-async function saveWorkStatus() {
-    const name = document.getElementById('new-status-name').value.trim();
-    if (!name) { showToast('Status name is required.', 'error'); return; }
+async function saveNewSite() {
+    const name      = document.getElementById('new-site-name').value.trim();
+    const clientId  = parseInt(document.getElementById('new-site-client').value) || null;
+    if (!name)     { showToast('Site name is required.', 'error'); return; }
+    if (!clientId) { showToast('Client is required.', 'error'); return; }
     try {
-        const res    = await fetch(`{% url 'projects:add_work_status' %}`, {
+        const res = await fetch(`{% url 'projects:add_site' %}`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
-            body:    JSON.stringify({ name }),
+            body:    JSON.stringify({ name, client_id: clientId }),
         });
         const result = await res.json();
         if (result.success) {
-            if (result.created) {
-                statusesList.push({ id: result.id, name: result.name });
-                statusesList.sort((a, b) => a.name.localeCompare(b.name));
-            }
-            closeStatusModal();
-            showToast(result.created ? `Added: ${result.name}` : `${result.name} already exists.`);
-            // Re-build all work-details dropdowns inline
-            if (_statusCallbackLocId) {
-                const sel = document.getElementById(`wd-${_statusCallbackLocId}`);
-                if (sel) { sel.innerHTML = buildStatusOptions(sel.value); }
-            } else {
-                machinesList.forEach(m => {
-                    const sel = document.getElementById(`wd-${m.id}`);
-                    if (sel) { const cur = sel.value; sel.innerHTML = buildStatusOptions(cur); sel.value = cur; }
+            sitesList.push({ id: result.id, name: result.name, client_id: clientId });
+            sitesList.sort((a, b) => a.name.localeCompare(b.name));
+            // Insert into treeData under its client, keep sort stable.
+            const clientNode = treeData.find(c => c.id === clientId);
+            if (clientNode) {
+                clientNode.sites.push({
+                    id: result.id, name: result.name,
+                    machines: [], machine_count: 0,
                 });
+                clientNode.sites.sort((a, b) => a.name.localeCompare(b.name));
+                clientNode.site_count = clientNode.sites.length;
+                expandedClients.add(clientId);   // ensure the new site is visible
             }
+            closeAddSiteModal();
+            showToast(`Added site: ${result.name}`);
+            renderMachineRows();
         } else {
-            showToast(result.error || 'Failed.', 'error');
+            showToast(result.error || 'Failed to add site.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+function openAddMachineModal(preselectSiteId) {
+    if (!sitesList.length) {
+        showToast('Add a site first.', 'error');
+        return;
+    }
+    // Group site options by client for readability.
+    const sel = document.getElementById('new-machine-site');
+    const clientById = {};
+    clientsList.forEach(c => { clientById[c.id] = c.name; });
+    // Bucket sites by their client
+    const byClient = {};
+    sitesList.forEach(s => {
+        const cid = s.client_id;
+        (byClient[cid] = byClient[cid] || []).push(s);
+    });
+    let html = '';
+    Object.keys(byClient).sort((a, b) => (clientById[a] || '').localeCompare(clientById[b] || '')).forEach(cid => {
+        const label = clientById[cid] || `Client #${cid}`;
+        html += `<optgroup label="${escAttr(label)}">`;
+        byClient[cid].sort((a, b) => a.name.localeCompare(b.name)).forEach(s => {
+            html += `<option value="${s.id}">${escHtml(s.name)}</option>`;
+        });
+        html += `</optgroup>`;
+    });
+    sel.innerHTML = html;
+    if (preselectSiteId) sel.value = String(preselectSiteId);
+    document.getElementById('new-machine-name').value = '';
+    document.getElementById('machine-modal').classList.add('active');
+    setTimeout(() => document.getElementById('new-machine-name').focus(), 100);
+}
+function closeAddMachineModal() {
+    document.getElementById('machine-modal').classList.remove('active');
+}
+
+async function saveNewMachine() {
+    const name   = document.getElementById('new-machine-name').value.trim();
+    const siteId = parseInt(document.getElementById('new-machine-site').value) || null;
+    if (!name)   { showToast('Machine name is required.', 'error'); return; }
+    if (!siteId) { showToast('Site is required.', 'error'); return; }
+    try {
+        const res = await fetch(`{% url 'projects:add_machine' %}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify({ name, site_id: siteId }),
+        });
+        const result = await res.json();
+        if (result.success) {
+            machinesList.push({ id: result.id, name: result.name });
+            machinesList.sort((a, b) => a.name.localeCompare(b.name));
+            // Attach into treeData under the chosen site.
+            for (const client of treeData) {
+                const siteNode = (client.sites || []).find(s => s.id === siteId);
+                if (siteNode) {
+                    siteNode.machines.push({ id: result.id, name: result.name });
+                    siteNode.machines.sort((a, b) => a.name.localeCompare(b.name));
+                    siteNode.machine_count = siteNode.machines.length;
+                    expandedClients.add(client.id);
+                    expandedSites.add(siteId);
+                    break;
+                }
+            }
+            closeAddMachineModal();
+            showToast(`Added machine: ${result.name}`);
+            renderMachineRows();
+            syncSummaryLocationDropdown(machinesList);
+        } else {
+            showToast(result.error || 'Failed to add machine.', 'error');
         }
     } catch(e) {
         showToast('Network error.', 'error');
@@ -1134,7 +1415,6 @@ function editRow(locId) {
 
     // Snapshot current values for cancel
     row.dataset.origDate   = document.getElementById(`date-${locId}`).value;
-    row.dataset.origSite   = document.getElementById(`site-${locId}`).value;
     row.dataset.origWd     = document.getElementById(`wd-${locId}`).value;
     row.dataset.origTmp    = document.getElementById(`tmp-${locId}`).value;
     row.dataset.origRmk    = document.getElementById(`rmk-${locId}`).value;
@@ -1155,7 +1435,6 @@ function cancelEditRow(locId) {
 
     // Restore snapshotted values
     document.getElementById(`date-${locId}`).value = row.dataset.origDate || '';
-    document.getElementById(`site-${locId}`).value = row.dataset.origSite || '';
     document.getElementById(`wd-${locId}`).value   = row.dataset.origWd   || '';
     document.getElementById(`tmp-${locId}`).value  = row.dataset.origTmp  || '0';
     document.getElementById(`rmk-${locId}`).value  = row.dataset.origRmk  || '';
@@ -1183,52 +1462,6 @@ function cancelEditRow(locId) {
     if (_delBtnC) _delBtnC.style.display = '';
     row.classList.remove('row-editing');
     row.classList.add('row-saved');
-}
-
-// ── Add Global Site ────────────────────────────────────────────────────────
-let _siteCallbackLocId = null;
-
-function openAddSiteModal(locId) {
-    _siteCallbackLocId = (locId !== undefined) ? locId : null;
-    document.getElementById('new-site-name').value = '';
-    document.getElementById('site-modal').classList.add('active');
-    setTimeout(() => document.getElementById('new-site-name').focus(), 100);
-}
-function closeAddSiteModal() {
-    document.getElementById('site-modal').classList.remove('active');
-    _siteCallbackLocId = null;
-}
-
-async function saveGlobalSite() {
-    const name = document.getElementById('new-site-name').value.trim();
-    if (!name) { showToast('Site name is required.', 'error'); return; }
-    try {
-        const res    = await fetch('/branches/api/locations/', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body:    JSON.stringify({ name }),
-        });
-        const result = await res.json();
-        if (result.success) {
-            sitesList = result.locations;   // server returns full updated list
-            closeAddSiteModal();
-            showToast(`Added site: ${name}`);
-            // Refresh the site dropdown in the triggering row (or all rows)
-            if (_siteCallbackLocId !== null) {
-                const sel = document.getElementById(`site-${_siteCallbackLocId}`);
-                if (sel) { const cur = sel.value; sel.innerHTML = buildSiteOptions(cur); sel.value = cur; }
-            } else {
-                machinesList.forEach(m => {
-                    const sel = document.getElementById(`site-${m.id}`);
-                    if (sel) { const cur = sel.value; sel.innerHTML = buildSiteOptions(cur); sel.value = cur; }
-                });
-            }
-        } else {
-            showToast(result.error || 'Failed to add site.', 'error');
-        }
-    } catch(e) {
-        showToast('Network error.', 'error');
-    }
 }
 
 // ── Report state ──────────────────────────────────────────────────────────
@@ -1373,21 +1606,23 @@ document.addEventListener('DOMContentLoaded', () => {
     loadLogForDate();
 
     // Modal backdrop click handlers
-    ['loc-modal', 'status-modal', 'site-modal'].forEach(id => {
-        document.getElementById(id).addEventListener('click', function(e) {
+    ['client-modal', 'site-modal', 'machine-modal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('click', function(e) {
             if (e.target === this) this.classList.remove('active');
         });
     });
 
     // Enter key in modals
-    document.getElementById('new-loc-name').addEventListener('keydown', e => {
-        if (e.key === 'Enter') saveLocation();
-    });
-    document.getElementById('new-status-name').addEventListener('keydown', e => {
-        if (e.key === 'Enter') saveWorkStatus();
+    document.getElementById('new-client-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') saveProjectClient();
     });
     document.getElementById('new-site-name').addEventListener('keydown', e => {
-        if (e.key === 'Enter') saveGlobalSite();
+        if (e.key === 'Enter') saveNewSite();
+    });
+    document.getElementById('new-machine-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') saveNewMachine();
     });
 });
 </script>

@@ -809,6 +809,12 @@ def mobile_worklogs(request):
                 wl.save(update_fields=dirty)
         wl.employees.add(emp)
 
+        # Best-effort: if the mobile POST introduced a new freeform site
+        # string, upsert it into projects.Site (under the "Unassigned"
+        # ProjectClient) so it shows up in the desktop tree on next load.
+        # Failure here MUST NOT affect the mobile response contract.
+        _mobile_upsert_site_registry(emp.admin_id, site_val)
+
         return JsonResponse({
             'success': True,
             'created': created,
@@ -822,6 +828,35 @@ def mobile_worklogs(request):
                 'tmp':          wl.tmp,
             },
         })
+
+
+def _mobile_upsert_site_registry(admin_id, site_str):
+    """
+    Best-effort: ensure `site_str` exists as a projects.Site row for this
+    tenant, parked under the "Unassigned" ProjectClient. Never raises.
+
+    Isolated helper so the mobile write path's response shape never depends
+    on the desktop-registry side effect succeeding.
+    """
+    site_str = (site_str or '').strip()
+    if not site_str:
+        return
+    try:
+        from projects.models import ProjectClient, Site
+        client, _ = ProjectClient.objects.get_or_create(
+            admin_id=admin_id, name='Unassigned',
+            defaults={'is_active': True},
+        )
+        existing = Site.objects.filter(
+            admin_id=admin_id, name__iexact=site_str,
+        ).first()
+        if not existing:
+            Site.objects.create(
+                admin_id=admin_id, name=site_str,
+                client=client, is_active=True,
+            )
+    except Exception:
+        return
 
     # GET
     qs   = WorkLog.objects.select_related('location').filter(employees=emp).order_by('-date')[:200]

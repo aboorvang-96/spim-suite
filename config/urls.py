@@ -6,6 +6,7 @@ from django.conf.urls.static import static
 from django.http import HttpResponse, Http404
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
+from projects.views import work_details_suggest as _projects_work_details_suggest
 
 def silent_204(request, *args, **kwargs):
     return HttpResponse(status=204)
@@ -57,6 +58,11 @@ urlpatterns = [
     path('categories/',   include('categories.urls',   namespace='categories')),
     path('material-stock/', include('material_stock.urls', namespace='material_stock')),
     path('api/',          include('api.urls',          namespace='api')),
+
+    # Alias for the desktop autocomplete — same view, spec-literal path
+    # so external callers can hit /api/projects/work-details/suggest/.
+    path('api/projects/work-details/suggest/', _projects_work_details_suggest,
+         name='api_work_details_suggest'),
 
     path('offline/', TemplateView.as_view(template_name='pwa/offline.html'), name='offline'),
 

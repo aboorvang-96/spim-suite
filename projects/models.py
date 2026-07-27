@@ -64,13 +64,63 @@ class Task(models.Model):
 
 # ── Work Log Models (inside Projects module) ────────────────────────────────
 
+class ProjectClient(models.Model):
+    """
+    Client entity local to the Projects module (Work Log tree Level 1).
+    Named ProjectClient to avoid collision with the separate `clients` app.
+    Per-tenant scoped like every other Work Log model.
+    """
+    admin_id   = models.CharField(max_length=20, db_index=True, default='PENDING')
+    name       = models.CharField(max_length=150)
+    is_active  = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering        = ['name']
+        unique_together = (('admin_id', 'name'),)
+
+    def __str__(self):
+        return self.name
+
+
+class Site(models.Model):
+    """
+    Site under a ProjectClient (Work Log tree Level 2).
+    Introduced by the 2026 Projects restructure. Distinct from the freeform
+    `WorkLog.site` CharField (which is retained for mobile back-compat).
+    """
+    admin_id   = models.CharField(max_length=20, db_index=True, default='PENDING')
+    # Non-nullable after migration 0010; kept nullable in 0008 for backfill
+    # safety. The models module already reflects the tightened post-0010 shape.
+    client     = models.ForeignKey(
+        ProjectClient, on_delete=models.PROTECT,
+        related_name='sites',
+    )
+    name       = models.CharField(max_length=150)
+    is_active  = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering        = ['name']
+        unique_together = (('admin_id', 'name'),)
+
+    def __str__(self):
+        return self.name
+
+
 class MachineLocation(models.Model):
     """
     Machine-number registry: per-tenant, local to this Work Log module only.
-    Example names: G-606, WT-204, T-17
-    NOT connected to global Site / Branch system.
+    Example names: G-606, WT-204, T-17.
+    Belongs to a Site (Work Log tree Level 3 rows nest under a Site header).
     """
     admin_id   = models.CharField(max_length=20, db_index=True, default='PENDING')
+    site       = models.ForeignKey(
+        Site, on_delete=models.PROTECT,
+        related_name='machines',
+    )
     name       = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -80,6 +130,29 @@ class MachineLocation(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class WorkDetailSuggestion(models.Model):
+    """
+    Autocomplete corpus for the Work Details free-text field.
+    Rows accrue from actual usage: each save that references a new text
+    inserts a row; each save that matches an existing row (case-insensitive)
+    bumps `usage_count` and `last_used_at`.
+    """
+    admin_id     = models.CharField(max_length=20, db_index=True, default='PENDING')
+    text         = models.CharField(max_length=200)
+    usage_count  = models.PositiveIntegerField(default=0)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_by   = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+    )
+
+    class Meta:
+        ordering        = ['-usage_count', '-last_used_at']
+        unique_together = (('admin_id', 'text'),)
+
+    def __str__(self):
+        return self.text
 
 
 class WorkStatus(models.Model):

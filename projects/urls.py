@@ -20,7 +20,13 @@ urlpatterns = [
 
     # ── Machine Location & Work Status registry ──
     path('locations/add/',              views.add_machine_location,   name='add_machine_location'),
+    path('machines/add/',               views.add_machine_location,   name='add_machine'),
     path('log/status/add/',             views.add_work_status,        name='add_work_status'),
+
+    # ── Projects restructure: Client / Site / Work Details autocomplete ──
+    path('clients/add/',                views.add_project_client,     name='add_project_client'),
+    path('sites/add/',                  views.add_site,               name='add_site'),
+    path('work-details/suggest/',       views.work_details_suggest,   name='work_details_suggest'),
 
     # ── Reports ──
     path('report/machine-monthly/',         views.machine_monthly_report,        name='machine_monthly_report'),
