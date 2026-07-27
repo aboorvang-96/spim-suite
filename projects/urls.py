@@ -40,6 +40,8 @@ urlpatterns = [
     # ── Reports ──
     path('report/machine-monthly/',         views.machine_monthly_report,        name='machine_monthly_report'),
     path('report/machine-monthly/export/',  views.machine_monthly_report_export, name='machine_monthly_report_export'),
+    path('machine/<int:machine_id>/history/',          views.machine_history_json,     name='machine_history_json'),
+    path('machine/<int:machine_id>/history/download/', views.machine_history_download, name='machine_history_download'),
 
     # ── Legacy Project / Task routes (preserved for backward compat) ──
     path('projects/add/',               views.add_project,         name='add'),

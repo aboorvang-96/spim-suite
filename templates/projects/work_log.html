@@ -171,6 +171,37 @@
 #tab-summary .btn-sum-del{background:transparent;border:1px solid transparent;color:#dc2626;
     cursor:pointer;padding:.15rem .4rem;font-size:.9rem;line-height:1;border-radius:4px;}
 #tab-summary .btn-sum-del:hover{background:#fef2f2;border-color:#fca5a5;}
+/* Location cell renders the machine name as a link-styled button so it
+   reads as clickable (matches the old inline blue+bold treatment). */
+#tab-summary .sum-machine-btn{background:none;border:none;padding:0;margin:0;
+    font:inherit;font-weight:700;color:#2563eb;cursor:pointer;text-align:left;
+    line-height:inherit;}
+#tab-summary .sum-machine-btn:hover{text-decoration:underline;color:#1d4ed8;}
+#tab-summary .sum-machine-btn:focus{outline:2px solid #93c5fd;outline-offset:2px;border-radius:2px;}
+
+/* ── Machine History modal ── */
+.mh-modal-content{max-width:1100px;width:calc(100vw - 3rem);max-height:85vh;display:flex;flex-direction:column;}
+.mh-modal-body{flex:1;overflow-y:auto;padding:1rem 1.1rem;}
+.mh-toolbar{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap;}
+.mh-toolbar-right{display:flex;gap:.4rem;margin-left:auto;flex-shrink:0;}
+.mh-notice{flex:1;min-width:200px;padding:.4rem .55rem;border-radius:5px;font-size:.72rem;font-weight:600;display:none;}
+.mh-notice-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;}
+.mh-notice-error{background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;}
+.mh-loading{display:flex;align-items:center;justify-content:center;gap:.55rem;padding:2.5rem 1rem;color:#64748b;font-size:.82rem;}
+.mh-spinner{width:16px;height:16px;border:2px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:mhSpin .8s linear infinite;}
+@keyframes mhSpin{to{transform:rotate(360deg);}}
+.mh-empty{padding:2.5rem 1rem;text-align:center;color:#94a3b8;font-size:.82rem;}
+.mh-table-wrap{border:1px solid #e2e8f0;border-radius:6px;overflow-x:auto;}
+.mh-table{width:100%;border-collapse:collapse;font-size:.8rem;table-layout:fixed;}
+.mh-table thead{background:#f8fafc;position:sticky;top:0;z-index:1;}
+.mh-table th{padding:.4rem .5rem;text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;
+    color:#64748b;border-bottom:1px solid #e2e8f0;white-space:nowrap;}
+.mh-table td{padding:.375rem .5rem;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:top;}
+.mh-table tbody tr:hover td{background:#f4f7ff;}
+.mh-wd-cell{white-space:normal;font-size:.76rem;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.mh-emps-cell{font-size:.74rem;line-height:1.35;color:#334155;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;cursor:help;}
 
 /* Work Details autocomplete panel */
 .wd-ac-wrap{position:relative;width:100%;}
@@ -573,6 +604,54 @@
             <button class="btn btn-outline" onclick="cancelEntityDelete()">Cancel</button>
             <button class="btn btn-primary" id="entity-delete-btn" onclick="confirmEntityDelete()"
                 style="background:#dc2626;border-color:#dc2626;">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Machine History (Work Summary → click machine name) ══ -->
+<div id="machine-history-modal" class="modal">
+    <div class="modal-content mh-modal-content">
+        <div class="modal-header">
+            <div style="min-width:0;flex:1;">
+                <h3 id="mh-title" class="text-base font-bold text-slate-800" style="margin:0;">Machine — Work Log History</h3>
+                <div id="mh-subtitle" style="font-size:.72rem;color:#64748b;margin-top:.15rem;"></div>
+            </div>
+            <button onclick="closeMachineHistoryModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none" title="Close">&times;</button>
+        </div>
+        <div class="modal-body mh-modal-body">
+            <div class="mh-toolbar">
+                <div id="mh-notice" class="mh-notice"></div>
+                <div class="mh-toolbar-right">
+                    <button type="button" class="btn btn-outline btn-sm" id="mh-dl-xlsx"
+                        onclick="downloadMachineHistory('xlsx')" title="Download as Excel">⬇ Excel</button>
+                    <button type="button" class="btn btn-outline btn-sm" id="mh-dl-pdf"
+                        onclick="downloadMachineHistory('pdf')" title="Download as PDF">⬇ PDF</button>
+                </div>
+            </div>
+            <div id="mh-loading" class="mh-loading">
+                <div class="mh-spinner"></div><span>Loading history…</span>
+            </div>
+            <div id="mh-empty" class="mh-empty" style="display:none;">
+                No work log entries yet for this machine.
+            </div>
+            <div id="mh-table-wrap" class="mh-table-wrap" style="display:none;">
+                <table class="mh-table">
+                    <thead>
+                        <tr>
+                            <th style="width:50px;">SL</th>
+                            <th style="width:110px;">Date</th>
+                            <th style="width:260px;">Work Details</th>
+                            <th style="width:60px;">TMP</th>
+                            <th style="width:280px;">Employees</th>
+                            <th style="width:180px;">Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mh-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeMachineHistoryModal()">Close</button>
         </div>
     </div>
 </div>
@@ -1763,6 +1842,104 @@ function syncSummaryLocationDropdown(locs) {
     syncReportLocationDropdown(locs);  // keep report dropdown in sync
 }
 
+// ── Machine History modal (Work Summary → click machine name) ────────────
+let _mhMachineId = null;
+
+function openMachineHistoryModal(machineId, machineName) {
+    _mhMachineId = machineId;
+    // Reset UI to loading state; title fills in immediately, subtitle
+    // waits for the fetch since it needs client/site + count.
+    document.getElementById('mh-title').textContent = `${machineName} — Work Log History`;
+    document.getElementById('mh-subtitle').textContent = '';
+    document.getElementById('mh-notice').style.display   = 'none';
+    document.getElementById('mh-notice').textContent     = '';
+    document.getElementById('mh-loading').style.display  = 'flex';
+    document.getElementById('mh-empty').style.display    = 'none';
+    document.getElementById('mh-table-wrap').style.display = 'none';
+    document.getElementById('mh-tbody').innerHTML = '';
+    document.getElementById('mh-dl-xlsx').disabled = true;
+    document.getElementById('mh-dl-pdf').disabled  = true;
+    document.getElementById('machine-history-modal').classList.add('active');
+
+    fetch(`/projects/machine/${machineId}/history/`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    .then(r => r.json())
+    .then(data => {
+        // Guard against a late response after the user opened a different
+        // machine — bail if the fetched id no longer matches the active one.
+        if (_mhMachineId !== machineId) return;
+        renderMachineHistoryTable(data);
+    })
+    .catch(() => {
+        if (_mhMachineId !== machineId) return;
+        document.getElementById('mh-loading').style.display = 'none';
+        const notice = document.getElementById('mh-notice');
+        notice.textContent = 'Failed to load history. Please try again.';
+        notice.className = 'mh-notice mh-notice-error';
+        notice.style.display = 'block';
+    });
+}
+
+function closeMachineHistoryModal() {
+    document.getElementById('machine-history-modal').classList.remove('active');
+    _mhMachineId = null;
+}
+
+function renderMachineHistoryTable(data) {
+    document.getElementById('mh-loading').style.display = 'none';
+
+    const machine = data.machine || {};
+    const total   = data.total || 0;
+    const entries = data.entries || [];
+    const sitePath = machine.client_name && machine.site_name
+        ? `${machine.client_name} / ${machine.site_name}`
+        : (machine.client_name || machine.site_name || '—');
+    document.getElementById('mh-subtitle').textContent =
+        `${sitePath}  •  ${total} entr${total === 1 ? 'y' : 'ies'}`;
+
+    // Truncation banner surfaces when the server capped the payload.
+    if (data.truncated) {
+        const notice = document.getElementById('mh-notice');
+        notice.textContent = `Showing newest ${data.shown} of ${total} entries. Use Download for the complete history.`;
+        notice.className = 'mh-notice mh-notice-info';
+        notice.style.display = 'block';
+    }
+
+    if (!entries.length) {
+        document.getElementById('mh-empty').style.display = 'block';
+        // Downloads for an empty machine make no sense — keep them disabled.
+        document.getElementById('mh-dl-xlsx').disabled = true;
+        document.getElementById('mh-dl-pdf').disabled  = true;
+        return;
+    }
+
+    document.getElementById('mh-dl-xlsx').disabled = false;
+    document.getElementById('mh-dl-pdf').disabled  = false;
+
+    const tbody = document.getElementById('mh-tbody');
+    tbody.innerHTML = entries.map((e, i) => {
+        const empsFull = (e.employees || []).join(', ');
+        return `
+        <tr>
+            <td><strong>${i + 1}</strong></td>
+            <td>${escHtml(e.date)}</td>
+            <td class="mh-wd-cell">${escHtml(e.work_details || '—')}</td>
+            <td style="font-weight:700;color:#059669;text-align:center;">${e.tmp}</td>
+            <td class="mh-emps-cell" title="${escAttr(empsFull)}">${escHtml(empsFull || '—')}</td>
+            <td>${escHtml(e.remarks || '—')}</td>
+        </tr>`;
+    }).join('');
+    document.getElementById('mh-table-wrap').style.display = 'block';
+}
+
+function downloadMachineHistory(fmt) {
+    if (!_mhMachineId) return;
+    // Browser handles the actual download via a top-level navigation to
+    // the endpoint; the response's Content-Disposition drives the save.
+    window.location = `/projects/machine/${_mhMachineId}/history/download/?format=${encodeURIComponent(fmt)}`;
+}
+
 // ── Work Summary — per-row delete ────────────────────────────────────────
 let _summaryDeleteId = null;
 
@@ -1855,7 +2032,11 @@ function renderSummaryTable() {
         <tr data-log-id="${r.id}">
             <td><strong>${r.sl}</strong></td>
             <td>${r.date}</td>
-            <td style="font-weight:700;color:#2563eb;">${escHtml(r.location_name)}</td>
+            <td>${r.machineId
+                    ? `<button type="button" class="sum-machine-btn"
+                        onclick="openMachineHistoryModal(${r.machineId}, ${jsonAttr(r.location_name)})"
+                        title="View full work log history for this machine">${escHtml(r.location_name)}</button>`
+                    : `<span style="font-weight:700;color:#2563eb;">${escHtml(r.location_name)}</span>`}</td>
             <td>${escHtml(r.site)}</td>
             <td class="sum-wd-cell">${escHtml(r.work_details)}</td>
             <td style="font-weight:700;color:#059669;text-align:center;">${r.tmp}</td>
@@ -2373,7 +2554,15 @@ document.addEventListener('DOMContentLoaded', () => {
     loadLogForDate();
 
     // Modal backdrop click handlers
-    ['client-modal', 'site-modal', 'machine-modal', 'move-site-modal', 'move-machine-modal'].forEach(id => {
+    // Esc closes the Machine History modal (largest / most likely to
+    // dismiss via keyboard). Other modals stay on click / X only.
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        const mh = document.getElementById('machine-history-modal');
+        if (mh && mh.classList.contains('active')) closeMachineHistoryModal();
+    });
+
+    ['client-modal', 'site-modal', 'machine-modal', 'move-site-modal', 'move-machine-modal', 'machine-history-modal'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('click', function(e) {

@@ -355,6 +355,10 @@ def _work_summary_json(request, admin_id):
             'locked':        bool(getattr(log, 'locked', False)),
             'sl':            idx,
             'date':          log.date.strftime('%d-%m-%Y'),
+            # machineId used by the Work Summary "location cell" click →
+            # Machine History modal. Nullable for legacy rows saved before
+            # the Machine FK existed — client falls back to plain text.
+            'machineId':     log.location_id,
             'location_name': log.location.name if log.location else '—',
             'site':          log.site or '—',
             'work_details':  log.work_details or '—',
@@ -1311,6 +1315,233 @@ def machine_monthly_report_export(request):
             ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
         ]))
         doc.build([t])
+        resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+        resp['Content-Disposition'] = f'attachment; filename="{fname_base}.pdf"'
+        return resp
+
+    return HttpResponse('Unsupported format. Use ?format=xlsx or pdf.', status=400)
+
+
+# ─── Machine history modal + downloads (2026-07) ───────────────────────────
+# Backs the "click a machine name in Work Summary" flow. Full history for
+# the machine across ALL dates, tenant-scoped, sorted date DESC then id
+# DESC. The JSON endpoint caps at 500 rows (with a `truncated` flag) so a
+# 5-year-old machine doesn't push a 20 MB payload to the browser; the
+# downloads intentionally return the *full* history since a file is meant
+# for offline archival.
+_MACHINE_HISTORY_JSON_CAP = 500
+
+
+def _machine_history_entries(admin_id, machine, cap=None):
+    """
+    Shared queryset builder for the machine-history modal + downloads.
+    Returns (entries_list, total_count, truncated_bool). When `cap` is
+    given and the total exceeds it, only the newest `cap` entries are
+    materialised. Employee filtering matches _work_summary_json (only
+    attendance-qualified names surface in the display list).
+    """
+    base_qs = (
+        WorkLog.objects
+        .filter(admin_id=admin_id, location=machine)
+        .prefetch_related('employees')
+        .order_by('-date', '-id')
+    )
+    total = base_qs.count()
+    truncated = bool(cap and total > cap)
+    qs = base_qs[:cap] if cap else base_qs
+
+    entries = []
+    for log in qs:
+        emps = _attendance_qualified_emps(log.employees.all(), log.date)
+        entries.append({
+            'id':           log.pk,
+            'date':         log.date.strftime('%d-%m-%Y'),
+            'date_iso':     log.date.isoformat(),
+            'work_details': log.work_details or '',
+            'tmp':          len(emps),
+            'employees':    [e.name for e in emps],
+            'remarks':      log.remarks or '',
+            'locked':       bool(getattr(log, 'locked', False)),
+        })
+    return entries, total, truncated
+
+
+@login_required
+def machine_history_json(request, machine_id):
+    """
+    GET /projects/machine/<id>/history/
+    Returns the machine's full WorkLog history (date DESC, cap 500).
+    """
+    admin_id = get_admin_id(request.user)
+    machine = get_object_or_404(
+        MachineLocation.objects.select_related('site', 'site__client'),
+        pk=machine_id, admin_id=admin_id,
+    )
+    entries, total, truncated = _machine_history_entries(
+        admin_id, machine, cap=_MACHINE_HISTORY_JSON_CAP,
+    )
+    payload = {
+        'machine': {
+            'id':          machine.pk,
+            'name':        machine.name,
+            'site_name':   machine.site.name if machine.site_id else '',
+            'client_name': machine.site.client.name if machine.site_id and machine.site.client_id else '',
+        },
+        'entries': entries,
+        'total':   total,
+    }
+    if truncated:
+        payload['truncated'] = True
+        payload['shown']     = len(entries)
+    return JsonResponse(payload)
+
+
+@login_required
+def machine_history_download(request, machine_id):
+    """
+    GET /projects/machine/<id>/history/download/?format=xlsx|pdf
+    Full history (no cap) rendered as an XLSX or PDF file. Uses the same
+    openpyxl / reportlab libraries as machine_monthly_report_export so the
+    project doesn't grow a new dependency for this one screen.
+    """
+    from django.http import HttpResponse
+    from io import BytesIO
+    from datetime import date as _date
+
+    admin_id = get_admin_id(request.user)
+    machine = get_object_or_404(
+        MachineLocation.objects.select_related('site', 'site__client'),
+        pk=machine_id, admin_id=admin_id,
+    )
+    fmt = (request.GET.get('format') or 'xlsx').lower()
+    entries, total, _ = _machine_history_entries(admin_id, machine, cap=None)
+
+    client_name = machine.site.client.name if machine.site_id and machine.site.client_id else ''
+    site_name   = machine.site.name if machine.site_id else ''
+    site_path   = f'{client_name} / {site_name}' if client_name and site_name else (client_name or site_name or '—')
+    today_iso   = _date.today().strftime('%Y-%m-%d')
+    # Filename-safe machine name (spaces + slashes + colons stripped).
+    safe_name   = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in machine.name).strip('_') or 'machine'
+    fname_base  = f'{safe_name}_worklog_history_{today_iso}'
+
+    if fmt == 'xlsx':
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+        from openpyxl.utils import get_column_letter
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Machine History'
+
+        thin   = Side(style='thin', color='CCCCCC')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        header_fill = PatternFill('solid', fgColor='F1F5F9')
+
+        # Title block (rows 1-3)
+        ws.cell(row=1, column=1, value=f'Machine: {machine.name}').font = Font(bold=True, size=13)
+        ws.cell(row=2, column=1, value=f'Site: {site_path}').font = Font(bold=True)
+        ws.cell(row=3, column=1, value=f'Generated: {today_iso}  •  Entries: {total}').font = Font(italic=True, color='64748B')
+
+        # Column headers (row 5)
+        headers = ['SL', 'Date', 'Work Details', 'TMP', 'Employees', 'Remarks']
+        for ci, h in enumerate(headers, start=1):
+            cell = ws.cell(row=5, column=ci, value=h)
+            cell.font = Font(bold=True)
+            cell.fill = header_fill
+            cell.alignment = Alignment(vertical='center')
+
+        # Data rows
+        for ri, entry in enumerate(entries, start=6):
+            ws.cell(row=ri, column=1, value=ri - 5)
+            ws.cell(row=ri, column=2, value=entry['date'])
+            ws.cell(row=ri, column=3, value=entry['work_details']).alignment = Alignment(wrap_text=True, vertical='top')
+            ws.cell(row=ri, column=4, value=entry['tmp']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=5, value=', '.join(entry['employees'])).alignment = Alignment(wrap_text=True, vertical='top')
+            ws.cell(row=ri, column=6, value=entry['remarks']).alignment = Alignment(wrap_text=True, vertical='top')
+
+        last_row = max(5, 5 + len(entries))
+        for rr in range(5, last_row + 1):
+            for cc in range(1, len(headers) + 1):
+                ws.cell(row=rr, column=cc).border = border
+
+        widths = [6, 14, 42, 8, 42, 30]
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+        buf = BytesIO()
+        wb.save(buf)
+        resp = HttpResponse(
+            buf.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        resp['Content-Disposition'] = f'attachment; filename="{fname_base}.xlsx"'
+        return resp
+
+    if fmt == 'pdf':
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT
+
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=landscape(A4),
+            leftMargin=1*cm, rightMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm,
+        )
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'TitleBold', parent=styles['Normal'],
+            fontName='Helvetica-Bold', fontSize=14, spaceAfter=4, alignment=TA_LEFT,
+        )
+        sub_style = ParagraphStyle(
+            'Sub', parent=styles['Normal'],
+            fontName='Helvetica', fontSize=9, textColor=colors.HexColor('#475569'), spaceAfter=8,
+        )
+        cell_style = ParagraphStyle(
+            'Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10,
+        )
+
+        story = [
+            Paragraph(f'Machine: {machine.name} — Work Log History', title_style),
+            Paragraph(f'Site: {site_path} &nbsp;•&nbsp; Generated: {today_iso} &nbsp;•&nbsp; Entries: {total}', sub_style),
+            Spacer(1, 4),
+        ]
+
+        def _wrap(txt):
+            # Paragraph handles wrap; escape angle brackets so reportlab
+            # doesn't try to parse embedded markup in user text.
+            safe = (txt or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            return Paragraph(safe or '—', cell_style)
+
+        headers = ['SL', 'Date', 'Work Details', 'TMP', 'Employees', 'Remarks']
+        data = [headers]
+        for i, entry in enumerate(entries, start=1):
+            data.append([
+                str(i),
+                entry['date'],
+                _wrap(entry['work_details']),
+                str(entry['tmp']),
+                _wrap(', '.join(entry['employees'])),
+                _wrap(entry['remarks']),
+            ])
+        col_widths = [1.0*cm, 2.4*cm, 8.0*cm, 1.2*cm, 8.0*cm, 6.0*cm]
+        t = Table(data, colWidths=col_widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, 0), (-1, 0), 9),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
+            ('GRID',       (0, 0), (-1, -1), 0.3, colors.HexColor('#CBD5E1')),
+            ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN',      (0, 0), (1, -1), 'CENTER'),  # SL + Date center
+            ('ALIGN',      (3, 0), (3, -1), 'CENTER'),  # TMP center
+            ('FONTSIZE',   (0, 1), (-1, -1), 8),
+        ]))
+        story.append(t)
+        if not entries:
+            story.append(Paragraph('No work log entries yet for this machine.', sub_style))
+        doc.build(story)
         resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
         resp['Content-Disposition'] = f'attachment; filename="{fname_base}.pdf"'
         return resp
