@@ -318,7 +318,12 @@ def _work_log_json(request, admin_id):
 
 def _work_summary_json(request, admin_id):
     """Return filtered summary data as JSON for the Work Summary tab."""
-    qs = WorkLog.objects.filter(admin_id=admin_id).select_related('location').prefetch_related('employees')
+    qs = (
+        WorkLog.objects
+        .filter(admin_id=admin_id)
+        .select_related('location', 'location__site', 'location__site__client')
+        .prefetch_related('employees')
+    )
 
     f_date_from = request.GET.get('date_from', '').strip()
     f_date_to   = request.GET.get('date_to', '').strip()
@@ -350,6 +355,20 @@ def _work_summary_json(request, admin_id):
         emp_count = len(emps)
         total_tmp += emp_count
         emp_names = ', '.join(e.name for e in emps) or '—'
+
+        # Client / Site derived from the machine's registry FK chain.
+        # Legacy rows (machine without a Site FK, or no machine at all)
+        # fall back to the freeform WorkLog.site string so the column is
+        # never blank for old data.
+        machine = log.location
+        reg_site = machine.site if machine and machine.site_id else None
+        client_name = reg_site.client.name if reg_site and reg_site.client_id else ''
+        site_name   = reg_site.name if reg_site else (log.site or '')
+        if client_name and site_name:
+            client_site_label = f'{client_name} / {site_name}'
+        else:
+            client_site_label = site_name or (log.site or '—')
+
         rows.append({
             'id':            log.pk,
             'locked':        bool(getattr(log, 'locked', False)),
@@ -360,7 +379,12 @@ def _work_summary_json(request, admin_id):
             # the Machine FK existed — client falls back to plain text.
             'machineId':     log.location_id,
             'location_name': log.location.name if log.location else '—',
-            'site':          log.site or '—',
+            # `site` kept verbatim for back-compat consumers; the table
+            # itself now renders `client_site_label`.
+            'site':              log.site or '—',
+            'client_name':       client_name,
+            'site_name':         site_name,
+            'client_site_label': client_site_label,
             'work_details':  log.work_details or '—',
             'tmp':           emp_count,
             'employees':     emp_names,

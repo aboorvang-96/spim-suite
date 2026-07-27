@@ -162,9 +162,17 @@
 /* Summary table */
 #tab-summary #summary-table{font-size:.8rem;table-layout:fixed;width:100%;}
 #tab-summary #summary-table th,
-#tab-summary #summary-table td{padding:.375rem .5rem;vertical-align:top;}
+#tab-summary #summary-table td{padding:.375rem .5rem;vertical-align:top;
+    overflow-wrap:break-word;word-wrap:break-word;}
 #tab-summary #summary-table th{font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:#64748b;}
+/* Client / Site column: wrap long "CLIENT / SITE" labels inside the cell
+   (table-layout:fixed clips nothing, but unbroken overflow used to paint
+   over Work Details). Extra right/left padding gives the two columns
+   visual breathing room. */
+#tab-summary .sum-cs-cell{white-space:normal;word-wrap:break-word;overflow-wrap:break-word;
+    font-size:.76rem;line-height:1.35;padding-right:calc(.5rem + 4px);}
 #tab-summary .sum-wd-cell{white-space:normal;font-size:.76rem;line-height:1.35;
+    padding-left:calc(.5rem + 4px);
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
 #tab-summary .sum-emps-cell{font-size:.74rem;line-height:1.35;color:#334155;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;cursor:help;}
@@ -196,7 +204,8 @@
 .mh-table thead{background:#f8fafc;position:sticky;top:0;z-index:1;}
 .mh-table th{padding:.4rem .5rem;text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;
     color:#64748b;border-bottom:1px solid #e2e8f0;white-space:nowrap;}
-.mh-table td{padding:.375rem .5rem;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:top;}
+.mh-table td{padding:.375rem .5rem;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:top;
+    overflow-wrap:break-word;word-wrap:break-word;}
 .mh-table tbody tr:hover td{background:#f4f7ff;}
 .mh-wd-cell{white-space:normal;font-size:.76rem;line-height:1.35;
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
@@ -397,7 +406,7 @@
                         <th style="width:50px;">SL</th>
                         <th style="width:110px;">Date</th>
                         <th style="width:130px;">Location</th>
-                        <th style="width:140px;">Site</th>
+                        <th style="width:180px;">Client / Site</th>
                         <th style="width:200px;">Work Details</th>
                         <th style="width:60px;">TMP</th>
                         <th style="width:280px;">Employees</th>
@@ -2037,7 +2046,7 @@ function renderSummaryTable() {
                         onclick="openMachineHistoryModal(${r.machineId}, ${jsonAttr(r.location_name)})"
                         title="View full work log history for this machine">${escHtml(r.location_name)}</button>`
                     : `<span style="font-weight:700;color:#2563eb;">${escHtml(r.location_name)}</span>`}</td>
-            <td>${escHtml(r.site)}</td>
+            <td class="sum-cs-cell">${escHtml(r.client_site_label || r.site)}</td>
             <td class="sum-wd-cell">${escHtml(r.work_details)}</td>
             <td style="font-weight:700;color:#059669;text-align:center;">${r.tmp}</td>
             <td class="sum-emps-cell" title="${escAttr(empsFull)}">${escHtml(r.employees)}</td>
@@ -2253,8 +2262,8 @@ function generatePDF() {
         ]);
         doc.autoTable({ startY: 25, head, body, theme: 'grid', styles: { fontSize: 7, cellPadding: 2 }, headStyles: { fillColor: [30,41,59] } });
     } else {
-        const head = [['SL', 'Date', 'Location', 'Site', 'Work Details', 'TMP', 'Employees', 'Remarks']];
-        const body = summaryRows.map(r => [r.sl, r.date, r.location_name, r.site, (r.work_details||'—').substring(0,60), r.tmp, r.employees||'—', r.remarks||'—']);
+        const head = [['SL', 'Date', 'Location', 'Client / Site', 'Work Details', 'TMP', 'Employees', 'Remarks']];
+        const body = summaryRows.map(r => [r.sl, r.date, r.location_name, r.client_site_label || r.site, (r.work_details||'—').substring(0,60), r.tmp, r.employees||'—', r.remarks||'—']);
         doc.autoTable({ startY: 25, head, body, theme: 'grid', styles: { fontSize: 7, cellPadding: 2 }, headStyles: { fillColor: [30,41,59] } });
     }
 
@@ -2281,14 +2290,14 @@ function generateExcel() {
         }));
     } else {
         data = summaryRows.map(r => ({
-            'SL':           r.sl,
-            'Date':         r.date,
-            'Location':     r.location_name,
-            'Site':         r.site || '',
-            'Work Details': r.work_details || '',
-            'TMP':          r.tmp,
-            'Employees':    r.employees || '',
-            'Remarks':      r.remarks || '',
+            'SL':            r.sl,
+            'Date':          r.date,
+            'Location':      r.location_name,
+            'Client / Site': r.client_site_label || r.site || '',
+            'Work Details':  r.work_details || '',
+            'TMP':           r.tmp,
+            'Employees':     r.employees || '',
+            'Remarks':       r.remarks || '',
         }));
     }
 
