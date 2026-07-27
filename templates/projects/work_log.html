@@ -114,7 +114,7 @@
 .wl-client-header:hover{background:#334155;}
 .wl-client-header .wl-caret{display:inline-block;width:14px;text-align:center;transition:transform .15s;flex-shrink:0;}
 .wl-client-header.expanded .wl-caret{transform:rotate(90deg);}
-.wl-client-header .wl-count{margin-left:auto;font-size:.68rem;font-weight:600;color:#cbd5e1;background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:10px;}
+.wl-client-header .wl-count{font-size:.68rem;font-weight:600;color:#cbd5e1;background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:10px;}
 .wl-client-body{display:none;background:#f8fafc;}
 .wl-client-body.open{display:block;}
 .wl-site{border-top:1px solid #e2e8f0;}
@@ -122,9 +122,19 @@
 .wl-site-header:hover{background:#cbd5e1;}
 .wl-site-header .wl-caret{display:inline-block;width:14px;text-align:center;transition:transform .15s;flex-shrink:0;}
 .wl-site-header.expanded .wl-caret{transform:rotate(90deg);}
-.wl-site-header .wl-count{margin-left:auto;font-size:.66rem;font-weight:600;color:#475569;background:#fff;padding:.1rem .5rem;border-radius:10px;border:1px solid #cbd5e1;}
+.wl-site-header .wl-count{font-size:.66rem;font-weight:600;color:#475569;background:#fff;padding:.1rem .5rem;border-radius:10px;border:1px solid #cbd5e1;}
 .wl-icon-btn{background:transparent;border:1px solid transparent;color:#64748b;cursor:pointer;padding:0 .35rem;font-size:.85rem;line-height:1;border-radius:4px;}
 .wl-icon-btn:hover{background:rgba(37,99,235,.1);color:#2563eb;border-color:#bfdbfe;}
+/* Header rows use a left/right flex split so action icons + count sit
+   flush to the right, immediately before (and grouped with) the count pill.
+   The right group takes margin-left:auto so it hugs the far edge regardless
+   of the name width. */
+.wl-header-left {display:flex;align-items:center;gap:.5rem;min-width:0;flex:1;}
+.wl-header-left > span:not(.wl-caret){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wl-header-right{display:flex;align-items:center;gap:.35rem;margin-left:auto;flex-shrink:0;}
+/* Smaller variant for the machine row's Actions cell so the entity-level
+   ✏️/🗑️ don't dominate the WorkLog-level Edit/Del/Save buttons next to them. */
+.wl-icon-btn-sm{padding:0 .3rem;font-size:.78rem;margin-left:2px;}
 /* Icon buttons sitting on the dark client header need a lighter idle tint */
 .wl-client-header .wl-icon-btn{color:#cbd5e1;}
 .wl-client-header .wl-icon-btn:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25);}
@@ -786,22 +796,28 @@ function renderMachineRows() {
     refreshUnassignedBanner();
 
     container.innerHTML = treeData.map(client => {
-        const cOpen = expandedClients.has(client.id);
+        const cOpen  = expandedClients.has(client.id);
+        const cName  = jsonAttr(client.name);
         const sitesHtml = (client.sites || []).map(site => {
             const sOpen = expandedSites.has(site.id);
+            const sName = jsonAttr(site.name);
             return `
               <div class="wl-site" data-site-id="${site.id}">
                 <div class="wl-site-header${sOpen ? ' expanded' : ''}" onclick="toggleSite(${site.id})">
-                    <span class="wl-caret">▶</span>
-                    <span>${escHtml(site.name)}</span>
-                    <button class="wl-icon-btn" title="Move site to a different client"
-                        onclick="event.stopPropagation(); openMoveSiteModal(${site.id}, ${client.id}, ${JSON.stringify(site.name)});">✎</button>
-                    ${IS_ADMIN ? `
-                    <button class="wl-icon-btn" title="Edit site"
-                        onclick="event.stopPropagation(); openEntityEditModal('site', ${site.id});">✏️</button>
-                    <button class="wl-icon-btn" title="Delete site"
-                        onclick="event.stopPropagation(); openEntityDeleteModal('site', ${site.id});">🗑️</button>` : ''}
-                    <span class="wl-count">${site.machine_count || 0} machine(s)</span>
+                    <div class="wl-header-left">
+                        <span class="wl-caret">▶</span>
+                        <span>${escHtml(site.name)}</span>
+                    </div>
+                    <div class="wl-header-right">
+                        <button type="button" class="wl-icon-btn" title="Move site to a different client"
+                            onclick="event.stopPropagation(); openMoveSiteModal(${site.id}, ${client.id}, ${sName});">↔</button>
+                        ${IS_ADMIN ? `
+                        <button type="button" class="wl-icon-btn" title="Edit site"
+                            onclick="event.stopPropagation(); openEntityEditModal('site', ${site.id});">✏️</button>
+                        <button type="button" class="wl-icon-btn" title="Delete site"
+                            onclick="event.stopPropagation(); openEntityDeleteModal('site', ${site.id});">🗑️</button>` : ''}
+                        <span class="wl-count">${site.machine_count || 0} machine(s)</span>
+                    </div>
                 </div>
                 <div class="wl-site-body${sOpen ? ' open' : ''}" id="site-body-${site.id}">
                     ${renderSiteMachineTable(site)}
@@ -811,14 +827,18 @@ function renderMachineRows() {
         return `
           <div class="wl-client" data-client-id="${client.id}">
             <div class="wl-client-header${cOpen ? ' expanded' : ''}" onclick="toggleClient(${client.id})">
-                <span class="wl-caret">▶</span>
-                <span>${escHtml(client.name)}</span>
-                ${IS_ADMIN ? `
-                <button class="wl-icon-btn" title="Edit client"
-                    onclick="event.stopPropagation(); openEntityEditModal('client', ${client.id});">✏️</button>
-                <button class="wl-icon-btn" title="Delete client"
-                    onclick="event.stopPropagation(); openEntityDeleteModal('client', ${client.id});">🗑️</button>` : ''}
-                <span class="wl-count">${client.site_count || 0} site(s)</span>
+                <div class="wl-header-left">
+                    <span class="wl-caret">▶</span>
+                    <span>${escHtml(client.name)}</span>
+                </div>
+                <div class="wl-header-right">
+                    ${IS_ADMIN ? `
+                    <button type="button" class="wl-icon-btn" title="Edit client"
+                        onclick="event.stopPropagation(); openEntityEditModal('client', ${client.id});">✏️</button>
+                    <button type="button" class="wl-icon-btn" title="Delete client"
+                        onclick="event.stopPropagation(); openEntityDeleteModal('client', ${client.id});">🗑️</button>` : ''}
+                    <span class="wl-count">${client.site_count || 0} site(s)</span>
+                </div>
             </div>
             <div class="wl-client-body${cOpen ? ' open' : ''}" id="client-body-${client.id}">
                 ${sitesHtml || '<div class="wl-site-empty">No sites yet under this client.</div>'}
@@ -865,10 +885,11 @@ function renderMachineRow(m, dateVal, siteId) {
     const isLocked   = !!entry.locked;
     const dis        = isLocked ? 'disabled' : '';
 
-    const moveBtn = `<button class="btn-row-move" title="Move machine to a different site"
-        onclick="openMoveMachineModal(${m.id}, ${siteId}, ${JSON.stringify(m.name)})">↔</button>`
-        + (IS_ADMIN ? `<button class="wl-icon-btn" title="Edit machine"
-        onclick="openEntityEditModal('machine', ${m.id})">✏️</button><button class="wl-icon-btn" title="Delete machine"
+    const mName = jsonAttr(m.name);
+    const moveBtn = `<button type="button" class="btn-row-move" title="Move machine to a different site"
+        onclick="openMoveMachineModal(${m.id}, ${siteId}, ${mName})">↔</button>`
+        + (IS_ADMIN ? `<button type="button" class="wl-icon-btn wl-icon-btn-sm" title="Edit machine"
+        onclick="openEntityEditModal('machine', ${m.id})">✏️</button><button type="button" class="wl-icon-btn wl-icon-btn-sm" title="Delete machine"
         onclick="openEntityDeleteModal('machine', ${m.id})">🗑️</button>` : '');
 
     const actionsCells = entry.id
@@ -1971,6 +1992,15 @@ function escHtml(str) {
 function escAttr(str) {
     if (!str) return '';
     return String(str).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Safe JS-string literal for embedding inside a double-quoted HTML attribute.
+// JSON.stringify alone yields "foo" — the inner " terminates the onclick=""
+// attribute at the first inner quote, silently killing the handler. Escaping
+// them to &quot; lets the HTML parser complete the attribute value, and the
+// browser un-escapes them back to real " when it evaluates the handler.
+function jsonAttr(v) {
+    return JSON.stringify(v == null ? '' : String(v)).replace(/"/g, '&quot;');
 }
 
 function showToast(msg, type = 'success') {
