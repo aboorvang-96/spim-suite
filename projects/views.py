@@ -733,6 +733,93 @@ def add_site(request):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
+@admin_required
+@require_POST
+def move_site(request, site_id):
+    """
+    Reassign a Site to a different (active) ProjectClient.
+
+    Both source and target are tenant-scoped by admin_id. The site's
+    machines follow implicitly because MachineLocation.site is unchanged
+    — only the Client above the Site is swapped.
+    """
+    try:
+        data      = json.loads(request.body or b'{}')
+        admin_id  = get_admin_id(request.user)
+        client_id = data.get('client_id')
+        if not client_id:
+            return JsonResponse(
+                {'success': False, 'error': 'Client is required.'}, status=400,
+            )
+        site = get_object_or_404(Site, pk=site_id, admin_id=admin_id)
+        target = ProjectClient.objects.filter(
+            pk=client_id, admin_id=admin_id, is_active=True,
+        ).first()
+        if not target:
+            return JsonResponse(
+                {'success': False, 'error': 'Target client not found or inactive.'},
+                status=400,
+            )
+        if site.client_id == target.pk:
+            return JsonResponse({
+                'success': True, 'changed': False,
+                'site_id': site.pk, 'client_id': target.pk,
+            })
+        site.client = target
+        site.save(update_fields=['client', 'updated_at'])
+        return JsonResponse({
+            'success': True, 'changed': True,
+            'site_id': site.pk, 'client_id': target.pk,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@admin_required
+@require_POST
+def move_machine(request, machine_id):
+    """
+    Reassign a MachineLocation to a different (active) Site.
+
+    Historical WorkLog.site strings on this machine's past rows are
+    intentionally NOT rewritten — they capture what the site was called
+    at the time of the log entry. Only future upserts will populate
+    WorkLog.site from the machine's new Site.name (see work_log_upsert).
+    """
+    try:
+        data     = json.loads(request.body or b'{}')
+        admin_id = get_admin_id(request.user)
+        site_id  = data.get('site_id')
+        if not site_id:
+            return JsonResponse(
+                {'success': False, 'error': 'Site is required.'}, status=400,
+            )
+        machine = get_object_or_404(MachineLocation, pk=machine_id, admin_id=admin_id)
+        target = Site.objects.filter(
+            pk=site_id, admin_id=admin_id, is_active=True,
+        ).select_related('client').first()
+        if not target:
+            return JsonResponse(
+                {'success': False, 'error': 'Target site not found or inactive.'},
+                status=400,
+            )
+        if machine.site_id == target.pk:
+            return JsonResponse({
+                'success': True, 'changed': False,
+                'machine_id': machine.pk, 'site_id': target.pk,
+                'client_id': target.client_id,
+            })
+        machine.site = target
+        machine.save(update_fields=['site'])
+        return JsonResponse({
+            'success': True, 'changed': True,
+            'machine_id': machine.pk, 'site_id': target.pk,
+            'client_id': target.client_id,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
 @login_required
 def work_details_suggest(request):
     """

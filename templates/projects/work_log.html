@@ -123,6 +123,12 @@
 .wl-site-header .wl-caret{display:inline-block;width:14px;text-align:center;transition:transform .15s;flex-shrink:0;}
 .wl-site-header.expanded .wl-caret{transform:rotate(90deg);}
 .wl-site-header .wl-count{margin-left:auto;font-size:.66rem;font-weight:600;color:#475569;background:#fff;padding:.1rem .5rem;border-radius:10px;border:1px solid #cbd5e1;}
+.wl-icon-btn{background:transparent;border:1px solid transparent;color:#64748b;cursor:pointer;padding:0 .35rem;font-size:.85rem;line-height:1;border-radius:4px;}
+.wl-icon-btn:hover{background:rgba(37,99,235,.1);color:#2563eb;border-color:#bfdbfe;}
+.btn-row-move{padding:.3rem .55rem;font-size:.72rem;font-weight:600;background:#fff;color:#0369a1;border:1px solid #bae6fd;border-radius:5px;cursor:pointer;margin-left:3px;}
+.btn-row-move:hover{background:#e0f2fe;}
+.wl-highlight{animation:wlHighlight 1.6s ease-out;}
+@keyframes wlHighlight{0%{background:#fef3c7;}100%{background:transparent;}}
 .wl-site-body{display:none;background:#fff;padding:.35rem .5rem .55rem 2.25rem;}
 .wl-site-body.open{display:block;}
 .wl-site-empty{padding:.6rem;font-size:.72rem;color:#94a3b8;font-style:italic;}
@@ -193,6 +199,13 @@
                 Save Selected
             </button>
             <span id="wl-status-msg" style="font-size:.73rem;color:#64748b;"></span>
+        </div>
+
+        <!-- Unassigned banner (hidden until tree loads) -->
+        <div id="unassigned-banner" style="display:none;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:.55rem .8rem;margin-bottom:.6rem;font-size:.78rem;color:#92400e;display:flex;align-items:center;gap:.6rem;">
+            <span style="font-size:1rem;">⚠</span>
+            <span id="unassigned-banner-msg" style="flex:1;"></span>
+            <button class="btn btn-outline btn-sm" style="height:28px;font-size:.72rem;border-color:#92400e;color:#92400e;" onclick="scrollToUnassigned()">Reassign now</button>
         </div>
 
         <!-- Work Log Tree (Client → Site → Machines) -->
@@ -408,6 +421,66 @@
         <div class="modal-footer">
             <button class="btn btn-outline" onclick="closeAddMachineModal()">Cancel</button>
             <button class="btn btn-primary" onclick="saveNewMachine()">Add Machine</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Move Site (change its parent Client) ══ -->
+<div id="move-site-modal" class="modal">
+    <div class="modal-content" style="max-width:400px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Move Site</h3>
+            <button onclick="closeMoveSiteModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
+                Reassign this site to a different client. The site's machines move with it.
+            </p>
+            <div class="form-group">
+                <label class="stat-label">Site</label>
+                <input type="text" id="move-site-name" class="filter-input" disabled style="background:#f1f5f9;color:#475569;">
+            </div>
+            <div class="form-group" style="margin-top:.75rem;">
+                <label class="stat-label">Client <span style="color:#e11d48">*</span></label>
+                <select id="move-site-client" class="filter-select"></select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeMoveSiteModal()">Cancel</button>
+            <button class="btn btn-primary" id="move-site-save-btn" onclick="saveMoveSite()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Move Machine (change its parent Site) ══ -->
+<div id="move-machine-modal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Move Machine</h3>
+            <button onclick="closeMoveMachineModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:.75rem;color:var(--slate-500);margin-bottom:1rem;">
+                Reassign this machine to a different site.
+            </p>
+            <div class="form-group">
+                <label class="stat-label">Machine</label>
+                <input type="text" id="move-machine-name" class="filter-input" disabled style="background:#f1f5f9;color:#475569;">
+            </div>
+            <div class="form-group" style="margin-top:.75rem;">
+                <label class="stat-label">Client <span style="color:#e11d48">*</span></label>
+                <select id="move-machine-client" class="filter-select" onchange="onMoveMachineClientChange()"></select>
+            </div>
+            <div class="form-group" style="margin-top:.75rem;">
+                <label class="stat-label">Site <span style="color:#e11d48">*</span></label>
+                <select id="move-machine-site" class="filter-select" onchange="updateMoveMachinePreview()"></select>
+            </div>
+            <div id="move-machine-preview" style="margin-top:.85rem;padding:.5rem .65rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;font-size:.72rem;color:#0369a1;display:none;">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeMoveMachineModal()">Cancel</button>
+            <button class="btn btn-primary" id="move-machine-save-btn" onclick="saveMoveMachine()">Save</button>
         </div>
     </div>
 </div>
@@ -654,6 +727,8 @@ function renderMachineRows() {
         }
     }
 
+    refreshUnassignedBanner();
+
     container.innerHTML = treeData.map(client => {
         const cOpen = expandedClients.has(client.id);
         const sitesHtml = (client.sites || []).map(site => {
@@ -663,6 +738,8 @@ function renderMachineRows() {
                 <div class="wl-site-header${sOpen ? ' expanded' : ''}" onclick="toggleSite(${site.id})">
                     <span class="wl-caret">▶</span>
                     <span>${escHtml(site.name)}</span>
+                    <button class="wl-icon-btn" title="Move site to a different client"
+                        onclick="event.stopPropagation(); openMoveSiteModal(${site.id}, ${client.id}, ${JSON.stringify(site.name)});">✎</button>
                     <span class="wl-count">${site.machine_count || 0} machine(s)</span>
                 </div>
                 <div class="wl-site-body${sOpen ? ' open' : ''}" id="site-body-${site.id}">
@@ -690,7 +767,7 @@ function renderSiteMachineTable(site) {
     }
     const dateVal = document.getElementById('wl-date')?.value || TODAY_ISO;
 
-    const bodyRows = site.machines.map(m => renderMachineRow(m, dateVal)).join('');
+    const bodyRows = site.machines.map(m => renderMachineRow(m, dateVal, site.id)).join('');
     return `
       <div class="table-container">
         <table class="wl-inline-table">
@@ -711,7 +788,7 @@ function renderSiteMachineTable(site) {
       </div>`;
 }
 
-function renderMachineRow(m, dateVal) {
+function renderMachineRow(m, dateVal, siteId) {
     const entry      = logMap[m.id] || {};
     const entryDate  = entry.date_iso      || dateVal;
     const workDet    = entry.work_details  || '';
@@ -722,14 +799,17 @@ function renderMachineRow(m, dateVal) {
     const isLocked   = !!entry.locked;
     const dis        = isLocked ? 'disabled' : '';
 
+    const moveBtn = `<button class="btn-row-move" title="Move machine to a different site"
+        onclick="openMoveMachineModal(${m.id}, ${siteId}, ${JSON.stringify(m.name)})">↔</button>`;
+
     const actionsCells = entry.id
         ? (isLocked
-            ? `<button class="btn-row-edit" id="act-unlock-${m.id}" onclick="unlockRow(${m.id},${entry.id})" title="Unlock to edit">🔒 Unlock</button>`
+            ? `<button class="btn-row-edit" id="act-unlock-${m.id}" onclick="unlockRow(${m.id},${entry.id})" title="Unlock to edit">🔒 Unlock</button>${moveBtn}`
             : `<button class="btn-row-edit"   id="act-edit-${m.id}"   onclick="editRow(${m.id})"        title="Edit entry">Edit</button>
                <button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save changes" style="display:none;">Save</button>
                <button class="btn-row-cancel" id="act-cancel-${m.id}" onclick="cancelEditRow(${m.id})"  title="Cancel edit"  style="display:none;">✕</button>
-               <button class="btn-row-del" id="act-del-${m.id}" onclick="deleteRow(${m.id},${entry.id})" title="Delete">Del</button>`)
-        : `<button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save entry">Save</button>`;
+               <button class="btn-row-del" id="act-del-${m.id}" onclick="deleteRow(${m.id},${entry.id})" title="Delete">Del</button>${moveBtn}`)
+        : `<button class="btn-row-save"   id="act-save-${m.id}"   onclick="saveRow(${m.id})"        title="Save entry">Save</button>${moveBtn}`;
 
     return `
     <tr id="row-m${m.id}" data-loc-id="${m.id}" data-log-id="${entry.id || ''}" class="${savedClass}${isLocked ? ' row-locked' : ''}">
@@ -786,6 +866,220 @@ function toggleSite(sid) {
     const header = document.querySelector(`.wl-site[data-site-id="${sid}"] .wl-site-header`);
     if (body) body.classList.toggle('open', expandedSites.has(sid));
     if (header) header.classList.toggle('expanded', expandedSites.has(sid));
+}
+
+// ── Unassigned banner ─────────────────────────────────────────────────────
+function _findUnassignedClient() {
+    return treeData.find(c => (c.name || '').toLowerCase() === 'unassigned');
+}
+function refreshUnassignedBanner() {
+    const banner = document.getElementById('unassigned-banner');
+    if (!banner) return;
+    const uc = _findUnassignedClient();
+    if (!uc || !uc.sites || !uc.sites.length) {
+        banner.style.display = 'none';
+        return;
+    }
+    const siteCount = uc.sites.length;
+    const machCount = uc.sites.reduce((a, s) => a + (s.machine_count || 0), 0);
+    document.getElementById('unassigned-banner-msg').textContent =
+        `You have ${siteCount} unassigned site(s) and ${machCount} unassigned machine(s).`;
+    banner.style.display = 'flex';
+}
+function scrollToUnassigned() {
+    const uc = _findUnassignedClient();
+    if (!uc) return;
+    expandedClients.add(uc.id);
+    // Also expand the first site containing unassigned machines, if any.
+    const firstWith = (uc.sites || []).find(s => (s.machine_count || 0) > 0)
+                    || (uc.sites || [])[0];
+    if (firstWith) expandedSites.add(firstWith.id);
+    renderMachineRows();
+    const header = document.querySelector(`.wl-client[data-client-id="${uc.id}"] .wl-client-header`);
+    if (header) {
+        header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        header.classList.add('wl-highlight');
+        setTimeout(() => header.classList.remove('wl-highlight'), 1600);
+    }
+}
+
+// ── Move Site modal ───────────────────────────────────────────────────────
+let _moveSiteId = null;
+let _moveSiteCurrentClientId = null;
+
+function openMoveSiteModal(siteId, currentClientId, siteName) {
+    _moveSiteId = siteId;
+    _moveSiteCurrentClientId = currentClientId;
+    document.getElementById('move-site-name').value = siteName || '';
+    const sel = document.getElementById('move-site-client');
+    sel.innerHTML = clientsList.map(c =>
+        `<option value="${c.id}"${c.id === currentClientId ? ' selected' : ''}>${escHtml(c.name)}</option>`
+    ).join('');
+    document.getElementById('move-site-modal').classList.add('active');
+}
+function closeMoveSiteModal() {
+    document.getElementById('move-site-modal').classList.remove('active');
+    _moveSiteId = null;
+    _moveSiteCurrentClientId = null;
+}
+async function saveMoveSite() {
+    if (!_moveSiteId) return;
+    const newClientId = parseInt(document.getElementById('move-site-client').value) || null;
+    if (!newClientId) { showToast('Client is required.', 'error'); return; }
+    if (newClientId === _moveSiteCurrentClientId) { closeMoveSiteModal(); return; }
+    try {
+        const res = await fetch(`/projects/sites/${_moveSiteId}/move/`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify({ client_id: newClientId }),
+        });
+        const result = await res.json();
+        if (result.success) {
+            if (result.changed) {
+                _moveSiteInTree(_moveSiteId, _moveSiteCurrentClientId, newClientId);
+                expandedClients.add(newClientId);
+                renderMachineRows();
+                refreshUnassignedBanner();
+                showToast('Site moved.');
+            } else {
+                showToast('No change (same client).');
+            }
+            closeMoveSiteModal();
+        } else {
+            showToast(result.error || 'Move failed.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+function _moveSiteInTree(siteId, oldClientId, newClientId) {
+    const src = treeData.find(c => c.id === oldClientId);
+    const dst = treeData.find(c => c.id === newClientId);
+    if (!src || !dst) return;
+    const idx = src.sites.findIndex(s => s.id === siteId);
+    if (idx < 0) return;
+    const [siteNode] = src.sites.splice(idx, 1);
+    src.site_count = src.sites.length;
+    dst.sites.push(siteNode);
+    dst.sites.sort((a, b) => a.name.localeCompare(b.name));
+    dst.site_count = dst.sites.length;
+    // sitesList (flat) — keep in sync so Add-Machine modal grouping stays right.
+    const flat = sitesList.find(s => s.id === siteId);
+    if (flat) flat.client_id = newClientId;
+}
+
+// ── Move Machine modal ────────────────────────────────────────────────────
+let _moveMachineId = null;
+let _moveMachineCurrentSiteId = null;
+
+function openMoveMachineModal(machineId, currentSiteId, machineName) {
+    _moveMachineId = machineId;
+    _moveMachineCurrentSiteId = currentSiteId;
+    document.getElementById('move-machine-name').value = machineName || '';
+
+    // Which client currently owns the machine's site?
+    const flatSite = sitesList.find(s => s.id === currentSiteId);
+    const currentClientId = flatSite ? flatSite.client_id : null;
+
+    const clientSel = document.getElementById('move-machine-client');
+    clientSel.innerHTML = clientsList.map(c =>
+        `<option value="${c.id}"${c.id === currentClientId ? ' selected' : ''}>${escHtml(c.name)}</option>`
+    ).join('');
+
+    _populateMoveMachineSiteOptions(currentClientId, currentSiteId);
+    document.getElementById('move-machine-modal').classList.add('active');
+    updateMoveMachinePreview();
+}
+function closeMoveMachineModal() {
+    document.getElementById('move-machine-modal').classList.remove('active');
+    _moveMachineId = null;
+    _moveMachineCurrentSiteId = null;
+    const prev = document.getElementById('move-machine-preview');
+    if (prev) prev.style.display = 'none';
+}
+function _populateMoveMachineSiteOptions(clientId, preselectSiteId) {
+    const sel = document.getElementById('move-machine-site');
+    const opts = sitesList.filter(s => s.client_id === clientId);
+    if (!opts.length) {
+        sel.innerHTML = `<option value="" disabled selected>No sites — add one first</option>`;
+        sel.disabled = true;
+        document.getElementById('move-machine-save-btn').disabled = true;
+        return;
+    }
+    sel.disabled = false;
+    document.getElementById('move-machine-save-btn').disabled = false;
+    sel.innerHTML = opts.map(s =>
+        `<option value="${s.id}"${s.id === preselectSiteId ? ' selected' : ''}>${escHtml(s.name)}</option>`
+    ).join('');
+}
+function onMoveMachineClientChange() {
+    const cid = parseInt(document.getElementById('move-machine-client').value) || null;
+    _populateMoveMachineSiteOptions(cid, null);
+    updateMoveMachinePreview();
+}
+function updateMoveMachinePreview() {
+    const cid = parseInt(document.getElementById('move-machine-client').value) || null;
+    const sid = parseInt(document.getElementById('move-machine-site').value) || null;
+    const prev = document.getElementById('move-machine-preview');
+    if (!cid || !sid) { prev.style.display = 'none'; return; }
+    const client = clientsList.find(c => c.id === cid);
+    const site   = sitesList.find(s => s.id === sid);
+    if (!client || !site) { prev.style.display = 'none'; return; }
+    prev.textContent =
+        `This machine will move to ${client.name} / ${site.name}. ` +
+        `Past work log entries keep their historical site name.`;
+    prev.style.display = 'block';
+}
+async function saveMoveMachine() {
+    if (!_moveMachineId) return;
+    const newSiteId = parseInt(document.getElementById('move-machine-site').value) || null;
+    if (!newSiteId) { showToast('Site is required.', 'error'); return; }
+    if (newSiteId === _moveMachineCurrentSiteId) { closeMoveMachineModal(); return; }
+    try {
+        const res = await fetch(`/projects/machines/${_moveMachineId}/move/`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify({ site_id: newSiteId }),
+        });
+        const result = await res.json();
+        if (result.success) {
+            if (result.changed) {
+                _moveMachineInTree(_moveMachineId, _moveMachineCurrentSiteId, newSiteId, result.client_id);
+                if (result.client_id) expandedClients.add(result.client_id);
+                expandedSites.add(newSiteId);
+                renderMachineRows();
+                refreshUnassignedBanner();
+                showToast('Machine moved.');
+            } else {
+                showToast('No change (same site).');
+            }
+            closeMoveMachineModal();
+        } else {
+            showToast(result.error || 'Move failed.', 'error');
+        }
+    } catch(e) {
+        showToast('Network error.', 'error');
+    }
+}
+
+function _moveMachineInTree(machineId, oldSiteId, newSiteId, newClientId) {
+    // Find source site (may be under any client) and destination site.
+    let srcClient = null, srcSite = null, dstClient = null, dstSite = null;
+    for (const c of treeData) {
+        for (const s of (c.sites || [])) {
+            if (s.id === oldSiteId) { srcClient = c; srcSite = s; }
+            if (s.id === newSiteId) { dstClient = c; dstSite = s; }
+        }
+    }
+    if (!srcSite || !dstSite) return;
+    const idx = srcSite.machines.findIndex(m => m.id === machineId);
+    if (idx < 0) return;
+    const [machNode] = srcSite.machines.splice(idx, 1);
+    srcSite.machine_count = srcSite.machines.length;
+    dstSite.machines.push(machNode);
+    dstSite.machines.sort((a, b) => a.name.localeCompare(b.name));
+    dstSite.machine_count = dstSite.machines.length;
 }
 
 // ── Work Details autocomplete ──────────────────────────────────────────────
@@ -1606,7 +1900,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadLogForDate();
 
     // Modal backdrop click handlers
-    ['client-modal', 'site-modal', 'machine-modal'].forEach(id => {
+    ['client-modal', 'site-modal', 'machine-modal', 'move-site-modal', 'move-machine-modal'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('click', function(e) {

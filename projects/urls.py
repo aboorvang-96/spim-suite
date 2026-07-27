@@ -26,6 +26,8 @@ urlpatterns = [
     # ── Projects restructure: Client / Site / Work Details autocomplete ──
     path('clients/add/',                views.add_project_client,     name='add_project_client'),
     path('sites/add/',                  views.add_site,               name='add_site'),
+    path('sites/<int:site_id>/move/',   views.move_site,              name='move_site'),
+    path('machines/<int:machine_id>/move/', views.move_machine,       name='move_machine'),
     path('work-details/suggest/',       views.work_details_suggest,   name='work_details_suggest'),
 
     # ── Reports ──
