@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseForbidden
 from django.core.exceptions import MultipleObjectsReturned
 from django.db import transaction
+from django.db.models import Count
 from employees.models import Employee
 from accounts.views import get_admin_id
 from projects.models import MachineLocation, ProjectClient, Site
@@ -166,6 +167,19 @@ def save_attendance(request):
         except (TypeError, ValueError):
             machine_id = None
 
+        # Client/Site FK pair (2026-07 Client/Site column).
+        def _as_id(*keys):
+            for k in keys:
+                if k in record:
+                    try:
+                        return int(record.get(k) or 0) or None, True
+                    except (TypeError, ValueError):
+                        return None, True
+            return None, False
+
+        client_id, client_in_payload = _as_id('clientId', 'client_id')
+        site_id,   site_in_payload   = _as_id('siteId')
+
         work_details_val = record.get('workDetails')
         if work_details_val is None:
             work_details_val = record.get('work_details')
@@ -203,6 +217,53 @@ def save_attendance(request):
         # authoritative, so admins can clear it by sending an empty string.
         if 'workDetails' in record or 'work_details' in record:
             defaults['work_details'] = work_details_val
+
+        # Client/Site FKs — presence in payload is authoritative (null
+        # clears). Both are validated against the tenant; when a Site is
+        # resolved, the legacy `site` CharField is refreshed with its name
+        # so mobile/HR consumers keep seeing a coherent site string.
+        site_obj = None
+        if site_in_payload:
+            defaults['site_ref'] = None
+            if site_id:
+                site_obj = Site.objects.filter(
+                    pk=site_id, admin_id=admin_id,
+                ).select_related('client').first()
+                if not site_obj:
+                    failures.append({
+                        'rowIndex':   idx,
+                        'employeeId': emp_id or '',
+                        'error':      'Site not found for this tenant.',
+                    })
+                    continue
+                defaults['site_ref'] = site_obj
+                defaults['site']     = site_obj.name
+        if client_in_payload:
+            defaults['client'] = None
+            if client_id:
+                client_obj = ProjectClient.objects.filter(
+                    pk=client_id, admin_id=admin_id,
+                ).first()
+                if not client_obj:
+                    failures.append({
+                        'rowIndex':   idx,
+                        'employeeId': emp_id or '',
+                        'error':      'Client not found for this tenant.',
+                    })
+                    continue
+                defaults['client'] = client_obj
+
+        # Defense against tampering: a machine pick must agree with the
+        # site pick. The UI enforces this (Flow 1 filter / Flow 2 confirm);
+        # a mismatching payload is rejected rather than silently repaired.
+        if defaults.get('machine') and site_id \
+                and defaults['machine'].site_id != site_id:
+            failures.append({
+                'rowIndex':   idx,
+                'employeeId': emp_id or '',
+                'error':      'Machine does not belong to the selected site.',
+            })
+            continue
 
         # Remarks: persist when supplied, and lock the row once a non-empty
         # remark is stored. Locked rows silently ignore incoming remark
@@ -261,7 +322,7 @@ def load_attendance(request):
     qs = (
         AttendanceRecord.objects
         .filter(admin_id=admin_id)
-        .select_related('employee', 'machine')
+        .select_related('employee', 'machine', 'client', 'site_ref', 'site_ref__client')
     )
     if date_from:
         qs = qs.filter(date__gte=date_from)
@@ -290,6 +351,16 @@ def load_attendance(request):
         'machineId':   r.machine_id,
         'machineName': r.machine.name if r.machine_id else '',
         'workDetails': getattr(r, 'work_details', '') or '',
+        # Client/Site FK pair (2026-07). Null for rows saved before the
+        # Client/Site column existed. Label is precomputed server-side so
+        # the client hydrates the input without a second lookup.
+        'clientId':        r.client_id,
+        'siteId':          r.site_ref_id,
+        'clientSiteLabel': (
+            f'{r.site_ref.client.name} / {r.site_ref.name}'
+            if r.site_ref_id and r.site_ref.client_id
+            else (r.site_ref.name if r.site_ref_id else '')
+        ),
     } for r in qs]
 
     return JsonResponse({'success': True, 'records': records})
@@ -360,17 +431,74 @@ def unlock_remarks(request):
 @login_required
 def machine_suggest(request):
     """
-    GET /attendance/machines/suggest/?q=<query>
+    GET /attendance/machines/suggest/?q=<query>[&site_id=<id>]
 
     Returns up to 10 tenant-scoped MachineLocation matches for the given
     substring (case-insensitive, ordered by name). When `q` is empty,
     returns the first 10 by name so the input can offer options on focus
     before the user types anything.
+
+    `site_id` (optional) narrows matches to machines assigned to that Site —
+    used by the attendance table once a row's Client/Site is chosen. Each
+    row also carries the machine's site_id + client_id so the client can
+    auto-fill Client/Site when a machine is picked first (Flow 2).
     """
     admin_id = get_admin_id(request.user)
     q = (request.GET.get('q') or '').strip()
     qs = MachineLocation.objects.filter(admin_id=admin_id)
+    try:
+        site_id = int(request.GET.get('site_id') or 0) or None
+    except (TypeError, ValueError):
+        site_id = None
+    if site_id:
+        qs = qs.filter(site_id=site_id)
     if q:
         qs = qs.filter(name__icontains=q)
-    rows = list(qs.order_by('name').values('id', 'name')[:10])
+    qs = qs.select_related('site', 'site__client').order_by('name')[:10]
+    rows = [{
+        'id':          m.pk,
+        'name':        m.name,
+        'site_id':     m.site_id,
+        'client_id':   m.site.client_id if m.site_id else None,
+        'site_label':  (
+            f'{m.site.client.name} / {m.site.name}'
+            if m.site_id and m.site.client_id else (m.site.name if m.site_id else '')
+        ),
+    } for m in qs]
     return JsonResponse(rows, safe=False)
+
+
+@login_required
+def client_site_suggest(request):
+    """
+    GET /attendance/client-sites/suggest/?q=<query>
+
+    Returns up to 10 active "Client / Site" combos from the Projects
+    registry, matched case-insensitively against the combined label.
+    Ordered by usage frequency (count of attendance rows linked to the
+    site) descending, then label — so alphabetical until usage accrues.
+    """
+    admin_id = get_admin_id(request.user)
+    q = (request.GET.get('q') or '').strip().lower()
+    sites = (
+        Site.objects
+        .filter(admin_id=admin_id, is_active=True, client__is_active=True)
+        .select_related('client')
+        .annotate(usage=Count('attendance_entries'))
+    )
+    rows = []
+    for s in sites:
+        label = f'{s.client.name} / {s.name}'
+        if q and q not in label.lower():
+            continue
+        rows.append({
+            'client_id': s.client_id,
+            'site_id':   s.pk,
+            'label':     label,
+            'usage':     s.usage,
+        })
+    rows.sort(key=lambda r: (-r['usage'], r['label'].lower()))
+    return JsonResponse(
+        [{k: r[k] for k in ('client_id', 'site_id', 'label')} for r in rows[:10]],
+        safe=False,
+    )

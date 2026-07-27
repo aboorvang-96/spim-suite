@@ -192,6 +192,9 @@ def work_log_dashboard(request):
         'tree_json':      json.dumps(tree),
         'clients_json':   json.dumps(clients_flat),
         'sites_json':     json.dumps(sites_flat),
+        # UX-only gate for the tree's Edit/Delete icon buttons. The
+        # authoritative check stays on the endpoints via @admin_required.
+        'is_admin':       bool(getattr(request.user, 'is_admin', False)),
     })
 
 
@@ -784,6 +787,183 @@ def move_machine(request, machine_id):
             'machine_id': machine.pk, 'site_id': target.pk,
             'client_id': target.client_id,
         })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@admin_required
+@require_POST
+def edit_project_client(request, client_id):
+    """AJAX: rename a ProjectClient and/or toggle is_active."""
+    try:
+        data      = json.loads(request.body or b'{}')
+        admin_id  = get_admin_id(request.user)
+        name      = (data.get('name') or '').strip()
+        is_active = bool(data.get('is_active', True))
+        if not name:
+            return JsonResponse(
+                {'success': False, 'error': 'Client name is required.'}, status=400,
+            )
+        client = get_object_or_404(ProjectClient, pk=client_id, admin_id=admin_id)
+        dup = (
+            ProjectClient.objects
+            .filter(admin_id=admin_id, name__iexact=name)
+            .exclude(pk=client.pk)
+            .first()
+        )
+        if dup:
+            return JsonResponse(
+                {'success': False,
+                 'error': f'Client "{dup.name}" already exists.'},
+                status=400,
+            )
+        client.name = name
+        client.is_active = is_active
+        client.save(update_fields=['name', 'is_active', 'updated_at'])
+        return JsonResponse({
+            'success': True, 'id': client.pk,
+            'name': client.name, 'is_active': client.is_active,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@admin_required
+@require_POST
+def delete_project_client(request, client_id):
+    """AJAX: delete a ProjectClient. Blocked while any sites exist under it."""
+    try:
+        admin_id = get_admin_id(request.user)
+        client = get_object_or_404(ProjectClient, pk=client_id, admin_id=admin_id)
+        site_count = client.sites.count()  # active AND inactive both block
+        if site_count:
+            return JsonResponse(
+                {'success': False,
+                 'error': f'Cannot delete — client has {site_count} site(s). '
+                          f'Move or delete them first.'},
+                status=400,
+            )
+        client.delete()
+        return JsonResponse({'success': True, 'id': client_id})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@admin_required
+@require_POST
+def edit_site(request, site_id):
+    """AJAX: rename a Site and/or toggle is_active."""
+    try:
+        data      = json.loads(request.body or b'{}')
+        admin_id  = get_admin_id(request.user)
+        name      = (data.get('name') or '').strip()
+        is_active = bool(data.get('is_active', True))
+        if not name:
+            return JsonResponse(
+                {'success': False, 'error': 'Site name is required.'}, status=400,
+            )
+        site = get_object_or_404(Site, pk=site_id, admin_id=admin_id)
+        # Site names are unique per tenant globally (unique_together on
+        # admin_id+name), not per client — validate accordingly.
+        dup = (
+            Site.objects
+            .filter(admin_id=admin_id, name__iexact=name)
+            .exclude(pk=site.pk)
+            .first()
+        )
+        if dup:
+            return JsonResponse(
+                {'success': False, 'error': f'Site "{dup.name}" already exists.'},
+                status=400,
+            )
+        site.name = name
+        site.is_active = is_active
+        site.save(update_fields=['name', 'is_active', 'updated_at'])
+        return JsonResponse({
+            'success': True, 'id': site.pk,
+            'name': site.name, 'is_active': site.is_active,
+            'client_id': site.client_id,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@admin_required
+@require_POST
+def delete_site(request, site_id):
+    """AJAX: delete a Site. Blocked while any machines exist under it."""
+    try:
+        admin_id = get_admin_id(request.user)
+        site = get_object_or_404(Site, pk=site_id, admin_id=admin_id)
+        machine_count = site.machines.count()
+        if machine_count:
+            return JsonResponse(
+                {'success': False,
+                 'error': f'Cannot delete — site has {machine_count} machine(s). '
+                          f'Move or delete them first.'},
+                status=400,
+            )
+        client_id = site.client_id
+        site.delete()
+        return JsonResponse({'success': True, 'id': site_id, 'client_id': client_id})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@admin_required
+@require_POST
+def edit_machine(request, machine_id):
+    """AJAX: rename a MachineLocation."""
+    try:
+        data     = json.loads(request.body or b'{}')
+        admin_id = get_admin_id(request.user)
+        name     = (data.get('name') or '').strip()
+        if not name:
+            return JsonResponse(
+                {'success': False, 'error': 'Machine name is required.'}, status=400,
+            )
+        machine = get_object_or_404(MachineLocation, pk=machine_id, admin_id=admin_id)
+        dup = (
+            MachineLocation.objects
+            .filter(admin_id=admin_id, name__iexact=name)
+            .exclude(pk=machine.pk)
+            .first()
+        )
+        if dup:
+            return JsonResponse(
+                {'success': False,
+                 'error': f'Machine "{dup.name}" already exists.'},
+                status=400,
+            )
+        machine.name = name
+        machine.save(update_fields=['name'])
+        return JsonResponse({
+            'success': True, 'id': machine.pk,
+            'name': machine.name, 'site_id': machine.site_id,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@admin_required
+@require_POST
+def delete_machine(request, machine_id):
+    """AJAX: delete a MachineLocation. Blocked while any WorkLogs reference it."""
+    try:
+        admin_id = get_admin_id(request.user)
+        machine = get_object_or_404(MachineLocation, pk=machine_id, admin_id=admin_id)
+        log_count = machine.work_logs.count()  # any date, locked or not
+        if log_count:
+            noun = 'entry' if log_count == 1 else 'entries'
+            return JsonResponse(
+                {'success': False,
+                 'error': f'Cannot delete — machine has {log_count} work log '
+                          f'{noun}. Delete those first.'},
+                status=400,
+            )
+        site_id = machine.site_id
+        machine.delete()
+        return JsonResponse({'success': True, 'id': machine_id, 'site_id': site_id})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 

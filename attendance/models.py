@@ -48,6 +48,24 @@ class AttendanceRecord(models.Model):
     )
     work_details = models.TextField(blank=True, default='')
 
+    # Explicit Client/Site link chosen by the admin in the attendance table
+    # (2026-07 Client/Site column). `site_ref` — not `site` — because the
+    # `site` CharField above is written by SPIM Lite and must keep its name.
+    # UX-only for the admin view; the WorkLog side-effect still derives its
+    # site from machine.site. JSON payload keys are clientId / siteId.
+    client = models.ForeignKey(
+        'projects.ProjectClient',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='attendance_entries',
+    )
+    site_ref = models.ForeignKey(
+        'projects.Site',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='attendance_entries',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)

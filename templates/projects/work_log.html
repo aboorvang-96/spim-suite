@@ -125,6 +125,11 @@
 .wl-site-header .wl-count{margin-left:auto;font-size:.66rem;font-weight:600;color:#475569;background:#fff;padding:.1rem .5rem;border-radius:10px;border:1px solid #cbd5e1;}
 .wl-icon-btn{background:transparent;border:1px solid transparent;color:#64748b;cursor:pointer;padding:0 .35rem;font-size:.85rem;line-height:1;border-radius:4px;}
 .wl-icon-btn:hover{background:rgba(37,99,235,.1);color:#2563eb;border-color:#bfdbfe;}
+/* Icon buttons sitting on the dark client header need a lighter idle tint */
+.wl-client-header .wl-icon-btn{color:#cbd5e1;}
+.wl-client-header .wl-icon-btn:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25);}
+/* Inline delete-block banner inside the confirm dialog */
+.entity-del-banner{display:none;margin-top:.75rem;padding:.55rem .7rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:.75rem;color:#b91c1c;font-weight:600;}
 .btn-row-move{padding:.3rem .55rem;font-size:.72rem;font-weight:600;background:#fff;color:#0369a1;border:1px solid #bae6fd;border-radius:5px;cursor:pointer;margin-left:3px;}
 .btn-row-move:hover{background:#e0f2fe;}
 .wl-highlight{animation:wlHighlight 1.6s ease-out;}
@@ -485,6 +490,55 @@
     </div>
 </div>
 
+<!-- ══ MODAL: Edit entity (Client / Site / Machine rename + is_active) ══ -->
+<div id="entity-edit-modal" class="modal">
+    <div class="modal-content" style="max-width:400px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800" id="entity-edit-title">Edit</h3>
+            <button onclick="closeEntityEditModal()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="stat-label">Name <span style="color:#e11d48">*</span></label>
+                <input type="text" id="entity-edit-name" class="filter-input">
+            </div>
+            <div class="form-group" id="entity-edit-active-wrap" style="margin-top:.75rem;">
+                <label style="display:inline-flex;align-items:center;gap:.4rem;font-size:.78rem;font-weight:600;color:#475569;cursor:pointer;">
+                    <input type="checkbox" id="entity-edit-active" style="accent-color:#2563eb;">
+                    Active
+                </label>
+                <p style="font-size:.68rem;color:#94a3b8;margin:.25rem 0 0;">
+                    Inactive entries are hidden from the tree and autocompletes but keep their data.
+                </p>
+            </div>
+            <div class="entity-del-banner" id="entity-edit-error"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeEntityEditModal()">Cancel</button>
+            <button class="btn btn-primary" id="entity-edit-save-btn" onclick="saveEntityEdit()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODAL: Delete entity confirmation (Client / Site / Machine) ══ -->
+<div id="entity-delete-modal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <div class="modal-header">
+            <h3 class="text-base font-bold text-slate-800">Confirm Delete</h3>
+            <button onclick="cancelEntityDelete()" class="bg-none border-none text-2xl cursor-pointer text-slate-400 leading-none">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:.82rem;color:#1e293b;margin:0;" id="entity-delete-msg"></p>
+            <div class="entity-del-banner" id="entity-delete-banner"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="cancelEntityDelete()">Cancel</button>
+            <button class="btn btn-primary" id="entity-delete-btn" onclick="confirmEntityDelete()"
+                style="background:#dc2626;border-color:#dc2626;">Delete</button>
+        </div>
+    </div>
+</div>
+
 <div id="toast" class="toast">Saved</div>
 
 {% endblock %}
@@ -498,6 +552,8 @@ let statusesList  = {{ statuses_json|safe }};   // legacy WorkStatus list — no
 let treeData      = {{ tree_json|safe }};        // [{id, name, sites:[{id, name, machines:[...]}], site_count}]
 let clientsList   = {{ clients_json|safe }};     // flat: [{id, name}]
 let sitesList     = {{ sites_json|safe }};       // flat: [{id, name, client_id}]
+// UX-only gate for tree Edit/Delete icons — server re-checks via @admin_required.
+const IS_ADMIN    = {{ is_admin|yesno:'true,false' }};
 
 // ── State ──────────────────────────────────────────────────────────────────
 let logMap       = {};   // { location_id: entry } for the current date
@@ -740,6 +796,11 @@ function renderMachineRows() {
                     <span>${escHtml(site.name)}</span>
                     <button class="wl-icon-btn" title="Move site to a different client"
                         onclick="event.stopPropagation(); openMoveSiteModal(${site.id}, ${client.id}, ${JSON.stringify(site.name)});">✎</button>
+                    ${IS_ADMIN ? `
+                    <button class="wl-icon-btn" title="Edit site"
+                        onclick="event.stopPropagation(); openEntityEditModal('site', ${site.id});">✏️</button>
+                    <button class="wl-icon-btn" title="Delete site"
+                        onclick="event.stopPropagation(); openEntityDeleteModal('site', ${site.id});">🗑️</button>` : ''}
                     <span class="wl-count">${site.machine_count || 0} machine(s)</span>
                 </div>
                 <div class="wl-site-body${sOpen ? ' open' : ''}" id="site-body-${site.id}">
@@ -752,6 +813,11 @@ function renderMachineRows() {
             <div class="wl-client-header${cOpen ? ' expanded' : ''}" onclick="toggleClient(${client.id})">
                 <span class="wl-caret">▶</span>
                 <span>${escHtml(client.name)}</span>
+                ${IS_ADMIN ? `
+                <button class="wl-icon-btn" title="Edit client"
+                    onclick="event.stopPropagation(); openEntityEditModal('client', ${client.id});">✏️</button>
+                <button class="wl-icon-btn" title="Delete client"
+                    onclick="event.stopPropagation(); openEntityDeleteModal('client', ${client.id});">🗑️</button>` : ''}
                 <span class="wl-count">${client.site_count || 0} site(s)</span>
             </div>
             <div class="wl-client-body${cOpen ? ' open' : ''}" id="client-body-${client.id}">
@@ -800,7 +866,10 @@ function renderMachineRow(m, dateVal, siteId) {
     const dis        = isLocked ? 'disabled' : '';
 
     const moveBtn = `<button class="btn-row-move" title="Move machine to a different site"
-        onclick="openMoveMachineModal(${m.id}, ${siteId}, ${JSON.stringify(m.name)})">↔</button>`;
+        onclick="openMoveMachineModal(${m.id}, ${siteId}, ${JSON.stringify(m.name)})">↔</button>`
+        + (IS_ADMIN ? `<button class="wl-icon-btn" title="Edit machine"
+        onclick="openEntityEditModal('machine', ${m.id})">✏️</button><button class="wl-icon-btn" title="Delete machine"
+        onclick="openEntityDeleteModal('machine', ${m.id})">🗑️</button>` : '');
 
     const actionsCells = entry.id
         ? (isLocked
@@ -1080,6 +1149,247 @@ function _moveMachineInTree(machineId, oldSiteId, newSiteId, newClientId) {
     dstSite.machines.push(machNode);
     dstSite.machines.sort((a, b) => a.name.localeCompare(b.name));
     dstSite.machine_count = dstSite.machines.length;
+}
+
+// ── Entity Edit / Delete (Client / Site / Machine) ────────────────────────
+// _entityCtx: { kind, id, name, clientId, siteId } resolved from treeData.
+let _entityCtx = null;
+let _entityDeleteBlocked = false;
+
+function _resolveEntity(kind, id) {
+    if (kind === 'client') {
+        const c = treeData.find(x => x.id === id);
+        return c ? { kind, id, name: c.name, clientId: c.id, siteId: null } : null;
+    }
+    for (const c of treeData) {
+        for (const s of (c.sites || [])) {
+            if (kind === 'site' && s.id === id) {
+                return { kind, id, name: s.name, clientId: c.id, siteId: s.id };
+            }
+            if (kind === 'machine') {
+                const m = (s.machines || []).find(x => x.id === id);
+                if (m) return { kind, id, name: m.name, clientId: c.id, siteId: s.id };
+            }
+        }
+    }
+    return null;
+}
+
+const _ENTITY_URLS = {
+    client:  { edit: id => `/projects/clients/${id}/edit/`,  del: id => `/projects/clients/${id}/delete/`  },
+    site:    { edit: id => `/projects/sites/${id}/edit/`,    del: id => `/projects/sites/${id}/delete/`    },
+    machine: { edit: id => `/projects/machines/${id}/edit/`, del: id => `/projects/machines/${id}/delete/` },
+};
+const _ENTITY_LABELS = { client: 'Client', site: 'Site', machine: 'Machine' };
+
+function openEntityEditModal(kind, id) {
+    const ctx = _resolveEntity(kind, id);
+    if (!ctx) return;
+    _entityCtx = ctx;
+    document.getElementById('entity-edit-title').textContent = `Edit ${_ENTITY_LABELS[kind]}`;
+    document.getElementById('entity-edit-name').value = ctx.name;
+    // is_active toggle applies to Client and Site only. Nodes in the tree
+    // are active by definition (the builder filters inactive out).
+    document.getElementById('entity-edit-active-wrap').style.display =
+        (kind === 'machine') ? 'none' : 'block';
+    document.getElementById('entity-edit-active').checked = true;
+    const err = document.getElementById('entity-edit-error');
+    err.style.display = 'none'; err.textContent = '';
+    document.getElementById('entity-edit-modal').classList.add('active');
+    setTimeout(() => document.getElementById('entity-edit-name').focus(), 50);
+}
+
+function closeEntityEditModal() {
+    document.getElementById('entity-edit-modal').classList.remove('active');
+    _entityCtx = null;
+}
+
+async function saveEntityEdit() {
+    if (!_entityCtx) return;
+    const { kind, id } = _entityCtx;
+    const name = (document.getElementById('entity-edit-name').value || '').trim();
+    const errEl = document.getElementById('entity-edit-error');
+    if (!name) {
+        errEl.textContent = `${_ENTITY_LABELS[kind]} name is required.`;
+        errEl.style.display = 'block';
+        return;
+    }
+    const payload = { name };
+    if (kind !== 'machine') {
+        payload.is_active = document.getElementById('entity-edit-active').checked;
+    }
+    try {
+        const res = await fetch(_ENTITY_URLS[kind].edit(id), {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify(payload),
+        });
+        const result = await res.json();
+        if (!result.success) {
+            errEl.textContent = result.error || 'Save failed.';
+            errEl.style.display = 'block';
+            return;
+        }
+        _applyEntityEditInTree(_entityCtx, result);
+        renderMachineRows();
+        refreshUnassignedBanner();
+        showToast(`${_ENTITY_LABELS[kind]} updated.`);
+        closeEntityEditModal();
+    } catch (e) {
+        errEl.textContent = 'Network error.';
+        errEl.style.display = 'block';
+    }
+}
+
+function _applyEntityEditInTree(ctx, result) {
+    const { kind, id, clientId, siteId } = ctx;
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    if (kind === 'client') {
+        const c = treeData.find(x => x.id === id);
+        if (result.is_active === false) {
+            // Deactivated → matches server tree builder (active clients only).
+            const i = treeData.indexOf(c);
+            if (i >= 0) treeData.splice(i, 1);
+            clientsList = clientsList.filter(x => x.id !== id);
+            expandedClients.delete(id);
+        } else if (c) {
+            c.name = result.name;
+            treeData.sort(byName);
+            const flat = clientsList.find(x => x.id === id);
+            if (flat) flat.name = result.name;
+            clientsList.sort(byName);
+        }
+    } else if (kind === 'site') {
+        const c = treeData.find(x => x.id === clientId);
+        const s = c && c.sites.find(x => x.id === id);
+        if (result.is_active === false) {
+            if (c && s) {
+                c.sites = c.sites.filter(x => x.id !== id);
+                c.site_count = c.sites.length;
+            }
+            sitesList = sitesList.filter(x => x.id !== id);
+            expandedSites.delete(id);
+        } else if (s) {
+            s.name = result.name;
+            c.sites.sort(byName);
+            const flat = sitesList.find(x => x.id === id);
+            if (flat) flat.name = result.name;
+            sitesList.sort(byName);
+        }
+    } else {
+        for (const c of treeData) {
+            for (const s of (c.sites || [])) {
+                const m = (s.machines || []).find(x => x.id === id);
+                if (m) { m.name = result.name; s.machines.sort(byName); }
+            }
+        }
+        const flat = machinesList.find(x => x.id === id);
+        if (flat) flat.name = result.name;
+        machinesList.sort(byName);
+    }
+}
+
+function openEntityDeleteModal(kind, id) {
+    const ctx = _resolveEntity(kind, id);
+    if (!ctx) return;
+    _entityCtx = ctx;
+    _entityDeleteBlocked = false;
+    document.getElementById('entity-delete-msg').textContent =
+        `Delete ${ctx.name}? This cannot be undone.`;
+    const banner = document.getElementById('entity-delete-banner');
+    banner.style.display = 'none'; banner.textContent = '';
+    document.getElementById('entity-delete-modal').classList.add('active');
+}
+
+async function confirmEntityDelete() {
+    if (!_entityCtx) return;
+    const { kind, id } = _entityCtx;
+    try {
+        const res = await fetch(_ENTITY_URLS[kind].del(id), {
+            method:  'POST',
+            headers: { 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const result = await res.json();
+        if (!result.success) {
+            // Blocked (has children) or failed — show inline banner, auto-
+            // expand the blocked entity so its children are visible, and
+            // keep the dialog open so the admin can Cancel out.
+            const banner = document.getElementById('entity-delete-banner');
+            banner.textContent = result.error || 'Delete failed.';
+            banner.style.display = 'block';
+            _entityDeleteBlocked = true;
+            _expandEntity(_entityCtx);
+            renderMachineRows();
+            return;
+        }
+        _applyEntityDeleteInTree(_entityCtx);
+        renderMachineRows();
+        refreshUnassignedBanner();
+        showToast(`${_ENTITY_LABELS[kind]} deleted.`);
+        document.getElementById('entity-delete-modal').classList.remove('active');
+        _entityCtx = null;
+    } catch (e) {
+        const banner = document.getElementById('entity-delete-banner');
+        banner.textContent = 'Network error.';
+        banner.style.display = 'block';
+    }
+}
+
+function cancelEntityDelete() {
+    document.getElementById('entity-delete-modal').classList.remove('active');
+    // After a blocked attempt, guide the admin to the children they need
+    // to clean up: smooth-scroll + brief highlight on the expanded entity.
+    if (_entityDeleteBlocked && _entityCtx) _scrollToEntity(_entityCtx);
+    _entityCtx = null;
+    _entityDeleteBlocked = false;
+}
+
+function _expandEntity(ctx) {
+    // Client → expand it; Site → its client + itself; Machine → client + site.
+    if (ctx.clientId) expandedClients.add(ctx.clientId);
+    if (ctx.kind !== 'client' && ctx.siteId) expandedSites.add(ctx.siteId);
+}
+
+function _scrollToEntity(ctx) {
+    let el = null;
+    if (ctx.kind === 'client') {
+        el = document.querySelector(`.wl-client[data-client-id="${ctx.id}"] .wl-client-header`);
+    } else if (ctx.kind === 'site') {
+        el = document.querySelector(`.wl-site[data-site-id="${ctx.id}"] .wl-site-header`);
+    } else {
+        el = document.getElementById(`row-m${ctx.id}`);
+    }
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('wl-highlight');
+    setTimeout(() => el.classList.remove('wl-highlight'), 1600);
+}
+
+function _applyEntityDeleteInTree(ctx) {
+    const { kind, id, clientId } = ctx;
+    if (kind === 'client') {
+        treeData = treeData.filter(x => x.id !== id);
+        clientsList = clientsList.filter(x => x.id !== id);
+        expandedClients.delete(id);
+    } else if (kind === 'site') {
+        const c = treeData.find(x => x.id === clientId);
+        if (c) {
+            c.sites = c.sites.filter(x => x.id !== id);
+            c.site_count = c.sites.length;
+        }
+        sitesList = sitesList.filter(x => x.id !== id);
+        expandedSites.delete(id);
+    } else {
+        for (const c of treeData) {
+            for (const s of (c.sites || [])) {
+                const before = (s.machines || []).length;
+                s.machines = (s.machines || []).filter(x => x.id !== id);
+                if (s.machines.length !== before) s.machine_count = s.machines.length;
+            }
+        }
+        machinesList = machinesList.filter(x => x.id !== id);
+        delete logMap[id];
+    }
 }
 
 // ── Work Details autocomplete ──────────────────────────────────────────────

@@ -10,4 +10,5 @@ urlpatterns = [
     path('delete/', views.delete_attendance, name='delete_attendance'),
     path('remarks/unlock/', views.unlock_remarks, name='unlock_remarks'),
     path('machines/suggest/', views.machine_suggest, name='machine_suggest'),
+    path('client-sites/suggest/', views.client_site_suggest, name='client_site_suggest'),
 ]

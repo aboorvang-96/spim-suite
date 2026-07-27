@@ -97,25 +97,29 @@
 }
 
 /* ── Attendance table ── */
+/* Compaction pass (2026-07): tighter cell padding + capped textarea width so
+   the full row (Emp / Client/Site / Machine / Work Details / Date / Status /
+   Remarks) fits within a 1400px viewport without horizontal scroll. Font
+   size unchanged so the table still reads at a glance. */
 .att-table-wrap { border: 1px solid #e2e8f0; border-radius: 6px; overflow: auto; max-height: 540px; }
-.att-table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 0.8rem; }
+.att-table { width: 100%; border-collapse: collapse; min-width: 0; font-size: 0.8rem; }
 .att-table thead { background: #f8fafc; position: sticky; top: 0; z-index: 5; }
 .att-table th {
-    padding: 0.5rem 0.6rem; text-align: left;
+    padding: 0.4rem 0.45rem; text-align: left;
     font-size: 0.7rem; text-transform: uppercase;
     letter-spacing: 0.03em; color: #64748b;
     border-bottom: 1px solid #e2e8f0; white-space: nowrap;
 }
 .att-table td {
-    padding: 0.45rem 0.6rem; color: #475569;
+    padding: 0.375rem 0.45rem; color: #475569;
     border-bottom: 1px solid #f1f5f9; vertical-align: middle;
 }
 .att-table tbody tr:hover td { background: #f4f7ff; }
 .att-table .form-select, .att-table .form-input, .att-table textarea {
-    font-size: 0.75rem; padding: 0.3rem 0.4rem;
-    width: 100%; min-width: 88px;
+    font-size: 0.75rem; padding: 0.28rem 0.35rem;
+    width: 100%; min-width: 0;
 }
-.att-table textarea { height: 30px; min-height: 30px; resize: vertical; }
+.att-table textarea { height: 30px; min-height: 30px; resize: vertical; max-width: 100%; }
 
 /* ── Emp ID / Name cell ── */
 .emp-chip {
@@ -440,13 +444,13 @@
                                 <th style="width:36px; text-align:center;">
                                     <input type="checkbox" id="headerCheck" onchange="toggleSelectAll(this)" aria-label="Select all">
                                 </th>
-                                <th style="min-width:180px;">Emp ID / Name</th>
-                                <th style="min-width:170px;">Site</th>
-                                <th style="min-width:150px;">Machine</th>
-                                <th style="min-width:180px;">Work Details</th>
-                                <th style="width:135px;">Date</th>
-                                <th style="width:128px;">Status</th>
-                                <th>Remarks</th>
+                                <th style="width:180px;">Emp ID / Name</th>
+                                <th style="width:180px;">Client / Site</th>
+                                <th style="width:140px;">Machine</th>
+                                <th style="width:160px;">Work Details</th>
+                                <th style="width:130px;">Date</th>
+                                <th style="width:110px;">Status</th>
+                                <th style="width:140px;">Remarks</th>
                             </tr>
                         </thead>
                         <tbody id="bulkAttBody"></tbody>
@@ -660,6 +664,30 @@
     </div>
 </div>
 
+<!-- ═══════════ Add Client / Site Modal (admin-only, opened from Client/Site autocomplete) ═══════════ -->
+<div id="addClientSiteModal" class="modal-overlay fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[1000] items-center justify-center">
+    <div class="att-card" style="width:100%; max-width:440px; margin:1rem; z-index:1001;">
+        <h3 class="att-card-title">Add Client / Site</h3>
+        <p style="font-size:.72rem;color:#64748b;margin:0 0 .75rem;">
+            Registers a Client and Site in the Projects module. Existing entries (case-insensitive)
+            are reused instead of duplicated.
+        </p>
+        <div class="form-group mb-3">
+            <label class="text-xs font-semibold text-slate-600">Client Name <span style="color:#e11d48">*</span></label>
+            <input type="text" id="csClient" class="form-input w-full" placeholder="e.g. Gamesa">
+        </div>
+        <div class="form-group mb-3">
+            <label class="text-xs font-semibold text-slate-600">Site Name <span style="color:#e11d48">*</span></label>
+            <input type="text" id="csSite" class="form-input w-full" placeholder="e.g. Radhapuram">
+        </div>
+        <div id="csError" class="alert-badge" style="display:none;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;"></div>
+        <div class="flex justify-end gap-2">
+            <button class="btn btn-secondary btn-sm" onclick="closeAddClientSiteModal()">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="csCreateBtn" onclick="createClientSiteInline()">Create</button>
+        </div>
+    </div>
+</div>
+
 <!-- ═══════════ Date Drilldown Modal ═══════════ -->
 <div id="ddOverlay" class="dd-overlay" onclick="closeDateDetail()">
     <div class="dd-modal" onclick="event.stopPropagation()">
@@ -806,6 +834,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     machineId:    r.machineId   || null,
                     machineName:  r.machineName || '',
                     workDetails:  r.workDetails || '',
+                    clientId:        r.clientId        || null,
+                    siteId:          r.siteId          || null,
+                    clientSiteLabel: r.clientSiteLabel || '',
                     date: r.date, status: r.status,
                     remarks: r.remarks || '',
                     remarksLocked: !!r.remarksLocked,
@@ -1076,9 +1107,17 @@ function loadBulkAttendanceTable() {
                 </span>
             </td>
             <td>
-                <select class="row-site form-select" onchange="handleSiteChange(this)">
-                    ${buildSiteOnlyOptions(emp.site)}
-                </select>
+                <div class="ac-wrap" data-role="clientsite">
+                    <input type="text" class="row-clientsite form-input ac-input"
+                        placeholder="Client / Site…" autocomplete="off"
+                        oninput="onClientSiteInput(this)"
+                        onfocus="onClientSiteInput(this)"
+                        onkeydown="onAcKey(event, this)"
+                        onblur="onClientSiteBlur(this)">
+                    <input type="hidden" class="row-client-id" value="">
+                    <input type="hidden" class="row-site-id" value="">
+                    <div class="ac-panel" style="display:none;"></div>
+                </div>
             </td>
             <td>
                 <div class="ac-wrap" data-role="machine">
@@ -1248,7 +1287,16 @@ function onAcKey(e, input) {
     items.forEach((el, i) => el.classList.toggle('active', i === _acActiveIndex));
 }
 
-/* ── Machine autocomplete ── */
+/* ── Machine autocomplete ──
+   Bidirectional linkage with the row's Client/Site (2026-07):
+     • When Client/Site is set (row-site-id), suggestions are filtered to
+       that site and "+ Add" creates the machine under that site inline —
+       no separate modal, since the site is already known.
+     • When Client/Site is empty, suggestions are unfiltered. Picking a
+       machine auto-fills Client/Site from the machine's assigned site
+       (Flow 2). Picking a machine that doesn't match an already-set
+       Client/Site triggers a small inline confirmation.
+*/
 function onMachineInput(input) {
     // Manual typing invalidates the previously chosen machine id until a
     // suggestion is picked again — prevents a stale id riding along with
@@ -1259,35 +1307,338 @@ function onMachineInput(input) {
 
     if (_acDebounce.has(input)) clearTimeout(_acDebounce.get(input));
     _acDebounce.set(input, setTimeout(async () => {
+        const q  = input.value.trim();
+        const tr = input.closest('tr');
+        const rowSiteId = parseInt(tr?.querySelector('.row-site-id')?.value) || null;
+        const rowSiteLabel = (tr?.querySelector('.row-clientsite')?.value || '').trim();
+        let items = [];
+        try {
+            let url = '/attendance/machines/suggest/?q=' + encodeURIComponent(q);
+            if (rowSiteId) url += '&site_id=' + rowSiteId;
+            const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            items = await res.json();
+        } catch (e) { items = []; }
+
+        let html = items.map(it => {
+            // Stash site_id/client_id on the row so Flow 2 auto-fill has
+            // them without a second lookup.
+            const meta = `${it.id},'${escAttr(it.name)}',${it.site_id || 'null'},${it.client_id || 'null'},'${escAttr(it.site_label || '')}'`;
+            return `<div class="ac-item" onmousedown="pickMachine(this, ${meta})">${escHtml(it.name)}${it.site_label ? ` <span style="color:#94a3b8;font-size:.68rem;">— ${escHtml(it.site_label)}</span>` : ''}</div>`;
+        }).join('');
+
+        const exact = items.some(it => it.name.toLowerCase() === q.toLowerCase());
+        if (IS_ADMIN && q && !exact) {
+            if (rowSiteId) {
+                // Site is already chosen → inline create under it, no modal.
+                const label = rowSiteLabel ? ` under ${escHtml(rowSiteLabel)}` : '';
+                html += `<div class="ac-item ac-add" onmousedown="createMachineForRow(this, '${escAttr(q)}', ${rowSiteId})">+ Add '${escHtml(q)}' as new machine${label}</div>`;
+            } else {
+                html += `<div class="ac-item ac-add" onmousedown="openAddMachineInline(this, '${escAttr(q)}')">+ Add '${escHtml(q)}' as new machine</div>`;
+            }
+        }
+        if (!html) html = `<div class="ac-empty">No machines found${rowSiteId ? ' for this site' : ''}.</div>`;
+        _acShowPanel(input, html);
+    }, 200));
+}
+
+function pickMachine(itemEl, id, name, siteId, clientId, siteLabel) {
+    const wrap   = itemEl.closest('.ac-wrap');
+    const input  = wrap.querySelector('.ac-input');
+    const hidden = wrap.querySelector('.row-machine-id');
+    const tr     = input.closest('tr');
+    _acHidePanel(input);
+
+    const rowClientHidden = tr?.querySelector('.row-client-id');
+    const rowSiteHidden   = tr?.querySelector('.row-site-id');
+    const rowCsInput      = tr?.querySelector('.row-clientsite');
+    const curSiteId       = parseInt(rowSiteHidden?.value) || null;
+
+    const applyPick = () => {
+        input.value = name;
+        if (hidden) hidden.value = String(id);
+        refreshMachineHint(tr);
+    };
+    const fillClientSite = () => {
+        if (rowCsInput)      rowCsInput.value      = siteLabel || '';
+        if (rowClientHidden) rowClientHidden.value = clientId ? String(clientId) : '';
+        if (rowSiteHidden)   rowSiteHidden.value   = siteId   ? String(siteId)   : '';
+    };
+
+    if (!curSiteId) {
+        // Flow 2: Client/Site empty → auto-fill from the machine's site.
+        applyPick();
+        if (siteId) fillClientSite();
+        return;
+    }
+    if (curSiteId === siteId) {
+        // Same site — no conflict.
+        applyPick();
+        return;
+    }
+    // Mismatch: keep the machine input's previous state until admin confirms.
+    const prevName = input.value;
+    const prevId   = hidden ? hidden.value : '';
+    applyPick();
+    _showMachineSiteConflict(tr, {
+        siteLabel: siteLabel || 'this machine\'s site',
+        confirm:   () => { fillClientSite(); _clearMachineSiteConflict(tr); },
+        cancel:    () => {
+            input.value = prevName || '';
+            if (hidden) hidden.value = prevId || '';
+            refreshMachineHint(tr);
+            _clearMachineSiteConflict(tr);
+        },
+    });
+}
+
+function _showMachineSiteConflict(tr, opts) {
+    if (!tr) return;
+    _clearMachineSiteConflict(tr);
+    const wrap = tr.querySelector('.ac-wrap[data-role="machine"]');
+    if (!wrap) return;
+    const banner = document.createElement('div');
+    banner.className = 'machine-conflict-banner';
+    banner.style.cssText = 'margin-top:4px;padding:.4rem .5rem;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;font-size:.68rem;color:#92400e;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;';
+    banner.innerHTML =
+        `<span>Machine belongs to <b>${escHtml(opts.siteLabel)}</b>. Update Client/Site?</span>
+         <button type="button" style="padding:.15rem .5rem;font-size:.68rem;background:#2563eb;color:#fff;border:none;border-radius:3px;cursor:pointer;">Yes</button>
+         <button type="button" style="padding:.15rem .5rem;font-size:.68rem;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:3px;cursor:pointer;">No</button>`;
+    const [yesBtn, noBtn] = banner.querySelectorAll('button');
+    yesBtn.onclick = opts.confirm;
+    noBtn.onclick  = opts.cancel;
+    wrap.appendChild(banner);
+}
+function _clearMachineSiteConflict(tr) {
+    if (!tr) return;
+    tr.querySelectorAll('.machine-conflict-banner').forEach(b => b.remove());
+}
+
+async function createMachineForRow(itemEl, name, siteId) {
+    const wrap  = itemEl.closest('.ac-wrap');
+    const input = wrap.querySelector('.ac-input');
+    _acHidePanel(input);
+    try {
+        const res = await fetch('/projects/machines/add/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ name, site_id: siteId }),
+        });
+        const result = await res.json();
+        // add_machine_location returns the existing id when a case-different
+        // name already exists — treat that as success and reuse the id.
+        const id = result.success ? result.id : (result.id || null);
+        if (id) {
+            input.value  = result.name || name;
+            const hidden = wrap.querySelector('.row-machine-id');
+            if (hidden) hidden.value = String(id);
+            refreshMachineHint(input.closest('tr'));
+            if (result.success) showAlert('attAlert', 'Machine "' + (result.name || name) + '" created.', 'success');
+            return;
+        }
+        showAlert('attAlert', result.error || 'Failed to create machine.', 'error');
+    } catch (e) {
+        showAlert('attAlert', 'Network error.', 'error');
+    }
+}
+
+/* ── Client / Site autocomplete (Mod 2, 2026-07) ────────────────────────── */
+function onClientSiteInput(input) {
+    // Typing invalidates the previously picked ids until a suggestion is
+    // committed — matches the Machine autocomplete convention.
+    const wrap = input.closest('.ac-wrap');
+    if (wrap) {
+        const cH = wrap.querySelector('.row-client-id');
+        const sH = wrap.querySelector('.row-site-id');
+        if (cH) cH.value = '';
+        if (sH) sH.value = '';
+    }
+    if (_acDebounce.has(input)) clearTimeout(_acDebounce.get(input));
+    _acDebounce.set(input, setTimeout(async () => {
         const q = input.value.trim();
         let items = [];
         try {
-            const res = await fetch('/attendance/machines/suggest/?q=' + encodeURIComponent(q),
+            const res = await fetch('/attendance/client-sites/suggest/?q=' + encodeURIComponent(q),
                 { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
             items = await res.json();
         } catch (e) { items = []; }
 
         let html = items.map(it =>
-            `<div class="ac-item" onmousedown="pickMachine(this, ${it.id}, '${escAttr(it.name)}')">${escHtml(it.name)}</div>`
+            `<div class="ac-item" onmousedown="pickClientSite(this, ${it.client_id}, ${it.site_id}, '${escAttr(it.label)}')">${escHtml(it.label)}</div>`
         ).join('');
 
-        const exact = items.some(it => it.name.toLowerCase() === q.toLowerCase());
+        const exact = items.some(it => it.label.toLowerCase() === q.toLowerCase());
         if (IS_ADMIN && q && !exact) {
-            html += `<div class="ac-item ac-add" onmousedown="openAddMachineInline(this, '${escAttr(q)}')">+ Add '${escHtml(q)}' as new machine</div>`;
+            html += `<div class="ac-item ac-add" onmousedown="openAddClientSiteInline(this, '${escAttr(q)}')">+ Add "${escHtml(q)}" as new Client/Site</div>`;
         }
-        if (!html) html = `<div class="ac-empty">No machines found.</div>`;
+        if (!html) html = `<div class="ac-empty">No matches.</div>`;
         _acShowPanel(input, html);
     }, 200));
 }
 
-function pickMachine(itemEl, id, name) {
+function pickClientSite(itemEl, clientId, siteId, label) {
     const wrap  = itemEl.closest('.ac-wrap');
     const input = wrap.querySelector('.ac-input');
-    const hidden = wrap.querySelector('.row-machine-id');
-    input.value = name;
-    if (hidden) hidden.value = String(id);
+    const cH    = wrap.querySelector('.row-client-id');
+    const sH    = wrap.querySelector('.row-site-id');
+    input.value = label;
+    if (cH) cH.value = String(clientId);
+    if (sH) sH.value = String(siteId);
     _acHidePanel(input);
-    refreshMachineHint(input.closest('tr'));
+
+    // If a machine is already picked and it doesn't match the new site,
+    // clear it — user should reselect from the site's machine list. A
+    // small inline hint tells them why.
+    const tr        = input.closest('tr');
+    const mInput    = tr?.querySelector('.row-machine');
+    const mHidden   = tr?.querySelector('.row-machine-id');
+    const machineId = parseInt(mHidden?.value) || null;
+    if (machineId) {
+        // Ask the server whether this machine belongs to the newly-picked
+        // site — using the same suggest endpoint with site_id filter and
+        // an exact-name query keeps this to one round trip.
+        fetch(`/attendance/machines/suggest/?q=${encodeURIComponent(mInput.value.trim())}&site_id=${siteId}`,
+            { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(rows => {
+                const stillValid = (rows || []).some(m => m.id === machineId);
+                if (!stillValid) {
+                    if (mInput)  mInput.value  = '';
+                    if (mHidden) mHidden.value = '';
+                    _clearMachineSiteConflict(tr);
+                    _showMachineClearedHint(tr);
+                    refreshMachineHint(tr);
+                }
+            }).catch(() => {});
+    } else {
+        _clearMachineSiteConflict(tr);
+    }
+}
+
+function onClientSiteBlur(input) {
+    // Free text without a pick would be a lie — the hidden ids are empty.
+    // Snap back to the committed label (rebuilt from ids), or clear.
+    setTimeout(() => {
+        _acHidePanel(input);
+        const wrap = input.closest('.ac-wrap');
+        const cH   = wrap?.querySelector('.row-client-id');
+        const sH   = wrap?.querySelector('.row-site-id');
+        if (!(parseInt(cH?.value)) || !(parseInt(sH?.value))) {
+            // No id → clear the input so the display doesn't imply a link.
+            if (input.value.trim()) input.value = '';
+        }
+    }, 180);
+}
+
+function _showMachineClearedHint(tr) {
+    if (!tr) return;
+    const wrap = tr.querySelector('.ac-wrap[data-role="machine"]');
+    if (!wrap) return;
+    // Reuse the same conflict banner slot — one hint at a time is enough.
+    _clearMachineSiteConflict(tr);
+    const hint = document.createElement('div');
+    hint.className = 'machine-conflict-banner';
+    hint.style.cssText = 'margin-top:4px;padding:.35rem .5rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;font-size:.68rem;color:#1e40af;';
+    hint.textContent = 'Machine cleared — pick one from the new site.';
+    wrap.appendChild(hint);
+    setTimeout(() => hint.remove(), 3200);
+}
+
+/* ── Add Client/Site inline (admin-only) ─────────────────────────────────── */
+let _addCsTargetWrap = null;
+
+function openAddClientSiteInline(itemEl, typedText) {
+    _addCsTargetWrap = itemEl.closest('.ac-wrap');
+    const input = _addCsTargetWrap.querySelector('.ac-input');
+    _acHidePanel(input);
+    // If the user typed "Client / Site", pre-split. Otherwise, seed Site
+    // with the typed text and leave Client blank so the admin fills it.
+    let client = '', site = '';
+    if (typedText.includes('/')) {
+        const parts = typedText.split('/');
+        client = (parts[0] || '').trim();
+        site   = (parts.slice(1).join('/') || '').trim();
+    } else {
+        site = typedText.trim();
+    }
+    document.getElementById('csClient').value = client;
+    document.getElementById('csSite').value   = site;
+    const err = document.getElementById('csError');
+    err.style.display = 'none'; err.textContent = '';
+    document.getElementById('addClientSiteModal').classList.add('active');
+    setTimeout(() => document.getElementById(client ? 'csSite' : 'csClient').focus(), 100);
+}
+
+function closeAddClientSiteModal() {
+    document.getElementById('addClientSiteModal').classList.remove('active');
+    _addCsTargetWrap = null;
+}
+
+async function createClientSiteInline() {
+    const clientName = document.getElementById('csClient').value.trim();
+    const siteName   = document.getElementById('csSite').value.trim();
+    const errEl      = document.getElementById('csError');
+    const showErr    = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+    if (!clientName) { showErr('Client name is required.'); return; }
+    if (!siteName)   { showErr('Site name is required.');   return; }
+    const btn = document.getElementById('csCreateBtn');
+    btn.disabled = true;
+    try {
+        // Client: create if missing, reuse if the server reports "already exists".
+        let clientId = null;
+        const cRes = await fetch('/projects/clients/add/', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify({ name: clientName, is_active: true }),
+        });
+        const cResult = await cRes.json();
+        if (cResult.success || cResult.id) {
+            clientId = cResult.id;
+        } else {
+            showErr(cResult.error || 'Failed to create client.');
+            return;
+        }
+        // Site under that client — same forgiving pattern.
+        let siteId = null;
+        const sRes = await fetch('/projects/sites/add/', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
+            body:    JSON.stringify({ name: siteName, client_id: clientId }),
+        });
+        const sResult = await sRes.json();
+        if (sResult.success || sResult.id) {
+            siteId = sResult.id;
+        } else {
+            showErr(sResult.error || 'Failed to create site.');
+            return;
+        }
+        if (_addCsTargetWrap) {
+            const input = _addCsTargetWrap.querySelector('.ac-input');
+            const cH    = _addCsTargetWrap.querySelector('.row-client-id');
+            const sH    = _addCsTargetWrap.querySelector('.row-site-id');
+            const label = `${clientName} / ${siteName}`;
+            input.value = label;
+            if (cH) cH.value = String(clientId);
+            if (sH) sH.value = String(siteId);
+            // Also refresh the embedded Projects registry so the Add-Machine
+            // modal's site dropdown picks up the new pair immediately.
+            if (!PROJECT_CLIENTS.some(c => c.id === clientId)) {
+                PROJECT_CLIENTS.push({ id: clientId, name: clientName });
+            }
+            if (!PROJECT_SITES.some(s => s.id === siteId)) {
+                PROJECT_SITES.push({ id: siteId, name: siteName, client_id: clientId });
+            }
+        }
+        closeAddClientSiteModal();
+        showAlert('attAlert', `Client/Site "${clientName} / ${siteName}" ready.`, 'success');
+    } catch (e) {
+        showErr('Network error.');
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 /* ── Work Details autocomplete ── */
@@ -1457,6 +1808,17 @@ function applyAttendanceLocks() {
             if (mInput)  mInput.value  = existing.machineName || '';
             if (mHidden) mHidden.value = existing.machineId   || '';
             if (wdInput) wdInput.value = existing.workDetails || '';
+            // Client/Site (2026-07): hydrate the label + hidden ids from
+            // the persisted record. Fall back to the legacy `site` string
+            // for rows saved before the Client/Site column existed — that
+            // gives the admin a visible label to react to without pretending
+            // the hidden ids are known.
+            var csInput = tr.querySelector('.row-clientsite');
+            var cHidden = tr.querySelector('.row-client-id');
+            var sHidden = tr.querySelector('.row-site-id');
+            if (csInput) csInput.value = existing.clientSiteLabel || existing.site || '';
+            if (cHidden) cHidden.value = existing.clientId ? String(existing.clientId) : '';
+            if (sHidden) sHidden.value = existing.siteId   ? String(existing.siteId)   : '';
             refreshMachineHint(tr);
         }
         if (existing && !editAttendanceMode) {
@@ -1482,7 +1844,7 @@ function lockRow(tr, status) {
         badge.style.display = 'inline-block';
     }
     tr.querySelectorAll(
-        'select.row-site, select.row-locsite, input.row-machine, input.row-workdetails, input.row-date, textarea.row-remarks'
+        'input.row-clientsite, select.row-site, select.row-locsite, input.row-machine, input.row-workdetails, input.row-date, textarea.row-remarks'
     ).forEach(function(el) { el.disabled = true; });
 }
 
@@ -1495,7 +1857,7 @@ function unlockRow(tr) {
     if (sel) sel.style.display = '';
     if (badge) badge.style.display = 'none';
     tr.querySelectorAll(
-        'select.row-site, select.row-locsite, input.row-machine, input.row-workdetails, input.row-date, textarea.row-remarks'
+        'input.row-clientsite, select.row-site, select.row-locsite, input.row-machine, input.row-workdetails, input.row-date, textarea.row-remarks'
     ).forEach(function(el) { el.disabled = false; });
 }
 
@@ -1601,20 +1963,20 @@ function saveBulkAttendance() {
     let saved = 0;
 
     rows.forEach(tr => {
-        // Mod 1: site is now a plain SITE-only dropdown (`.row-site`).
-        // Backward-compat: tolerate the old `.row-locsite` element if a
-        // stale render is still in the DOM, splitting on "|" as before.
-        const siteEl   = tr.querySelector('.row-site, .row-locsite');
-        const siteRaw  = siteEl ? siteEl.value : '';
-        let mainLocation = '';
-        let site = '';
-        if (siteEl && siteEl.classList.contains('row-locsite')) {
-            const parts = (siteRaw && siteRaw !== '__add_new') ? siteRaw.split('|') : ['',''];
-            mainLocation = parts[0] || '';
-            site         = parts[1] || '';
-        } else {
-            site = (siteRaw && siteRaw !== '__add_new') ? siteRaw : '';
-        }
+        // Mod 2 (2026-07): the SITE column is now a Client/Site autocomplete
+        // (`.row-clientsite` + hidden `.row-client-id` / `.row-site-id`).
+        // The visible label is stored on the local record and the site name
+        // is derived from the label's "Client / Site" split so mobile/HR
+        // consumers still see a coherent site string.
+        const clientSiteLabel = (tr.querySelector('.row-clientsite')?.value || '').trim();
+        const clientId = parseInt(tr.querySelector('.row-client-id')?.value) || null;
+        const siteId   = parseInt(tr.querySelector('.row-site-id')?.value)   || null;
+        const site = (() => {
+            if (!clientSiteLabel) return '';
+            const parts = clientSiteLabel.split('/');
+            return (parts[1] || parts[0] || '').trim();
+        })();
+        const mainLocation = '';
         // New (2026-07): Machine FK + Work Details replace the Working Site dropdown.
         const machineName = (tr.querySelector('.row-machine')?.value || '').trim();
         const machineId   = parseInt(tr.querySelector('.row-machine-id')?.value) || null;
@@ -1639,6 +2001,9 @@ function saveBulkAttendance() {
             machineId:    machineId,
             machineName:  machineName,
             workDetails:  workDetails,
+            clientId:        clientId,
+            siteId:          siteId,
+            clientSiteLabel: clientSiteLabel,
             date, status, remarks,
             hours: calculateHours(status)
         };
@@ -1666,14 +2031,17 @@ function saveBulkAttendance() {
         var d = tr.querySelector('.row-date').value;
         var s = tr.querySelector('.row-status').value;
         if (!d || !s) return;
-        var siteEl = tr.querySelector('.row-site, .row-locsite');
-        var siteRaw = siteEl ? siteEl.value : '';
+        // Mod 2 (2026-07): Client/Site autocomplete replaces the SITE
+        // dropdown. Hidden ids are the authoritative link; the legacy
+        // `site` CharField is still populated with the site name so
+        // mobile/HR consumers keep seeing the string they always saw.
+        var csLabel = (tr.querySelector('.row-clientsite')?.value || '').trim();
+        var cId     = parseInt(tr.querySelector('.row-client-id')?.value) || null;
+        var sId     = parseInt(tr.querySelector('.row-site-id')?.value)   || null;
         var siteOut = '';
-        if (siteEl && siteEl.classList.contains('row-locsite')) {
-            var parts = (siteRaw && siteRaw !== '__add_new') ? siteRaw.split('|') : ['', ''];
-            siteOut = parts[1] || '';
-        } else {
-            siteOut = (siteRaw && siteRaw !== '__add_new') ? siteRaw : '';
+        if (csLabel) {
+            var parts = csLabel.split('/');
+            siteOut = (parts[1] || parts[0] || '').trim();
         }
         var mId   = parseInt(tr.querySelector('.row-machine-id')?.value) || null;
         var wdOut = (tr.querySelector('.row-workdetails')?.value || '').trim();
@@ -1683,6 +2051,8 @@ function saveBulkAttendance() {
             date:        d,
             status:      s,
             site:        siteOut,
+            clientId:    cId,
+            siteId:      sId,
             machineId:   mId,
             workDetails: wdOut,
             remarks:     tr.querySelector('.row-remarks').value.trim(),
@@ -1865,6 +2235,9 @@ function ensureServerDataFetched(fromDate, toDate, cb) {
                 machineId:   r.machineId   || null,
                 machineName: r.machineName || '',
                 workDetails: r.workDetails || '',
+                clientId:        r.clientId        || null,
+                siteId:          r.siteId          || null,
+                clientSiteLabel: r.clientSiteLabel || '',
                 date: r.date, status: r.status,
                 remarks: r.remarks || '',
                 remarksLocked: !!r.remarksLocked,

@@ -28,6 +28,12 @@ urlpatterns = [
     path('sites/add/',                  views.add_site,               name='add_site'),
     path('sites/<int:site_id>/move/',   views.move_site,              name='move_site'),
     path('machines/<int:machine_id>/move/', views.move_machine,       name='move_machine'),
+    path('clients/<int:client_id>/edit/',     views.edit_project_client,   name='edit_project_client'),
+    path('clients/<int:client_id>/delete/',   views.delete_project_client, name='delete_project_client'),
+    path('sites/<int:site_id>/edit/',         views.edit_site,             name='edit_site'),
+    path('sites/<int:site_id>/delete/',       views.delete_site,           name='delete_site'),
+    path('machines/<int:machine_id>/edit/',   views.edit_machine,          name='edit_machine'),
+    path('machines/<int:machine_id>/delete/', views.delete_machine,        name='delete_machine'),
     path('work-details/suggest/',       views.work_details_suggest,   name='work_details_suggest'),
 
     # ── Reports ──
