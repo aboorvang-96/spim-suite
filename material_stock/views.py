@@ -26,7 +26,14 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
 from accounts.views import get_admin_id
-from .models import StockSite, StockItem, StockEntry
+# Legacy models were renamed to free up the `StockItem` name for the new
+# register; alias them back to their old names so the (unchanged) legacy
+# state-sync view below keeps working verbatim.
+from .models import (
+    LegacyStockSite  as StockSite,
+    LegacyStockItem  as StockItem,
+    LegacyStockEntry as StockEntry,
+)
 
 
 @login_required
