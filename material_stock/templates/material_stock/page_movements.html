@@ -1,0 +1,186 @@
+{% extends 'material_stock/base_ms.html' %}
+{% load static %}
+
+{% block ms_body %}
+{{ mtypes|json_script:"ms-mtypes-data" }}
+
+<!-- ── Filter bar ── -->
+<div class="ms-panel">
+    <div class="ms-panel-body">
+        <div class="ms-form-grid">
+            <div class="ms-field">
+                <label>Month</label>
+                <select class="ms-select" id="f_month">
+                    {% for mo in months %}
+                    <option value="{{ mo }}" {% if mo == month %}selected{% endif %}>{{ mo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="ms-field">
+                <label>Date</label>
+                <input class="ms-input" id="f_date" type="date" value="{{ today|date:'Y-m-d' }}">
+            </div>
+            <div class="ms-field ms-ac-wrap">
+                <label>Site</label>
+                <input class="ms-input" id="f_site" type="text" placeholder="Site / location" autocomplete="off">
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if is_admin %}
+<!-- ── Entry table ── -->
+<div class="ms-panel">
+    <div class="ms-panel-head">
+        <h3 class="ms-panel-title">New Movement</h3>
+        <p class="ms-panel-note">Pick material → serial, then who it moves from / to.</p>
+    </div>
+    <div class="ms-scroll">
+        <table class="data-table" style="min-width:960px;">
+            <thead><tr>
+                <th style="width:50px;">SL</th>
+                <th style="width:200px;">Item (Material)</th>
+                <th style="width:220px;">Serial No</th>
+                <th>From (person)</th>
+                <th>To (person)</th>
+                <th>Remarks</th>
+                <th style="width:90px;">Action</th>
+            </tr></thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td><select class="ms-select" id="e_mtype"></select></td>
+                    <td class="ms-ac-wrap">
+                        <select class="ms-select" id="e_serial"></select>
+                        <div class="ms-ac-hint" id="e_serial_hint"></div>
+                    </td>
+                    <td class="ms-ac-wrap"><input class="ms-input" id="e_from" type="text" autocomplete="off"></td>
+                    <td class="ms-ac-wrap"><input class="ms-input" id="e_to" type="text" autocomplete="off"></td>
+                    <td><input class="ms-input" id="e_remarks" type="text"></td>
+                    <td><button class="btn btn-primary btn-sm" id="e_save">Save</button></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- ── History for the selected month ── -->
+<div class="ms-panel">
+    <div class="ms-panel-head">
+        <h3 class="ms-panel-title">Movements — {{ month }}</h3>
+    </div>
+    <div class="ms-scroll">
+        <table class="data-table" style="min-width:940px;">
+            <thead><tr>
+                <th style="width:120px;">Date</th>
+                <th>Site</th>
+                <th>Material</th>
+                <th>Serial No</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Remarks</th>
+                {% if is_admin %}<th style="width:70px;">Del</th>{% endif %}
+            </tr></thead>
+            <tbody>
+                {% for mv in history %}
+                <tr>
+                    <td>{{ mv.movement_date|date:'d M Y' }}</td>
+                    <td>{{ mv.site_name }}</td>
+                    <td>{{ mv.stock_item.material_type.brand.name }} · {{ mv.stock_item.material_type.name }}</td>
+                    <td>{{ mv.stock_item.serial_no }}</td>
+                    <td>{{ mv.from_person|default:'— stock —' }}</td>
+                    <td>{{ mv.to_person|default:'— stock —' }}</td>
+                    <td>{{ mv.remarks|default:'' }}</td>
+                    {% if is_admin %}
+                    <td><button class="mini-btn danger" onclick="delMovement({{ mv.id }})">🗑️</button></td>
+                    {% endif %}
+                </tr>
+                {% empty %}
+                <tr><td colspan="{% if is_admin %}8{% else %}7{% endif %}" class="ms-empty">No movements this month.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block ms_scripts %}
+<script>
+// Month filter reloads the page with ?month=.
+document.getElementById('f_month').addEventListener('change', function () {
+    const u = new URL(location.href);
+    u.searchParams.set('month', this.value);
+    location.href = u.toString();
+});
+</script>
+
+{% if is_admin %}
+<script>
+(function () {
+    const MTYPES = JSON.parse(document.getElementById('ms-mtypes-data').textContent || '[]');
+    const mSel   = document.getElementById('e_mtype');
+    const sSel   = document.getElementById('e_serial');
+    const hint   = document.getElementById('e_serial_hint');
+
+    function opt(v, t) { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
+
+    mSel.appendChild(opt('', '— Select material —'));
+    MTYPES.forEach(m => mSel.appendChild(opt(m.id, m.label)));
+
+    let serialMeta = {};   // stock_item_id -> {status, holder, site}
+
+    async function loadSerials() {
+        sSel.innerHTML = ''; hint.textContent = ''; serialMeta = {};
+        if (!mSel.value) { sSel.appendChild(opt('', '— pick material first —')); return; }
+        const data = await MS.get(`{% url 'material_stock:serials_suggest' %}?material_type_id=${mSel.value}`);
+        const items = data.results || [];
+        if (!items.length) { sSel.appendChild(opt('', '— no items —')); return; }
+        sSel.appendChild(opt('', '— select serial —'));
+        items.forEach(it => {
+            sSel.appendChild(opt(it.id, it.serial + ' (' + it.status + ')'));
+            serialMeta[it.id] = it;
+        });
+    }
+
+    mSel.addEventListener('change', loadSerials);
+    sSel.addEventListener('change', () => {
+        const m = serialMeta[sSel.value];
+        hint.textContent = m ? `Holder: ${m.holder || '—'} · Site: ${m.site || '—'}` : '';
+    });
+
+    // Autocomplete: from / to (persons), site (sites).
+    MS.autocomplete(document.getElementById('e_from'), "{% url 'material_stock:persons_suggest' %}");
+    MS.autocomplete(document.getElementById('e_to'),   "{% url 'material_stock:persons_suggest' %}");
+    MS.autocomplete(document.getElementById('f_site'), "{% url 'material_stock:sites_suggest' %}");
+
+    document.getElementById('e_save').addEventListener('click', async () => {
+        if (!sSel.value) { MS.toast('Select a serial.', false); return; }
+        const site = document.getElementById('f_site').value.trim();
+        if (!site) { MS.toast('Enter a site in the filter bar.', false); return; }
+        const payload = {
+            stock_item_id: sSel.value,
+            movement_date: document.getElementById('f_date').value,
+            site_name:     site,
+            from_person:   document.getElementById('e_from').value.trim(),
+            to_person:     document.getElementById('e_to').value.trim(),
+            remarks:       document.getElementById('e_remarks').value.trim(),
+        };
+        const btn = document.getElementById('e_save');
+        btn.disabled = true;
+        const r = await MS.post("{% url 'material_stock:movement_add' %}", payload);
+        btn.disabled = false;
+        if (r.ok) { MS.toast('Movement saved.'); location.reload(); }
+        else      { MS.toast(r.data.error || 'Failed.', false); }
+    });
+})();
+
+async function delMovement(id) {
+    if (!MS.confirm('Delete this movement? The item will revert to its previous holder/site (or to stock if this was the first movement).')) return;
+    const r = await MS.post(`/material-stock/api/movements/${id}/delete/`, {});
+    if (r.ok) location.reload();
+    else      MS.toast(r.data.error || 'Failed.', false);
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,381 @@
+{% extends 'material_stock/base_ms.html' %}
+{% load static %}
+
+{% block ms_body %}
+<div class="ms-master-layout">
+
+    <!-- ── Brand sidebar ── -->
+    <div class="ms-panel" style="margin-bottom:0;">
+        <div class="ms-panel-head"><h3 class="ms-panel-title">Brands</h3></div>
+        <div class="ms-panel-body">
+            <div class="ms-brand-list">
+                {% for b in brands %}
+                <a href="?brand={{ b.id }}"
+                   class="ms-brand-item {% if selected and selected.id == b.id %}active{% endif %}">
+                    <span>{{ b.name }}</span>
+                    <span class="ms-brand-cat">{% if b.category == 'catalog_only' %}Catalog{% else %}Tracked{% endif %}</span>
+                </a>
+                {% empty %}
+                <p class="ms-empty">No brands yet.</p>
+                {% endfor %}
+            </div>
+            {% if is_admin %}
+            <button class="btn btn-outline btn-sm" style="margin-top:12px; width:100%;"
+                    onclick="MS.modal('brandModal', true)">+ Add Brand</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ── Right panel ── -->
+    <div>
+    {% if not selected %}
+        <div class="ms-panel"><div class="ms-empty">Select or add a brand to begin.</div></div>
+
+    {% elif selected.category == 'catalog_only' %}
+        <!-- Electric Motor catalog -->
+        <div class="ms-panel">
+            <div class="ms-panel-head">
+                <h3 class="ms-panel-title">{{ selected.name }} — Catalog</h3>
+                {% if is_admin %}
+                <button class="btn btn-primary btn-sm" onclick="openMotor()">+ Add Row</button>
+                {% endif %}
+            </div>
+            <div class="ms-scroll">
+                <table class="data-table" style="min-width:640px;">
+                    <thead><tr>
+                        <th>Type</th><th>Brand</th><th>Material</th><th>Remarks</th>
+                        {% if is_admin %}<th style="width:120px;">Actions</th>{% endif %}
+                    </tr></thead>
+                    <tbody>
+                        {% for m in motor_rows %}
+                        <tr>
+                            <td>{{ m.type_name }}</td><td>{{ m.brand }}</td>
+                            <td>{{ m.material }}</td><td>{{ m.remarks|default:'' }}</td>
+                            {% if is_admin %}
+                            <td>
+                                <div style="display:flex; gap:4px;">
+                                    <button class="mini-btn"
+                                        data-id="{{ m.id }}" data-type="{{ m.type_name }}"
+                                        data-brand="{{ m.brand }}" data-material="{{ m.material }}"
+                                        data-remarks="{{ m.remarks|default:'' }}"
+                                        onclick="editMotorFromBtn(this)">✏️</button>
+                                    <button class="mini-btn danger" onclick="delMotor({{ m.id }})">🗑️</button>
+                                </div>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="{% if is_admin %}5{% else %}4{% endif %}" class="ms-empty">No rows yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    {% else %}
+        <!-- Tracked brand: material type sub-tabs -->
+        <div class="ms-panel">
+            <div class="ms-panel-head">
+                <h3 class="ms-panel-title">{{ selected.name }}</h3>
+                {% if is_admin %}
+                <button class="btn btn-outline btn-sm" onclick="MS.modal('mtypeModal', true)">+ Add Material Type</button>
+                {% endif %}
+            </div>
+            <div class="ms-panel-body">
+                {% if blocks %}
+                <div class="ms-subtabs">
+                    {% for blk in blocks %}
+                    <button class="ms-subtab {% if forloop.first %}active{% endif %}"
+                            data-target="sub-{{ blk.mtype.id }}">{{ blk.mtype.name }}</button>
+                    {% endfor %}
+                </div>
+
+                {% for blk in blocks %}
+                <div class="ms-subpanel {% if forloop.first %}active{% endif %}" id="sub-{{ blk.mtype.id }}">
+                    <div class="ms-scroll">
+                        <table class="data-table" style="min-width:760px;">
+                            <thead><tr>
+                                <th style="width:50px;">SL</th>
+                                <th style="width:150px;">Purchase Date</th>
+                                {% if blk.mtype.is_batched %}<th>Batch No</th>{% endif %}
+                                <th>Serial No</th>
+                                {% if blk.mtype.is_batched %}<th>Mfg Date</th>{% endif %}
+                                <th>Current Holder</th>
+                                <th>Current Site</th>
+                                <th style="width:110px;">Status</th>
+                                {% if is_admin %}<th style="width:100px;">Actions</th>{% endif %}
+                            </tr></thead>
+                            <tbody>
+                                {% for it in blk.items %}
+                                <tr>
+                                    <td>{{ forloop.counter }}</td>
+                                    <td>{{ it.purchase_date|date:'d M Y' }}
+                                        {% if it.is_new %}<span class="badge badge-new">New</span>
+                                        {% else %}<span class="badge badge-old">Old</span>{% endif %}</td>
+                                    {% if blk.mtype.is_batched %}<td>{{ it.batch_no|default:'—' }}</td>{% endif %}
+                                    <td>{{ it.serial_no }}</td>
+                                    {% if blk.mtype.is_batched %}<td>{{ it.mfg_date|date:'d M Y'|default:'—' }}</td>{% endif %}
+                                    <td>{{ it.current_holder_name|default:'—' }}</td>
+                                    <td>{{ it.current_site_name|default:'—' }}</td>
+                                    <td><span class="st-chip st-{{ it.status }}">{{ it.get_status_display }}</span></td>
+                                    {% if is_admin %}
+                                    <td>
+                                        <div style="display:flex; gap:4px;">
+                                            <button class="mini-btn"
+                                                data-id="{{ it.id }}"
+                                                data-serial="{{ it.serial_no }}"
+                                                data-purchase="{{ it.purchase_date|date:'Y-m-d' }}"
+                                                data-batch="{{ it.batch_no|default:'' }}"
+                                                data-mfg="{{ it.mfg_date|date:'Y-m-d'|default:'' }}"
+                                                data-holder="{{ it.current_holder_name|default:'' }}"
+                                                data-site="{{ it.current_site_name|default:'' }}"
+                                                data-status="{{ it.status }}"
+                                                data-remarks="{{ it.remarks|default:'' }}"
+                                                data-batched="{{ blk.mtype.is_batched|yesno:'1,0' }}"
+                                                onclick="editItem(this)">✏️</button>
+                                            <button class="mini-btn danger" onclick="delItem({{ it.id }})">🗑️</button>
+                                        </div>
+                                    </td>
+                                    {% endif %}
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="9" class="ms-empty">No items in this material type.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="ms-empty">No material types under this brand yet.
+                    {% if is_admin %}Use “+ Add Material Type”.{% endif %}</p>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+    </div>
+</div>
+
+{% if is_admin %}
+<!-- ── Add Brand modal ── -->
+<div class="ms-modal-overlay" id="brandModal">
+  <div class="ms-modal">
+    <div class="ms-modal-head"><h3>Add Brand</h3><button class="ms-x" onclick="MS.modal('brandModal',false)">×</button></div>
+    <div class="ms-modal-body">
+        <div class="ms-field" style="margin-bottom:12px;">
+            <label>Name <span class="req">*</span></label>
+            <input class="ms-input" id="brand_name" type="text">
+        </div>
+        <div class="ms-field">
+            <label>Category</label>
+            <select class="ms-select" id="brand_cat">
+                <option value="tracked">Tracked (serial numbers)</option>
+                <option value="catalog_only">Catalog only (no stock tracking)</option>
+            </select>
+        </div>
+    </div>
+    <div class="ms-modal-foot">
+        <button class="btn btn-outline btn-sm" onclick="MS.modal('brandModal',false)">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveBrand()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Material Type modal ── -->
+<div class="ms-modal-overlay" id="mtypeModal">
+  <div class="ms-modal">
+    <div class="ms-modal-head"><h3>Add Material Type</h3><button class="ms-x" onclick="MS.modal('mtypeModal',false)">×</button></div>
+    <div class="ms-modal-body">
+        <div class="ms-field" style="margin-bottom:12px;">
+            <label>Name <span class="req">*</span></label>
+            <input class="ms-input" id="mtype_name" type="text" placeholder="e.g. Rope">
+        </div>
+        <div class="ms-field">
+            <label>Tracking Mode</label>
+            <select class="ms-select" id="mtype_mode">
+                <option value="individual">Individual (serial only)</option>
+                <option value="batched">Batched (serial + batch + mfg date)</option>
+            </select>
+        </div>
+    </div>
+    <div class="ms-modal-foot">
+        <button class="btn btn-outline btn-sm" onclick="MS.modal('mtypeModal',false)">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveMtype()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit Item modal ── -->
+<div class="ms-modal-overlay" id="itemModal">
+  <div class="ms-modal">
+    <div class="ms-modal-head"><h3>Edit Item</h3><button class="ms-x" onclick="MS.modal('itemModal',false)">×</button></div>
+    <div class="ms-modal-body">
+        <input type="hidden" id="ei_id">
+        <div class="ms-form-grid">
+            <div class="ms-field"><label>Serial No <span class="req">*</span></label><input class="ms-input" id="ei_serial"></div>
+            <div class="ms-field"><label>Purchase Date</label><input class="ms-input" id="ei_purchase" type="date"></div>
+            <div class="ms-field ei-batched"><label>Batch No</label><input class="ms-input" id="ei_batch"></div>
+            <div class="ms-field ei-batched"><label>Mfg Date</label><input class="ms-input" id="ei_mfg" type="date"></div>
+            <div class="ms-field"><label>Current Holder</label><input class="ms-input" id="ei_holder"></div>
+            <div class="ms-field"><label>Current Site</label><input class="ms-input" id="ei_site"></div>
+            <div class="ms-field"><label>Status</label>
+                <select class="ms-select" id="ei_status">
+                    <option value="available">Available</option>
+                    <option value="issued">Issued</option>
+                    <option value="lost">Lost</option>
+                    <option value="damaged">Damaged</option>
+                </select>
+            </div>
+            <div class="ms-field" style="grid-column:1/-1;"><label>Remarks</label><input class="ms-input" id="ei_remarks"></div>
+        </div>
+    </div>
+    <div class="ms-modal-foot">
+        <button class="btn btn-outline btn-sm" onclick="MS.modal('itemModal',false)">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Motor row modal ── -->
+<div class="ms-modal-overlay" id="motorModal">
+  <div class="ms-modal">
+    <div class="ms-modal-head"><h3 id="motorTitle">Add Row</h3><button class="ms-x" onclick="MS.modal('motorModal',false)">×</button></div>
+    <div class="ms-modal-body">
+        <input type="hidden" id="mo_id">
+        <div class="ms-form-grid">
+            <div class="ms-field"><label>Type <span class="req">*</span></label><input class="ms-input" id="mo_type"></div>
+            <div class="ms-field"><label>Brand</label><input class="ms-input" id="mo_brand"></div>
+            <div class="ms-field"><label>Material</label><input class="ms-input" id="mo_material"></div>
+            <div class="ms-field" style="grid-column:1/-1;"><label>Remarks</label><input class="ms-input" id="mo_remarks"></div>
+        </div>
+    </div>
+    <div class="ms-modal-foot">
+        <button class="btn btn-outline btn-sm" onclick="MS.modal('motorModal',false)">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveMotor()">Save</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block ms_scripts %}
+<script>
+// Sub-tab switching (works for all users).
+document.querySelectorAll('.ms-subtab').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.ms-subtab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.ms-subpanel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.target).classList.add('active');
+    });
+});
+</script>
+
+{% if is_admin %}
+<script>
+const SELECTED_BRAND = {% if selected %}{{ selected.id }}{% else %}null{% endif %};
+
+// ── Brand ──
+async function saveBrand() {
+    const name = document.getElementById('brand_name').value.trim();
+    if (!name) { MS.toast('Name is required.', false); return; }
+    const r = await MS.post("{% url 'material_stock:brand_add' %}",
+        { name, category: document.getElementById('brand_cat').value });
+    if (r.ok) { location.href = '?brand=' + r.data.id; }
+    else      { MS.toast(r.data.error || 'Failed.', false); }
+}
+async function delBrand(id) {
+    if (!MS.confirm('Delete this brand?')) return;
+    const r = await MS.post(`/material-stock/api/brands/${id}/delete/`, {});
+    if (r.ok) location.href = '{% url 'material_stock:master' %}';
+    else      MS.toast(r.data.error || 'Failed.', false);
+}
+
+// ── Material Type ──
+async function saveMtype() {
+    const name = document.getElementById('mtype_name').value.trim();
+    if (!name) { MS.toast('Name is required.', false); return; }
+    const r = await MS.post("{% url 'material_stock:mtype_add' %}",
+        { brand_id: SELECTED_BRAND, name, tracking_mode: document.getElementById('mtype_mode').value });
+    if (r.ok) location.reload();
+    else      MS.toast(r.data.error || 'Failed.', false);
+}
+
+// ── Stock Item ──
+function editItem(btn) {
+    const d = btn.dataset;
+    document.getElementById('ei_id').value       = d.id;
+    document.getElementById('ei_serial').value   = d.serial;
+    document.getElementById('ei_purchase').value = d.purchase;
+    document.getElementById('ei_batch').value    = d.batch;
+    document.getElementById('ei_mfg').value      = d.mfg;
+    document.getElementById('ei_holder').value   = d.holder;
+    document.getElementById('ei_site').value     = d.site;
+    document.getElementById('ei_status').value   = d.status;
+    document.getElementById('ei_remarks').value  = d.remarks;
+    document.querySelectorAll('.ei-batched').forEach(el => el.classList.toggle('hidden', d.batched !== '1'));
+    MS.modal('itemModal', true);
+}
+async function saveItem() {
+    const id = document.getElementById('ei_id').value;
+    const payload = {
+        serial_no:           document.getElementById('ei_serial').value.trim(),
+        purchase_date:       document.getElementById('ei_purchase').value,
+        batch_no:            document.getElementById('ei_batch').value.trim(),
+        mfg_date:            document.getElementById('ei_mfg').value,
+        current_holder_name: document.getElementById('ei_holder').value.trim(),
+        current_site_name:   document.getElementById('ei_site').value.trim(),
+        status:              document.getElementById('ei_status').value,
+        remarks:             document.getElementById('ei_remarks').value.trim(),
+    };
+    const r = await MS.post(`/material-stock/api/items/${id}/edit/`, payload);
+    if (r.ok) location.reload();
+    else      MS.toast(r.data.error || 'Failed.', false);
+}
+async function delItem(id) {
+    if (!MS.confirm('Delete this item?')) return;
+    const r = await MS.post(`/material-stock/api/items/${id}/delete/`, {});
+    if (r.ok) location.reload();
+    else      MS.toast(r.data.error || 'Failed.', false);
+}
+
+// ── Electric Motor catalog ──
+function openMotor() {
+    document.getElementById('motorTitle').textContent = 'Add Row';
+    document.getElementById('mo_id').value = '';
+    ['mo_type','mo_brand','mo_material','mo_remarks'].forEach(i => document.getElementById(i).value = '');
+    MS.modal('motorModal', true);
+}
+function editMotorFromBtn(btn) {
+    const d = btn.dataset;
+    document.getElementById('motorTitle').textContent = 'Edit Row';
+    document.getElementById('mo_id').value       = d.id;
+    document.getElementById('mo_type').value     = d.type;
+    document.getElementById('mo_brand').value    = d.brand;
+    document.getElementById('mo_material').value = d.material;
+    document.getElementById('mo_remarks').value  = d.remarks;
+    MS.modal('motorModal', true);
+}
+async function saveMotor() {
+    const id = document.getElementById('mo_id').value;
+    const payload = {
+        type_name: document.getElementById('mo_type').value.trim(),
+        brand:     document.getElementById('mo_brand').value.trim(),
+        material:  document.getElementById('mo_material').value.trim(),
+        remarks:   document.getElementById('mo_remarks').value.trim(),
+    };
+    if (!payload.type_name) { MS.toast('Type is required.', false); return; }
+    const url = id ? `/material-stock/api/motor/${id}/edit/` : "{% url 'material_stock:motor_add' %}";
+    const r = await MS.post(url, payload);
+    if (r.ok) location.reload();
+    else      MS.toast(r.data.error || 'Failed.', false);
+}
+async function delMotor(id) {
+    if (!MS.confirm('Delete this row?')) return;
+    const r = await MS.post(`/material-stock/api/motor/${id}/delete/`, {});
+    if (r.ok) location.reload();
+    else      MS.toast(r.data.error || 'Failed.', false);
+}
+</script>
+{% endif %}
+{% endblock %}

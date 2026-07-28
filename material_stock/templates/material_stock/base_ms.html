@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Material & Stock Register{% endblock %}
+{% block active_material_stock %}active{% endblock %}
+
+{% block head %}
+<style>
+    /* ─── Tab nav (links, styled like the old .ms-tab-btn) ─── */
+    .ms-nav-row { display:flex; justify-content:space-between; align-items:flex-end; gap:12px;
+                  border-bottom:1px solid var(--slate-200); margin-bottom:20px; padding-bottom:4px; flex-wrap:wrap; }
+    .ms-tab-nav { display:flex; gap:6px; }
+    .ms-tab-btn { padding:10px 22px; font-weight:600; color:var(--slate-500); background:transparent;
+                  border:none; cursor:pointer; transition:all .2s; border-radius:var(--radius-sm);
+                  font-size:.9rem; text-decoration:none; display:inline-block; }
+    .ms-tab-btn:hover  { color:var(--navy); background:var(--slate-50); }
+    .ms-tab-btn.active { color:var(--navy); background:#fff; box-shadow:var(--shadow-sm); }
+
+    /* ─── Panels ─── */
+    .ms-panel      { background:#fff; border:1px solid var(--slate-200); border-radius:var(--radius);
+                     box-shadow:var(--shadow-sm); margin-bottom:20px; overflow:hidden; }
+    .ms-panel-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center;
+                     gap:12px; padding:14px 18px; border-bottom:1px solid var(--slate-100); background:#fafbfc; }
+    .ms-panel-title{ margin:0; font-size:1rem; font-weight:700; color:var(--slate-900); }
+    .ms-panel-note { margin:3px 0 0; color:var(--slate-500); font-size:.82rem; }
+    .ms-panel-body { padding:16px 18px; }
+    .ms-scroll     { overflow-x:auto; }
+
+    /* ─── Badges (New/Old) reuse global .badge ─── */
+    .badge-new { background:var(--success-soft); color:#166534; }
+    .badge-old { background:var(--slate-100);    color:var(--slate-600); }
+
+    /* ─── Forms ─── */
+    .ms-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .ms-field label { display:block; margin-bottom:5px; color:var(--slate-500); font-size:.8rem; font-weight:600; }
+    .ms-input, .ms-select {
+        width:100%; padding:8px 10px; font-size:.86rem; border:1px solid var(--slate-300);
+        border-radius:var(--radius-sm); background:#fff; color:var(--slate-900);
+    }
+    .ms-input:focus, .ms-select:focus { outline:none; border-color:var(--navy); box-shadow:0 0 0 3px rgba(22,93,141,.12); }
+    .ms-form-footer { margin-top:14px; display:flex; gap:8px; align-items:center; }
+    .req { color:var(--danger); font-weight:bold; }
+
+    /* ─── Mini action buttons ─── */
+    .mini-btn { padding:5px 10px; border-radius:5px; background:#fff; border:1px solid var(--slate-200);
+                font-size:.78rem; font-weight:600; color:var(--slate-500); cursor:pointer; transition:all .15s; }
+    .mini-btn:hover { background:var(--slate-50); color:var(--navy); }
+    .mini-btn.danger { color:var(--danger); border-color:#fee2e2; }
+    .mini-btn.danger:hover { background:var(--danger-soft); }
+
+    /* ─── Status chip ─── */
+    .st-chip { display:inline-block; padding:3px 9px; border-radius:999px; font-size:.72rem; font-weight:700; text-transform:capitalize; }
+    .st-available { background:var(--success-soft); color:#166534; }
+    .st-issued    { background:var(--info-soft);    color:#1e40af; }
+    .st-lost      { background:var(--warning-soft); color:#92400e; }
+    .st-damaged   { background:var(--danger-soft);  color:#b91c1c; }
+
+    /* ─── Feedback toast ─── */
+    .ms-toast { position:fixed; top:18px; right:18px; z-index:9999; min-width:240px; max-width:360px;
+                padding:12px 16px; border-radius:8px; font-size:.86rem; font-weight:600; box-shadow:var(--shadow-lg);
+                display:none; }
+    .ms-toast.show { display:block; animation:msFadeIn .2s ease; }
+    .ms-toast.ok  { background:var(--success-soft); color:#166534; }
+    .ms-toast.err { background:var(--danger-soft);  color:#b91c1c; }
+    @keyframes msFadeIn { from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);} }
+
+    /* ─── Modal ─── */
+    .ms-modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:9000;
+                        display:none; align-items:flex-start; justify-content:center; padding:60px 16px; }
+    .ms-modal-overlay.open { display:flex; }
+    .ms-modal { background:#fff; border-radius:var(--radius); box-shadow:var(--shadow-lg);
+                width:100%; max-width:520px; overflow:hidden; }
+    .ms-modal-head { display:flex; justify-content:space-between; align-items:center; padding:14px 18px;
+                     border-bottom:1px solid var(--slate-100); background:#fafbfc; }
+    .ms-modal-head h3 { margin:0; font-size:1rem; font-weight:700; color:var(--slate-900); }
+    .ms-modal-body { padding:18px; }
+    .ms-modal-foot { padding:14px 18px; border-top:1px solid var(--slate-100); display:flex; justify-content:flex-end; gap:8px; }
+    .ms-x { background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--slate-400); }
+
+    /* ─── Autocomplete ─── */
+    .ms-ac-wrap { position:relative; }
+    .ms-ac-menu { position:absolute; top:calc(100% + 2px); left:0; right:0; z-index:500; background:#fff;
+                  border:1px solid var(--slate-200); border-radius:var(--radius-sm); box-shadow:var(--shadow-lg);
+                  max-height:220px; overflow-y:auto; display:none; }
+    .ms-ac-menu.open { display:block; }
+    .ms-ac-item { padding:8px 10px; font-size:.84rem; cursor:pointer; }
+    .ms-ac-item:hover, .ms-ac-item.active { background:var(--slate-50); color:var(--navy); }
+    .ms-ac-hint { font-size:.72rem; color:var(--slate-400); }
+
+    /* ─── Master Control layout ─── */
+    .ms-master-layout { display:grid; grid-template-columns:230px 1fr; gap:18px; align-items:start; }
+    @media (max-width:820px){ .ms-master-layout { grid-template-columns:1fr; } }
+    .ms-brand-list { display:flex; flex-direction:column; gap:4px; }
+    .ms-brand-item { display:flex; justify-content:space-between; align-items:center; gap:6px;
+                     padding:9px 12px; border-radius:var(--radius-sm); text-decoration:none;
+                     color:var(--slate-600); font-weight:600; font-size:.88rem; border:1px solid transparent; }
+    .ms-brand-item:hover  { background:var(--slate-50); color:var(--navy); }
+    .ms-brand-item.active { background:#fff; color:var(--navy); border-color:var(--slate-200); box-shadow:var(--shadow-sm); }
+    .ms-brand-cat { font-size:.68rem; font-weight:700; text-transform:uppercase; color:var(--slate-400); }
+    .ms-subtabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+    .ms-subtab { padding:7px 14px; border-radius:999px; border:1px solid var(--slate-200); background:#fff;
+                 font-size:.82rem; font-weight:600; color:var(--slate-500); cursor:pointer; }
+    .ms-subtab.active { background:var(--navy); color:#fff; border-color:var(--navy); }
+    .ms-subpanel { display:none; }
+    .ms-subpanel.active { display:block; }
+
+    .hidden { display:none !important; }
+    .ms-empty { padding:26px; text-align:center; color:var(--slate-400); font-size:.88rem; }
+</style>
+{% block ms_head %}{% endblock %}
+{% endblock %}
+
+{% block header_title %}Material & Stock Register{% endblock %}
+{% block header_actions %}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="ms-nav-row">
+        <nav class="ms-tab-nav">
+            <a href="{% url 'material_stock:index' %}"     class="ms-tab-btn {% if active_page == 'stock' %}active{% endif %}">Stock</a>
+            <a href="{% url 'material_stock:master' %}"    class="ms-tab-btn {% if active_page == 'master' %}active{% endif %}">Master Control</a>
+            <a href="{% url 'material_stock:movements' %}" class="ms-tab-btn {% if active_page == 'movements' %}active{% endif %}">Stock In/Out</a>
+        </nav>
+        {% block ms_nav_actions %}{% endblock %}
+    </div>
+
+    {% block ms_body %}{% endblock %}
+</div>
+
+<div class="ms-toast" id="msToast"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Shared Material/Stock helpers ─────────────────────────────────────────
+const MS = {
+    csrf:    '{{ csrf_token }}',
+    isAdmin: {% if is_admin %}true{% else %}false{% endif %},
+
+    async post(url, data) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json',
+                       'X-CSRFToken': MS.csrf,
+                       'X-Requested-With': 'XMLHttpRequest' },
+            body: JSON.stringify(data || {}),
+        });
+        let body = {};
+        try { body = await res.json(); } catch (e) {}
+        return { ok: res.ok && body.success !== false, status: res.status, data: body };
+    },
+
+    async get(url) {
+        const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        try { return await res.json(); } catch (e) { return {}; }
+    },
+
+    toast(msg, ok = true) {
+        const t = document.getElementById('msToast');
+        t.textContent = msg;
+        t.className = 'ms-toast show ' + (ok ? 'ok' : 'err');
+        clearTimeout(MS._tt);
+        MS._tt = setTimeout(() => { t.className = 'ms-toast'; }, 3200);
+    },
+
+    confirm(msg) { return window.confirm(msg); },
+
+    modal(id, open) {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('open', !!open);
+    },
+
+    // Attach a live autocomplete to a text input.
+    //   input: <input>, url: endpoint, extra: () => querystring, render: (item)=>{label,value}
+    autocomplete(input, url, opts = {}) {
+        const wrap = input.closest('.ms-ac-wrap');
+        if (!wrap) return;
+        let menu = wrap.querySelector('.ms-ac-menu');
+        if (!menu) { menu = document.createElement('div'); menu.className = 'ms-ac-menu'; wrap.appendChild(menu); }
+        let timer = null;
+        const close = () => menu.classList.remove('open');
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(async () => {
+                const q = encodeURIComponent(input.value.trim());
+                const extra = opts.extra ? opts.extra() : '';
+                const data = await MS.get(`${url}?q=${q}${extra}`);
+                const items = (data.results || []);
+                if (!items.length) { close(); return; }
+                menu.innerHTML = '';
+                items.forEach(it => {
+                    const label = opts.label ? opts.label(it) : it;
+                    const value = opts.value ? opts.value(it) : it;
+                    const div = document.createElement('div');
+                    div.className = 'ms-ac-item';
+                    div.innerHTML = label;
+                    div.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        input.value = value;
+                        if (opts.onpick) opts.onpick(it);
+                        close();
+                    });
+                    menu.appendChild(div);
+                });
+                menu.classList.add('open');
+            }, 180);
+        });
+        input.addEventListener('blur', () => setTimeout(close, 150));
+    },
+};
+</script>
+{% block ms_scripts %}{% endblock %}
+{% endblock %}
