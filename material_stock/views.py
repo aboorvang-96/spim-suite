@@ -690,7 +690,9 @@ def serials_suggest(request):
     q  = (request.GET.get('q') or '').strip()
     mt = request.GET.get('material_type_id')
 
-    qs = StockItem.objects.filter(admin_id=admin_id)
+    # Only AVAILABLE units can be issued out, so the picker never lists
+    # serials that are already issued / lost / damaged.
+    qs = StockItem.objects.filter(admin_id=admin_id, status=StockItem.AVAILABLE)
     if mt:
         qs = qs.filter(material_type_id=mt)
     if q:

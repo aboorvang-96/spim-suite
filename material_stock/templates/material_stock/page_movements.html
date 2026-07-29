@@ -142,7 +142,24 @@ document.getElementById('f_month').addEventListener('change', function () {
     // stock_item_id -> serial (the current selection).
     const selected = new Map();
 
-    function openPop(open) { pop.classList.toggle('open', !!open); }
+    // The popover lives inside `.ms-scroll` (overflow-x:auto), which per CSS
+    // forces overflow-y to `auto` and would CLIP an absolutely-positioned
+    // panel hanging below this single-row table.  So we pin it with
+    // position:fixed and place it under the input via getBoundingClientRect —
+    // fixed positioning escapes the scroll container's clipping entirely.
+    function positionPop() {
+        const r = display.getBoundingClientRect();
+        pop.style.position = 'fixed';
+        pop.style.top   = (r.bottom + 2) + 'px';
+        pop.style.left  = r.left + 'px';
+        pop.style.right = 'auto';
+        pop.style.width = Math.max(r.width, 280) + 'px';
+    }
+
+    function openPop(open) {
+        if (open) positionPop();
+        pop.classList.toggle('open', !!open);
+    }
 
     function updateDisplay() {
         display.value = [...selected.values()].join(', ');
@@ -192,11 +209,17 @@ document.getElementById('f_month').addEventListener('change', function () {
     });
 
     // Open / close the popover.
-    display.addEventListener('click', () => { if (mSel.value) openPop(!pop.classList.contains('open')); });
+    display.addEventListener('click', () => {
+        if (!mSel.value) { MS.toast('Pick a material type first.', false); return; }
+        openPop(!pop.classList.contains('open'));
+    });
     doneBtn.addEventListener('click', () => openPop(false));
     document.addEventListener('click', (e) => {
         if (!pop.contains(e.target) && e.target !== display) openPop(false);
     });
+    // Keep the fixed popover glued to the input while open.
+    window.addEventListener('scroll', () => { if (pop.classList.contains('open')) positionPop(); }, true);
+    window.addEventListener('resize', () => { if (pop.classList.contains('open')) positionPop(); });
 
     mSel.addEventListener('change', loadSerials);
 
