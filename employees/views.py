@@ -1243,13 +1243,14 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     week_off_days = records_paid.filter(status='week_off').count()
 
     if is_daily:
-        # Daily Basis: pay ONLY for full Present days.
-        # Half Day / Holiday / Weekly Off / Sunday / Leave / Absent /
-        # No Week Off all contribute 0 — daily-wage workers only earn
-        # for days they were fully Present. This is the deliberate
+        # Daily Basis paid-days = Present (1.0) + Week Off (1.0).
+        # Week Off moved to the paid bucket per the 2026-07 daily-wage spec
+        # (was previously 0). Half Day / Holiday / Sunday / Leave / Absent /
+        # No Week Off / no-entry all remain 0 — daily-wage workers earn only
+        # for full Present days and paid Week Offs. This is the deliberate
         # business rule for this mode and differs from the Base Salary
         # paid-day formula, which stays untouched below.
-        worked_days = Decimal(str(present_days))
+        worked_days = Decimal(str(present_days)) + Decimal(str(week_off_days))
         # daily_rate × worked_days — no cycle divisor, no cap.
         final_salary = (basic_salary * worked_days).quantize(Decimal('0.01'))
         return final_salary, worked_days
