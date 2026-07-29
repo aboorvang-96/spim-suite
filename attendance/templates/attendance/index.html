@@ -1084,7 +1084,21 @@ function loadBulkAttendanceTable() {
 
     const date = document.getElementById('attDate').value || todayStr();
 
-    targetEmps.forEach(emp => {
+    // Full-width heading row spanning all 8 columns. Purely a visual group
+    // separator — carries no .rowCheck / dataset, so save/lock/count loops
+    // (which key off .rowCheck) skip it. buildBulkRows() only appends these
+    // when the group is non-empty, so no empty heading is ever shown.
+    function appendGroupHeader(label) {
+        const htr = document.createElement('tr');
+        htr.className = 'att-group-header';
+        htr.innerHTML =
+            '<td colspan="8" style="background:#e2e8f0;color:#0f172a;font-weight:800;'
+            + 'letter-spacing:0.02em;text-transform:uppercase;font-size:0.78rem;'
+            + 'padding:0.5rem 0.9rem;">' + escHtml(label) + '</td>';
+        tbody.appendChild(htr);
+    }
+
+    function appendEmpRow(emp) {
         const tr = document.createElement('tr');
         tr.dataset.empId   = emp.id;
         // empPk is the Employee row's DB primary key. It is NEVER displayed
@@ -1157,7 +1171,21 @@ function loadBulkAttendanceTable() {
             </td>
         `;
         tbody.appendChild(tr);
-    });
+    }
+
+    // Partition into people vs vehicles, preserving targetEmps order (the
+    // server returns employees name-ordered). "Employees" header shows only
+    // when vehicles also exist; "Vehicles" header is omitted when there are
+    // none — no empty headings.
+    const people   = targetEmps.filter(e => !e.isVehicle);
+    const vehicles = targetEmps.filter(e => e.isVehicle);
+
+    if (people.length && vehicles.length) appendGroupHeader('Employees');
+    people.forEach(appendEmpRow);
+    if (vehicles.length) {
+        appendGroupHeader('Vehicles');
+        vehicles.forEach(appendEmpRow);
+    }
 
     applyAttendanceLocks();  // lock already-marked rows for the selected date
 }
@@ -1956,7 +1984,10 @@ function calculateHours(status) {
 }
 
 function saveBulkAttendance() {
-    const rows = [...document.querySelectorAll('#bulkAttBody tr')].filter(tr => tr.querySelector('.rowCheck').checked);
+    // Optional-chain the .rowCheck lookup so full-width group-header rows
+    // (which carry no checkbox) are skipped instead of throwing. Real data
+    // rows always have a .rowCheck, so their selection behavior is unchanged.
+    const rows = [...document.querySelectorAll('#bulkAttBody tr')].filter(tr => tr.querySelector('.rowCheck')?.checked);
     if (rows.length === 0) { showAlert('attAlert', 'No rows selected to save', 'error'); return; }
 
     let attendance = loadAttendance();

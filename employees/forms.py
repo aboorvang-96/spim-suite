@@ -28,6 +28,10 @@ class EmployeeForm(forms.ModelForm):
             'location', 'site', 'fixed_allowance',
             'joining_date', 'status', 'mobile_app_password',
             'job_role', 'level', 'mobile', 'branch',
+            # Admin-only flag: marks this row as a Vehicle so the Employee
+            # Master / Salary / Attendance modules list it under "Vehicles".
+            # Purely a categorization toggle; no business logic depends on it.
+            'is_vehicle',
         ]
         widgets = {
             'name':                forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'e.g. Ravi Kumar'}),
@@ -44,6 +48,7 @@ class EmployeeForm(forms.ModelForm):
             'level':               forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'e.g. L1'}),
             'mobile':              forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'e.g. +91 9876543210'}),
             'branch':              forms.TextInput(attrs={'class': 'form-input', 'placeholder': 'e.g. Tirunelveli HQ'}),
+            'is_vehicle':          forms.CheckboxInput(attrs={'class': 'form-checkbox'}),
         }
 
 

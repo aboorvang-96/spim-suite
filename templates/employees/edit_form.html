@@ -51,6 +51,14 @@
                     <label class="form-label">Mobile App Password</label>
                     {{ form.mobile_app_password }}
                 </div>
+                <div class="form-group col-span-2">
+                    <label class="form-label flex items-center gap-2" style="cursor:pointer;">
+                        {{ form.is_vehicle }}
+                        <span>This is a Vehicle
+                            <small class="text-slate-400">(lists under the Vehicles section instead of Employees)</small>
+                        </span>
+                    </label>
+                </div>
             </div>
 
             <div class="pt-6 border-t border-slate-100 flex gap-3">

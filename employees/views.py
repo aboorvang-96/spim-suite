@@ -204,8 +204,12 @@ def employee_list(request):
         else:
             loc_pool.append(combined)
 
+    # Split into people vs vehicles for the two-section Master layout. Both
+    # inherit Employee.Meta.ordering = ['name']; the split is purely visual.
+    qs = qs.select_related('bank_details', 'pf_details')
     return render(request, 'employees/list.html', {
-        'employees':           qs.select_related('bank_details', 'pf_details'),
+        'employees':           qs.filter(is_vehicle=False),
+        'vehicles':            qs.filter(is_vehicle=True),
         'all_employees':       Employee.objects.filter(admin_id=admin_id).order_by('name'),
         'locations':           locations,
         'sites':               sites,
@@ -633,6 +637,9 @@ def employee_list_json(request):
             'leave':        '0',
             'baseSalary':   float(emp.base_salary) if emp.base_salary else 0,
             'salaryType':   getattr(emp, 'salary_type', 'base_salary') or 'base_salary',
+            # Additive flag used by the attendance bulk table to group vehicle
+            # rows under a "Vehicles" heading. Marking/saving is unaffected.
+            'isVehicle':    bool(getattr(emp, 'is_vehicle', False)),
         })
     return JsonResponse({'employees': emp_list})
 
@@ -843,6 +850,9 @@ def salary_dashboard(request):
                 # rows. Defaults to 'base_salary' for rows created before
                 # the field existed (migration 0012).
                 'salary_type': getattr(e, 'salary_type', 'base_salary') or 'base_salary',
+                # Additive flag consumed by renderTable() to group vehicle rows
+                # under a "Vehicles" section header. Does not change any amount.
+                'is_vehicle': bool(getattr(e, 'is_vehicle', False)),
                 'salary_is_custom_override': bool(e.salary_is_custom_override),
                 'gross_salary': gross_base + ot, # simplified gross
                 'advance_pay': advance,
@@ -1024,8 +1034,14 @@ def salary_report_download(request):
             'account_holder': bank.account_holder if bank else '',
             'account_number': bank.account_number if bank else '',
             'ifsc_code':      bank.ifsc_code      if bank else '',
+            'is_vehicle':     bool(getattr(e, 'is_vehicle', False)),
         })
         total_net += net
+
+    # Group people first, then vehicles, preserving name order within each
+    # group (queryset is already name-ordered; a stable sort keeps that).
+    # total_net stays a single combined total — no per-group subtotals.
+    rows.sort(key=lambda r: r['is_vehicle'])
 
     safe_month = (month_name or 'AllMonths').replace(' ', '_')
     safe_year  = (str(year) if year else 'AllYears').replace(' ', '_')
@@ -1062,7 +1078,21 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
         c.fill = header_fill
         c.alignment = Alignment(horizontal='center')
 
-    for r in rows:
+    # Full-width group-header row (merged across all columns). Only emitted
+    # for a non-empty group — no empty "Vehicles" heading is ever written.
+    group_fill = PatternFill('solid', fgColor='E2E8F0')
+    group_font = Font(bold=True, color='0F172A')
+
+    def _append_section(label):
+        ws.append([label])
+        ridx = ws.max_row
+        ws.merge_cells(start_row=ridx, start_column=1, end_row=ridx, end_column=len(headers))
+        cell = ws.cell(row=ridx, column=1)
+        cell.font = group_font
+        cell.fill = group_fill
+        cell.alignment = Alignment(horizontal='left')
+
+    def _append_data(r):
         ws.append([
             r['emp_id'],
             r['emp_name'],
@@ -1073,6 +1103,19 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
             r['ifsc_code'],
             float(r['salary'] or 0),
         ])
+
+    people   = [r for r in rows if not r['is_vehicle']]
+    vehicles = [r for r in rows if r['is_vehicle']]
+    # "Employees" header only when vehicles also exist (a single flat list
+    # keeps its original headerless look otherwise).
+    if people and vehicles:
+        _append_section('Employees')
+    for r in people:
+        _append_data(r)
+    if vehicles:
+        _append_section('Vehicles')
+        for r in vehicles:
+            _append_data(r)
 
     # Blank separator + totals footer
     ws.append([])
@@ -1129,8 +1172,8 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
         'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE',
         'SALARY (Rs)',
     ]]
-    for r in rows:
-        table_data.append([
+    def _data_row(r):
+        return [
             r['emp_id']         or '-',
             r['emp_name']       or '-',
             r['site']           or '-',
@@ -1139,7 +1182,29 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
             r['account_number'] or '-',
             r['ifsc_code']      or '-',
             '{:,.2f}'.format(float(r['salary'] or 0)),
-        ])
+        ]
+
+    people   = [r for r in rows if not r['is_vehicle']]
+    vehicles = [r for r in rows if r['is_vehicle']]
+    # Track which table_data row indices are full-width section headers so
+    # their SPAN + background styles can be applied after the table is built.
+    section_header_idx = []
+
+    def _append_section(label):
+        section_header_idx.append(len(table_data))
+        table_data.append([label, '', '', '', '', '', '', ''])
+
+    # "Employees" header only when vehicles also exist; "Vehicles" header
+    # omitted entirely when there are no vehicles — no empty headings.
+    if people and vehicles:
+        _append_section('Employees')
+    for r in people:
+        table_data.append(_data_row(r))
+    if vehicles:
+        _append_section('Vehicles')
+        for r in vehicles:
+            table_data.append(_data_row(r))
+
     table_data.append([
         f'Total Employees: {len(rows)}', '', '',
         '', 'Total Salary Paid', '', '',
@@ -1148,7 +1213,7 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
 
     col_widths = [55, 95, 75, 95, 110, 95, 70, 65]
     tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(TableStyle([
+    style_cmds = [
         ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
         ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
         ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
@@ -1159,7 +1224,17 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
         ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
         ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
-    ]))
+    ]
+    # Merge each section-header row across all 8 columns and shade it. The
+    # right-align on column 7 does not apply to these rows because the SPAN
+    # makes the first cell own the full width.
+    for ridx in section_header_idx:
+        style_cmds.append(('SPAN', (0, ridx), (-1, ridx)))
+        style_cmds.append(('BACKGROUND', (0, ridx), (-1, ridx), colors.HexColor('#E2E8F0')))
+        style_cmds.append(('TEXTCOLOR', (0, ridx), (-1, ridx), colors.HexColor('#0F172A')))
+        style_cmds.append(('FONTNAME', (0, ridx), (-1, ridx), 'Helvetica-Bold'))
+        style_cmds.append(('ALIGN', (0, ridx), (-1, ridx), 'LEFT'))
+    tbl.setStyle(TableStyle(style_cmds))
     story.append(tbl)
     doc.build(story)
 

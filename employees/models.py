@@ -73,6 +73,14 @@ class Employee(models.Model):
     # differs from the configured base. Once True, Salary Config updates and
     # role/level changes do NOT overwrite base_salary automatically.
     salary_is_custom_override = models.BooleanField(default=False)
+    # Vehicles are stored as Employee rows (their registration number lives in
+    # `name`) but are surfaced in a separate "Vehicles" section across the
+    # Employee Master, Salary Management, and Attendance Registry modules. This
+    # flag drives that purely-visual split — no salary/attendance logic branches
+    # on it. Indexed because those three modules filter on it on every render.
+    # Backfilled from the Indian vehicle-registration regex in migration 0014;
+    # admins can toggle it per-row via the Add/Edit form thereafter.
+    is_vehicle       = models.BooleanField(default=False, db_index=True)
     fixed_allowance  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     joining_date     = models.DateField(blank=True, null=True)
     status           = models.CharField(max_length=15, choices=STATUS, default='active')

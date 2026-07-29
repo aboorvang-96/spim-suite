@@ -561,18 +561,11 @@
         syncSelect('f-bank', filters.banks);
     }
 
-    function renderTable() {
-        const tbody = document.getElementById('salary-tbody');
-        tbody.innerHTML = '';
-
-        if (salaryData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:3rem; color:var(--slate-400);">No payroll records found matching the criteria.</td></tr>`;
-            return;
-        }
-
-        salaryData.forEach(s => {
-            const empIdDisplay = (s.employee_id || '');
-            const row = `
+    // Build the <tr> markup for a single salary row. Extracted so both the
+    // Employees and Vehicles groups render identical rows (same columns/data).
+    function buildSalaryRow(s) {
+        const empIdDisplay = (s.employee_id || '');
+        return `
                 <tr>
                     <td class="sticky-col"><strong>${empIdDisplay}</strong></td>
                     <td>
@@ -600,8 +593,44 @@
                     </td>
                 </tr>
             `;
-            tbody.insertAdjacentHTML('beforeend', row);
-        });
+    }
+
+    // Full-width group-header row spanning all 10 columns.
+    function buildGroupHeader(label) {
+        return `
+                <tr class="salary-group-header">
+                    <td colspan="10" style="background:#e2e8f0; color:#0f172a; font-weight:800; letter-spacing:0.02em; padding:0.55rem 1rem; text-transform:uppercase; font-size:0.78rem;">${label}</td>
+                </tr>
+            `;
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('salary-tbody');
+        tbody.innerHTML = '';
+
+        if (salaryData.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:3rem; color:var(--slate-400);">No payroll records found matching the criteria.</td></tr>`;
+            return;
+        }
+
+        // Partition into people vs vehicles (order within each group is
+        // preserved from salaryData, which the server sorts by name).
+        const people   = salaryData.filter(s => !s.is_vehicle);
+        const vehicles = salaryData.filter(s => s.is_vehicle);
+
+        let html = '';
+        // "Employees" header only when there are also vehicles to separate from
+        // (a plain single list keeps its original headerless look otherwise).
+        if (people.length && vehicles.length) html += buildGroupHeader('Employees');
+        people.forEach(s => { html += buildSalaryRow(s); });
+
+        // Vehicles header hidden entirely when there are no vehicles.
+        if (vehicles.length) {
+            html += buildGroupHeader('Vehicles');
+            vehicles.forEach(s => { html += buildSalaryRow(s); });
+        }
+
+        tbody.insertAdjacentHTML('beforeend', html);
     }
 
     async function generatePayslip(id) {
