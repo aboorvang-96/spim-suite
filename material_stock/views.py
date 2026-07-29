@@ -32,7 +32,7 @@ from accounts.views import get_admin_id, is_admin_user
 from projects.decorators import admin_required
 from .models import (
     LegacyStockSite, LegacyStockItem, LegacyStockEntry,   # retired UI backend
-    Brand, MaterialType, StockItem, ElectricMotorCatalog, StockMovement,
+    Brand, MaterialType, StockItem, StockMovement,
 )
 
 
@@ -88,6 +88,15 @@ def _body(request):
 
 def _err(msg, status=400):
     return JsonResponse({'success': False, 'error': msg}, status=status)
+
+
+class _BatchError(Exception):
+    """Raised inside a batch movement to force an all-or-nothing rollback."""
+    def __init__(self, serial_id, serial, message):
+        self.serial_id = serial_id
+        self.serial    = serial
+        self.message   = message
+        super().__init__(message)
 
 
 def _clean(v, maxlen=None):
@@ -191,16 +200,16 @@ def master(request):
         selected = brands[0]
 
     ctx = {
-        'active_page': 'master',
-        'is_admin':    is_admin_user(request.user),
-        'brands':      brands,
-        'selected':    selected,
-        'today':       today,
+        'active_page':        'master',
+        'is_admin':           is_admin_user(request.user),
+        'brands':             brands,
+        'equipment_brands':   [b for b in brands if b.section != Brand.MACHINERIES],
+        'machineries_brands': [b for b in brands if b.section == Brand.MACHINERIES],
+        'selected':           selected,
+        'today':              today,
     }
 
-    if selected and selected.category == Brand.CATALOG_ONLY:
-        ctx['motor_rows'] = ElectricMotorCatalog.objects.filter(admin_id=admin_id)
-    elif selected:
+    if selected:
         mtypes = list(selected.material_types.filter(is_active=True).order_by('name'))
         items_by_type = {}
         items = (StockItem.objects.filter(admin_id=admin_id, material_type__in=mtypes)
@@ -290,21 +299,7 @@ def item_add(request):
 
     brand = get_object_or_404(Brand, id=data.get('brand_id') or 0, admin_id=admin_id)
 
-    # Electric Motor / catalog-only brand → ElectricMotorCatalog row.
-    if brand.category == Brand.CATALOG_ONLY:
-        type_name = _clean(data.get('type_name'), 150)
-        if not type_name:
-            return _err('Type is required.')
-        row = ElectricMotorCatalog.objects.create(
-            admin_id=admin_id,
-            type_name=type_name,
-            brand=_clean(data.get('brand_text'), 150),
-            material=_clean(data.get('material'), 150),
-            remarks=_clean(data.get('remarks')) or None,
-        )
-        return JsonResponse({'success': True, 'kind': 'motor', 'id': row.id})
-
-    # Tracked brand → StockItem row.
+    # All brands are serial-tracked → StockItem row.
     mt = get_object_or_404(MaterialType, id=data.get('material_type_id') or 0,
                            admin_id=admin_id, brand=brand)
     serial = _clean(data.get('serial_no'), 120)
@@ -404,16 +399,20 @@ def brand_add(request):
     data = _body(request)
     name = _clean(data.get('name'), 120)
     if not name:
-        return _err('Brand name is required.')
+        return _err('Equipment name is required.')
     category = _clean(data.get('category'), 20)
     if category not in dict(Brand.CATEGORY_CHOICES):
         category = Brand.TRACKED
+    section = _clean(data.get('section'), 20)
+    if section not in dict(Brand.SECTION_CHOICES):
+        section = Brand.EQUIPMENT
     if Brand.objects.filter(admin_id=admin_id, name__iexact=name).exists():
-        return _err(f"Brand '{name}' already exists.", status=409)
+        return _err(f"Equipment '{name}' already exists.", status=409)
     try:
-        b = Brand.objects.create(admin_id=admin_id, name=name, category=category)
+        b = Brand.objects.create(admin_id=admin_id, name=name,
+                                 category=category, section=section)
     except IntegrityError:
-        return _err(f"Brand '{name}' already exists.", status=409)
+        return _err(f"Equipment '{name}' already exists.", status=409)
     return JsonResponse({'success': True, 'id': b.id})
 
 
@@ -425,7 +424,7 @@ def brand_delete(request, pk):
     brand = get_object_or_404(Brand, id=pk, admin_id=admin_id)
     n = MaterialType.objects.filter(admin_id=admin_id, brand=brand).count()
     if n:
-        return _err(f"Cannot delete — brand has {n} material type(s). "
+        return _err(f"Cannot delete — equipment has {n} material type(s). "
                     f"Remove them first.", status=409)
     brand.delete()
     return JsonResponse({'success': True})
@@ -438,8 +437,6 @@ def mtype_add(request):
     admin_id = get_admin_id(request.user)
     data = _body(request)
     brand = get_object_or_404(Brand, id=data.get('brand_id') or 0, admin_id=admin_id)
-    if brand.category == Brand.CATALOG_ONLY:
-        return _err('Catalog-only brands do not have material types.')
     name = _clean(data.get('name'), 120)
     if not name:
         return _err('Material type name is required.')
@@ -470,50 +467,37 @@ def mtype_delete(request, pk):
 
 
 # ===========================================================================
-# CRUD — Electric Motor Catalog  (Page 2)
+# CRUD — Electric Motor Catalog  (RETIRED)
+#
+# Electric Motor is now a normal serial-tracked brand (migration 0005 moved its
+# catalog rows into StockItem).  The three endpoints below are kept ONLY as
+# 410 Gone stubs so a stale browser tab posting to the old catalog URLs gets a
+# clear message instead of a mystery 500.  The routes remain wired in urls.py.
 # ===========================================================================
+
+_MOTOR_GONE = ('Electric Motor is now managed as tracked stock items. '
+               'Please use the new Add Stock Item flow.')
+
 
 @login_required
 @admin_required
 @require_POST
 def motor_add(request):
-    admin_id = get_admin_id(request.user)
-    data = _body(request)
-    type_name = _clean(data.get('type_name'), 150)
-    if not type_name:
-        return _err('Type is required.')
-    row = ElectricMotorCatalog.objects.create(
-        admin_id=admin_id, type_name=type_name,
-        brand=_clean(data.get('brand'), 150),
-        material=_clean(data.get('material'), 150),
-        remarks=_clean(data.get('remarks')) or None,
-    )
-    return JsonResponse({'success': True, 'id': row.id})
+    return JsonResponse({'success': False, 'error': _MOTOR_GONE}, status=410)
 
 
 @login_required
 @admin_required
 @require_POST
 def motor_edit(request, pk):
-    admin_id = get_admin_id(request.user)
-    data = _body(request)
-    row = get_object_or_404(ElectricMotorCatalog, id=pk, admin_id=admin_id)
-    row.type_name = _clean(data.get('type_name'), 150) or row.type_name
-    row.brand     = _clean(data.get('brand'), 150)
-    row.material  = _clean(data.get('material'), 150)
-    row.remarks   = _clean(data.get('remarks')) or None
-    row.save()
-    return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': _MOTOR_GONE}, status=410)
 
 
 @login_required
 @admin_required
 @require_POST
 def motor_delete(request, pk):
-    admin_id = get_admin_id(request.user)
-    row = get_object_or_404(ElectricMotorCatalog, id=pk, admin_id=admin_id)
-    row.delete()
-    return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': _MOTOR_GONE}, status=410)
 
 
 # ===========================================================================
@@ -524,8 +508,40 @@ def motor_delete(request, pk):
 @admin_required
 @require_POST
 def movement_add(request):
+    """Create one StockMovement per selected serial.
+
+    Accepts either:
+      * `serial_ids`: [id, id, ...]  (multi-select batch), OR
+      * `serial_id` / `stock_item_id`: single id  (backward compat).
+
+    The From / To / Site / Remarks / Date fields apply to the WHOLE batch.
+    All movements are created inside a single `transaction.atomic()` block:
+    if any one serial fails, the entire batch rolls back (all-or-nothing).
+    """
     admin_id = get_admin_id(request.user)
     data = _body(request)
+
+    # Collect the requested serial ids (array wins; else fall back to single).
+    raw_ids = data.get('serial_ids')
+    if raw_ids is None:
+        single = data.get('serial_id') or data.get('stock_item_id')
+        raw_ids = [single] if single else []
+    if not isinstance(raw_ids, (list, tuple)):
+        raw_ids = [raw_ids]
+
+    # Normalise to a de-duplicated list of positive ints, preserving order.
+    seen, serial_ids = set(), []
+    for r in raw_ids:
+        try:
+            n = int(r)
+        except (ValueError, TypeError):
+            continue
+        if n > 0 and n not in seen:
+            seen.add(n)
+            serial_ids.append(n)
+
+    if not serial_ids:
+        return _err('Select at least one serial.')
 
     site = _clean(data.get('site_name'), 200)
     if not site:
@@ -533,27 +549,49 @@ def movement_add(request):
     mdate = _to_date(data.get('movement_date')) or timezone.localdate()
     from_person = _clean(data.get('from_person'), 150) or None
     to_person   = _clean(data.get('to_person'), 150) or None
+    remarks     = _clean(data.get('remarks')) or None
 
-    with transaction.atomic():
-        item = get_object_or_404(
-            StockItem.objects.select_for_update(),
-            id=data.get('stock_item_id') or 0, admin_id=admin_id)
+    saved_ids, failures = [], []
+    try:
+        with transaction.atomic():
+            for sid in serial_ids:
+                item = (StockItem.objects.select_for_update()
+                        .filter(id=sid, admin_id=admin_id).first())
+                if item is None:
+                    # Abort the whole batch (all-or-nothing).
+                    raise _BatchError(sid, None,
+                                      'Serial not found for this account.')
 
-        mv = StockMovement.objects.create(
-            admin_id=admin_id, stock_item=item, movement_date=mdate,
-            site_name=site, from_person=from_person, to_person=to_person,
-            remarks=_clean(data.get('remarks')) or None,
-            created_by=request.user if request.user.is_authenticated else None,
-        )
+                mv = StockMovement.objects.create(
+                    admin_id=admin_id, stock_item=item, movement_date=mdate,
+                    site_name=site, from_person=from_person, to_person=to_person,
+                    remarks=remarks,
+                    created_by=request.user if request.user.is_authenticated else None,
+                )
 
-        # Update the item's live pointer.
-        item.current_holder_name = to_person
-        item.current_site_name   = site or None
-        item.status = StockItem.ISSUED if to_person else StockItem.AVAILABLE
-        item.save(update_fields=['current_holder_name', 'current_site_name',
-                                 'status', 'updated_at'])
+                # Update the item's live pointer.
+                item.current_holder_name = to_person
+                item.current_site_name   = site or None
+                item.status = StockItem.ISSUED if to_person else StockItem.AVAILABLE
+                item.save(update_fields=['current_holder_name', 'current_site_name',
+                                         'status', 'updated_at'])
+                saved_ids.append(mv.id)
+    except _BatchError as e:
+        # Whole transaction rolled back → nothing saved.
+        return JsonResponse({
+            'success':     False,
+            'saved_count': 0,
+            'error':       f"{e.message} Nothing was saved.",
+            'failures':    [{'serial_id': e.serial_id, 'serial': e.serial,
+                             'error': e.message}],
+        }, status=409)
 
-    return JsonResponse({'success': True, 'id': mv.id})
+    return JsonResponse({
+        'success':     True,
+        'saved_count': len(saved_ids),
+        'ids':         saved_ids,
+        'failures':    failures,
+    })
 
 
 @login_required

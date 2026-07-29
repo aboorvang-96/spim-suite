@@ -51,8 +51,15 @@
                     <td>1</td>
                     <td><select class="ms-select" id="e_mtype"></select></td>
                     <td class="ms-ac-wrap">
-                        <select class="ms-select" id="e_serial"></select>
-                        <div class="ms-ac-hint" id="e_serial_hint"></div>
+                        <input class="ms-input ms-serial-input" id="e_serial_display" type="text"
+                               readonly placeholder="— pick material first —">
+                        <div class="ms-serial-pop" id="e_serial_pop">
+                            <div class="ms-serial-list" id="e_serial_list"></div>
+                            <div class="ms-serial-foot">
+                                <span class="ms-serial-count" id="e_serial_count">0 selected</span>
+                                <button type="button" class="btn btn-primary btn-sm" id="e_serial_done">Done</button>
+                            </div>
+                        </div>
                     </td>
                     <td class="ms-ac-wrap"><input class="ms-input" id="e_from" type="text" autocomplete="off"></td>
                     <td class="ms-ac-wrap"><input class="ms-input" id="e_to" type="text" autocomplete="off"></td>
@@ -118,36 +125,80 @@ document.getElementById('f_month').addEventListener('change', function () {
 {% if is_admin %}
 <script>
 (function () {
-    const MTYPES = JSON.parse(document.getElementById('ms-mtypes-data').textContent || '[]');
-    const mSel   = document.getElementById('e_mtype');
-    const sSel   = document.getElementById('e_serial');
-    const hint   = document.getElementById('e_serial_hint');
+    const MTYPES  = JSON.parse(document.getElementById('ms-mtypes-data').textContent || '[]');
+    const mSel    = document.getElementById('e_mtype');
+    const display = document.getElementById('e_serial_display');
+    const pop     = document.getElementById('e_serial_pop');
+    const list    = document.getElementById('e_serial_list');
+    const counter = document.getElementById('e_serial_count');
+    const doneBtn = document.getElementById('e_serial_done');
 
     function opt(v, t) { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
+    function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 
     mSel.appendChild(opt('', '— Select material —'));
     MTYPES.forEach(m => mSel.appendChild(opt(m.id, m.label)));
 
-    let serialMeta = {};   // stock_item_id -> {status, holder, site}
+    // stock_item_id -> serial (the current selection).
+    const selected = new Map();
+
+    function openPop(open) { pop.classList.toggle('open', !!open); }
+
+    function updateDisplay() {
+        display.value = [...selected.values()].join(', ');
+        counter.textContent = `${selected.size} selected`;
+        if (!selected.size) {
+            display.placeholder = mSel.value ? '— select serials —' : '— pick material first —';
+        }
+    }
 
     async function loadSerials() {
-        sSel.innerHTML = ''; hint.textContent = ''; serialMeta = {};
-        if (!mSel.value) { sSel.appendChild(opt('', '— pick material first —')); return; }
-        const data = await MS.get(`{% url 'material_stock:serials_suggest' %}?material_type_id=${mSel.value}`);
+        list.innerHTML = '';
+        selected.clear();
+        updateDisplay();
+        openPop(false);
+        if (!mSel.value) { display.placeholder = '— pick material first —'; return; }
+
+        const data  = await MS.get(`{% url 'material_stock:serials_suggest' %}?material_type_id=${mSel.value}`);
         const items = data.results || [];
-        if (!items.length) { sSel.appendChild(opt('', '— no items —')); return; }
-        sSel.appendChild(opt('', '— select serial —'));
+        if (!items.length) {
+            list.innerHTML = '<div class="ms-empty" style="padding:16px;">No items.</div>';
+            display.placeholder = '— no items —';
+            return;
+        }
+        display.placeholder = '— select serials —';
         items.forEach(it => {
-            sSel.appendChild(opt(it.id, it.serial + ' (' + it.status + ')'));
-            serialMeta[it.id] = it;
+            const meta = [];
+            if (it.holder) meta.push('Holder: ' + esc(it.holder));
+            if (it.site)   meta.push('Site: ' + esc(it.site));
+            const row = document.createElement('label');
+            row.className = 'ms-serial-row';
+            row.innerHTML =
+                `<input type="checkbox" value="${it.id}" data-serial="${esc(it.serial)}">` +
+                `<span class="ms-serial-no">${esc(it.serial)}</span>` +
+                `<span class="st-chip st-${esc(it.status)}">${esc(it.status)}</span>` +
+                `<span class="ms-serial-meta">${meta.join(' · ')}</span>`;
+            list.appendChild(row);
         });
     }
 
-    mSel.addEventListener('change', loadSerials);
-    sSel.addEventListener('change', () => {
-        const m = serialMeta[sSel.value];
-        hint.textContent = m ? `Holder: ${m.holder || '—'} · Site: ${m.site || '—'}` : '';
+    // Checkbox → selection map.
+    list.addEventListener('change', (e) => {
+        const cb = e.target;
+        if (cb.type !== 'checkbox') return;
+        if (cb.checked) selected.set(cb.value, cb.dataset.serial);
+        else            selected.delete(cb.value);
+        updateDisplay();
     });
+
+    // Open / close the popover.
+    display.addEventListener('click', () => { if (mSel.value) openPop(!pop.classList.contains('open')); });
+    doneBtn.addEventListener('click', () => openPop(false));
+    document.addEventListener('click', (e) => {
+        if (!pop.contains(e.target) && e.target !== display) openPop(false);
+    });
+
+    mSel.addEventListener('change', loadSerials);
 
     // Autocomplete: from / to (persons), site (sites).
     MS.autocomplete(document.getElementById('e_from'), "{% url 'material_stock:persons_suggest' %}");
@@ -155,23 +206,29 @@ document.getElementById('f_month').addEventListener('change', function () {
     MS.autocomplete(document.getElementById('f_site'), "{% url 'material_stock:sites_suggest' %}");
 
     document.getElementById('e_save').addEventListener('click', async () => {
-        if (!sSel.value) { MS.toast('Select a serial.', false); return; }
+        if (selected.size === 0) { MS.toast('Select at least one serial.', false); return; }
         const site = document.getElementById('f_site').value.trim();
         if (!site) { MS.toast('Enter a site in the filter bar.', false); return; }
+        const toPerson = document.getElementById('e_to').value.trim();
         const payload = {
-            stock_item_id: sSel.value,
+            serial_ids:    [...selected.keys()],
             movement_date: document.getElementById('f_date').value,
             site_name:     site,
             from_person:   document.getElementById('e_from').value.trim(),
-            to_person:     document.getElementById('e_to').value.trim(),
+            to_person:     toPerson,
             remarks:       document.getElementById('e_remarks').value.trim(),
         };
         const btn = document.getElementById('e_save');
         btn.disabled = true;
         const r = await MS.post("{% url 'material_stock:movement_add' %}", payload);
         btn.disabled = false;
-        if (r.ok) { MS.toast('Movement saved.'); location.reload(); }
-        else      { MS.toast(r.data.error || 'Failed.', false); }
+        if (r.ok) {
+            const n = r.data.saved_count || selected.size;
+            MS.toast(`Moved ${n} item${n === 1 ? '' : 's'} to ${toPerson || 'stock'}.`);
+            location.reload();
+        } else {
+            MS.toast(r.data.error || 'Failed.', false);
+        }
     });
 })();
 

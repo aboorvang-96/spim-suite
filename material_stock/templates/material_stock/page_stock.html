@@ -9,17 +9,16 @@
     <div class="ms-panel-head">
         <div>
             <h3 class="ms-panel-title">Add Stock Item</h3>
-            <p class="ms-panel-note">Pick a brand and material type, then enter the unit details.</p>
+            <p class="ms-panel-note">Pick equipment and a material type, then enter the unit details.</p>
         </div>
     </div>
     <div class="ms-panel-body">
         <form id="addForm" class="ms-form-grid" autocomplete="off">
             <div class="ms-field">
-                <label>Brand <span class="req">*</span></label>
+                <label>Equipment <span class="req">*</span></label>
                 <select class="ms-select" id="f_brand"></select>
             </div>
 
-            <!-- Tracked-brand fields -->
             <div class="ms-field tracked-field">
                 <label>Material Type <span class="req">*</span></label>
                 <select class="ms-select" id="f_mtype"></select>
@@ -39,24 +38,6 @@
             <div class="ms-field tracked-field">
                 <label>Purchase Date <span class="req">*</span></label>
                 <input class="ms-input" id="f_purchase" type="date" value="{{ today|date:'Y-m-d' }}">
-            </div>
-
-            <!-- Catalog-only (Electric Motor) fields -->
-            <div class="ms-field catalog-field hidden">
-                <label>Type <span class="req">*</span></label>
-                <input class="ms-input" id="f_type_name" type="text" placeholder="Type name">
-            </div>
-            <div class="ms-field catalog-field hidden">
-                <label>Brand (text)</label>
-                <input class="ms-input" id="f_brand_text" type="text" placeholder="Brand">
-            </div>
-            <div class="ms-field catalog-field hidden">
-                <label>Material</label>
-                <input class="ms-input" id="f_material" type="text" placeholder="Material">
-            </div>
-            <div class="ms-field catalog-field hidden">
-                <label>Remarks</label>
-                <input class="ms-input" id="f_motor_remarks" type="text" placeholder="Remarks">
             </div>
 
             <div class="ms-field" style="align-self:end;">
@@ -120,9 +101,9 @@
 
     function opt(v, t) { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
 
-    // Populate brand dropdown.
-    brandSel.appendChild(opt('', '— Select brand —'));
-    BRANDS.forEach(b => brandSel.appendChild(opt(b.id, b.name + (b.category === 'catalog_only' ? ' (catalog)' : ''))));
+    // Populate equipment dropdown.
+    brandSel.appendChild(opt('', '— Select equipment —'));
+    BRANDS.forEach(b => brandSel.appendChild(opt(b.id, b.name)));
 
     function currentBrand() { return BRANDS.find(b => String(b.id) === String(brandSel.value)); }
     function currentMtype() { const b = currentBrand(); return b ? b.types.find(t => String(t.id) === String(mtypeSel.value)) : null; }
@@ -131,12 +112,10 @@
 
     function refreshMode() {
         const b = currentBrand();
-        const isCatalog = b && b.category === 'catalog_only';
-        show('.tracked-field', !!b && !isCatalog);
-        show('.catalog-field', !!isCatalog);
+        show('.tracked-field', !!b);
         // Material type list.
         mtypeSel.innerHTML = '';
-        if (b && !isCatalog) {
+        if (b) {
             mtypeSel.appendChild(opt('', '— Select material —'));
             b.types.forEach(t => mtypeSel.appendChild(opt(t.id, t.name)));
         }
@@ -156,30 +135,18 @@
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const b = currentBrand();
-        if (!b) { MS.toast('Select a brand.', false); return; }
+        if (!b) { MS.toast('Select an equipment.', false); return; }
 
-        let payload;
-        if (b.category === 'catalog_only') {
-            payload = {
-                brand_id:   b.id,
-                type_name:  document.getElementById('f_type_name').value.trim(),
-                brand_text: document.getElementById('f_brand_text').value.trim(),
-                material:   document.getElementById('f_material').value.trim(),
-                remarks:    document.getElementById('f_motor_remarks').value.trim(),
-            };
-            if (!payload.type_name) { MS.toast('Type is required.', false); return; }
-        } else {
-            payload = {
-                brand_id:         b.id,
-                material_type_id: mtypeSel.value,
-                serial_no:        document.getElementById('f_serial').value.trim(),
-                batch_no:         document.getElementById('f_batch').value.trim(),
-                mfg_date:         document.getElementById('f_mfg').value,
-                purchase_date:    document.getElementById('f_purchase').value,
-            };
-            if (!payload.material_type_id) { MS.toast('Select a material type.', false); return; }
-            if (!payload.serial_no)        { MS.toast('Serial number is required.', false); return; }
-        }
+        const payload = {
+            brand_id:         b.id,
+            material_type_id: mtypeSel.value,
+            serial_no:        document.getElementById('f_serial').value.trim(),
+            batch_no:         document.getElementById('f_batch').value.trim(),
+            mfg_date:         document.getElementById('f_mfg').value,
+            purchase_date:    document.getElementById('f_purchase').value,
+        };
+        if (!payload.material_type_id) { MS.toast('Select a material type.', false); return; }
+        if (!payload.serial_no)        { MS.toast('Serial number is required.', false); return; }
 
         const btn = document.getElementById('addBtn');
         btn.disabled = true;

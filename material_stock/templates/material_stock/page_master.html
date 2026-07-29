@@ -4,76 +4,58 @@
 {% block ms_body %}
 <div class="ms-master-layout">
 
-    <!-- ── Brand sidebar ── -->
+    <!-- ── Equipment / Machineries sidebar ── -->
     <div class="ms-panel" style="margin-bottom:0;">
-        <div class="ms-panel-head"><h3 class="ms-panel-title">Brands</h3></div>
         <div class="ms-panel-body">
-            <div class="ms-brand-list">
-                {% for b in brands %}
-                <a href="?brand={{ b.id }}"
-                   class="ms-brand-item {% if selected and selected.id == b.id %}active{% endif %}">
-                    <span>{{ b.name }}</span>
-                    <span class="ms-brand-cat">{% if b.category == 'catalog_only' %}Catalog{% else %}Tracked{% endif %}</span>
-                </a>
-                {% empty %}
-                <p class="ms-empty">No brands yet.</p>
-                {% endfor %}
+
+            <!-- Equipment group -->
+            <div class="ms-side-group">
+                <div class="ms-side-label">Equipment</div>
+                <div class="ms-brand-list">
+                    {% for b in equipment_brands %}
+                    <a href="?brand={{ b.id }}"
+                       class="ms-brand-item {% if selected and selected.id == b.id %}active{% endif %}">
+                        <span>{{ b.name }}</span>
+                    </a>
+                    {% empty %}
+                    <p class="ms-empty">No equipment yet.</p>
+                    {% endfor %}
+                </div>
+                {% if is_admin %}
+                <button class="btn btn-outline btn-sm" style="margin-top:10px; width:100%;"
+                        onclick="openAddBrand('equipment')">+ Add Equipment</button>
+                {% endif %}
             </div>
-            {% if is_admin %}
-            <button class="btn btn-outline btn-sm" style="margin-top:12px; width:100%;"
-                    onclick="MS.modal('brandModal', true)">+ Add Brand</button>
-            {% endif %}
+
+            <!-- Machineries / Tools group -->
+            <div class="ms-side-group" style="margin-top:20px;">
+                <div class="ms-side-label">Machineries/Tools</div>
+                <div class="ms-brand-list">
+                    {% for b in machineries_brands %}
+                    <a href="?brand={{ b.id }}"
+                       class="ms-brand-item {% if selected and selected.id == b.id %}active{% endif %}">
+                        <span>{{ b.name }}</span>
+                    </a>
+                    {% empty %}
+                    <p class="ms-empty">No machineries yet.</p>
+                    {% endfor %}
+                </div>
+                {% if is_admin %}
+                <button class="btn btn-outline btn-sm" style="margin-top:10px; width:100%;"
+                        onclick="openAddBrand('machineries')">+ Add Machinery</button>
+                {% endif %}
+            </div>
+
         </div>
     </div>
 
     <!-- ── Right panel ── -->
     <div>
     {% if not selected %}
-        <div class="ms-panel"><div class="ms-empty">Select or add a brand to begin.</div></div>
-
-    {% elif selected.category == 'catalog_only' %}
-        <!-- Electric Motor catalog -->
-        <div class="ms-panel">
-            <div class="ms-panel-head">
-                <h3 class="ms-panel-title">{{ selected.name }} — Catalog</h3>
-                {% if is_admin %}
-                <button class="btn btn-primary btn-sm" onclick="openMotor()">+ Add Row</button>
-                {% endif %}
-            </div>
-            <div class="ms-scroll">
-                <table class="data-table" style="min-width:640px;">
-                    <thead><tr>
-                        <th>Type</th><th>Brand</th><th>Material</th><th>Remarks</th>
-                        {% if is_admin %}<th style="width:120px;">Actions</th>{% endif %}
-                    </tr></thead>
-                    <tbody>
-                        {% for m in motor_rows %}
-                        <tr>
-                            <td>{{ m.type_name }}</td><td>{{ m.brand }}</td>
-                            <td>{{ m.material }}</td><td>{{ m.remarks|default:'' }}</td>
-                            {% if is_admin %}
-                            <td>
-                                <div style="display:flex; gap:4px;">
-                                    <button class="mini-btn"
-                                        data-id="{{ m.id }}" data-type="{{ m.type_name }}"
-                                        data-brand="{{ m.brand }}" data-material="{{ m.material }}"
-                                        data-remarks="{{ m.remarks|default:'' }}"
-                                        onclick="editMotorFromBtn(this)">✏️</button>
-                                    <button class="mini-btn danger" onclick="delMotor({{ m.id }})">🗑️</button>
-                                </div>
-                            </td>
-                            {% endif %}
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="{% if is_admin %}5{% else %}4{% endif %}" class="ms-empty">No rows yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <div class="ms-panel"><div class="ms-empty">Select or add an entry to begin.</div></div>
 
     {% else %}
-        <!-- Tracked brand: material type sub-tabs -->
+        <!-- Tracked entry: material type sub-tabs -->
         <div class="ms-panel">
             <div class="ms-panel-head">
                 <h3 class="ms-panel-title">{{ selected.name }}</h3>
@@ -147,7 +129,7 @@
                 </div>
                 {% endfor %}
                 {% else %}
-                <p class="ms-empty">No material types under this brand yet.
+                <p class="ms-empty">No material types under this entry yet.
                     {% if is_admin %}Use “+ Add Material Type”.{% endif %}</p>
                 {% endif %}
             </div>
@@ -157,11 +139,12 @@
 </div>
 
 {% if is_admin %}
-<!-- ── Add Brand modal ── -->
+<!-- ── Add Equipment / Machinery modal ── -->
 <div class="ms-modal-overlay" id="brandModal">
   <div class="ms-modal">
-    <div class="ms-modal-head"><h3>Add Brand</h3><button class="ms-x" onclick="MS.modal('brandModal',false)">×</button></div>
+    <div class="ms-modal-head"><h3 id="brandModalTitle">Add Equipment</h3><button class="ms-x" onclick="MS.modal('brandModal',false)">×</button></div>
     <div class="ms-modal-body">
+        <input type="hidden" id="brand_section" value="equipment">
         <div class="ms-field" style="margin-bottom:12px;">
             <label>Name <span class="req">*</span></label>
             <input class="ms-input" id="brand_name" type="text">
@@ -170,7 +153,6 @@
             <label>Category</label>
             <select class="ms-select" id="brand_cat">
                 <option value="tracked">Tracked (serial numbers)</option>
-                <option value="catalog_only">Catalog only (no stock tracking)</option>
             </select>
         </div>
     </div>
@@ -235,26 +217,6 @@
     </div>
   </div>
 </div>
-
-<!-- ── Motor row modal ── -->
-<div class="ms-modal-overlay" id="motorModal">
-  <div class="ms-modal">
-    <div class="ms-modal-head"><h3 id="motorTitle">Add Row</h3><button class="ms-x" onclick="MS.modal('motorModal',false)">×</button></div>
-    <div class="ms-modal-body">
-        <input type="hidden" id="mo_id">
-        <div class="ms-form-grid">
-            <div class="ms-field"><label>Type <span class="req">*</span></label><input class="ms-input" id="mo_type"></div>
-            <div class="ms-field"><label>Brand</label><input class="ms-input" id="mo_brand"></div>
-            <div class="ms-field"><label>Material</label><input class="ms-input" id="mo_material"></div>
-            <div class="ms-field" style="grid-column:1/-1;"><label>Remarks</label><input class="ms-input" id="mo_remarks"></div>
-        </div>
-    </div>
-    <div class="ms-modal-foot">
-        <button class="btn btn-outline btn-sm" onclick="MS.modal('motorModal',false)">Cancel</button>
-        <button class="btn btn-primary btn-sm" onclick="saveMotor()">Save</button>
-    </div>
-  </div>
-</div>
 {% endif %}
 {% endblock %}
 
@@ -275,17 +237,28 @@ document.querySelectorAll('.ms-subtab').forEach(btn => {
 <script>
 const SELECTED_BRAND = {% if selected %}{{ selected.id }}{% else %}null{% endif %};
 
-// ── Brand ──
+// ── Equipment / Machinery ──
+function openAddBrand(section) {
+    document.getElementById('brand_section').value = section;
+    document.getElementById('brandModalTitle').textContent =
+        section === 'machineries' ? 'Add Machinery' : 'Add Equipment';
+    document.getElementById('brand_name').value = '';
+    document.getElementById('brand_cat').value  = 'tracked';
+    MS.modal('brandModal', true);
+}
 async function saveBrand() {
     const name = document.getElementById('brand_name').value.trim();
     if (!name) { MS.toast('Name is required.', false); return; }
-    const r = await MS.post("{% url 'material_stock:brand_add' %}",
-        { name, category: document.getElementById('brand_cat').value });
+    const r = await MS.post("{% url 'material_stock:brand_add' %}", {
+        name,
+        category: document.getElementById('brand_cat').value,
+        section:  document.getElementById('brand_section').value,
+    });
     if (r.ok) { location.href = '?brand=' + r.data.id; }
     else      { MS.toast(r.data.error || 'Failed.', false); }
 }
 async function delBrand(id) {
-    if (!MS.confirm('Delete this brand?')) return;
+    if (!MS.confirm('Delete this entry?')) return;
     const r = await MS.post(`/material-stock/api/brands/${id}/delete/`, {});
     if (r.ok) location.href = '{% url 'material_stock:master' %}';
     else      MS.toast(r.data.error || 'Failed.', false);
@@ -335,44 +308,6 @@ async function saveItem() {
 async function delItem(id) {
     if (!MS.confirm('Delete this item?')) return;
     const r = await MS.post(`/material-stock/api/items/${id}/delete/`, {});
-    if (r.ok) location.reload();
-    else      MS.toast(r.data.error || 'Failed.', false);
-}
-
-// ── Electric Motor catalog ──
-function openMotor() {
-    document.getElementById('motorTitle').textContent = 'Add Row';
-    document.getElementById('mo_id').value = '';
-    ['mo_type','mo_brand','mo_material','mo_remarks'].forEach(i => document.getElementById(i).value = '');
-    MS.modal('motorModal', true);
-}
-function editMotorFromBtn(btn) {
-    const d = btn.dataset;
-    document.getElementById('motorTitle').textContent = 'Edit Row';
-    document.getElementById('mo_id').value       = d.id;
-    document.getElementById('mo_type').value     = d.type;
-    document.getElementById('mo_brand').value    = d.brand;
-    document.getElementById('mo_material').value = d.material;
-    document.getElementById('mo_remarks').value  = d.remarks;
-    MS.modal('motorModal', true);
-}
-async function saveMotor() {
-    const id = document.getElementById('mo_id').value;
-    const payload = {
-        type_name: document.getElementById('mo_type').value.trim(),
-        brand:     document.getElementById('mo_brand').value.trim(),
-        material:  document.getElementById('mo_material').value.trim(),
-        remarks:   document.getElementById('mo_remarks').value.trim(),
-    };
-    if (!payload.type_name) { MS.toast('Type is required.', false); return; }
-    const url = id ? `/material-stock/api/motor/${id}/edit/` : "{% url 'material_stock:motor_add' %}";
-    const r = await MS.post(url, payload);
-    if (r.ok) location.reload();
-    else      MS.toast(r.data.error || 'Failed.', false);
-}
-async function delMotor(id) {
-    if (!MS.confirm('Delete this row?')) return;
-    const r = await MS.post(`/material-stock/api/motor/${id}/delete/`, {});
     if (r.ok) location.reload();
     else      MS.toast(r.data.error || 'Failed.', false);
 }

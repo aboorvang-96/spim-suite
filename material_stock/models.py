@@ -135,9 +135,22 @@ class Brand(models.Model):
         (CATALOG_ONLY, 'Catalog only'),
     ]
 
+    # Top-level Master Control section this brand belongs to.  Purely an
+    # organisational grouping in the UI — everything about how a brand works
+    # (tracked/catalog, material types, items, movements) is identical across
+    # sections.  ("Brand" stays the model/table name; the UI labels it
+    # "Equipment".)
+    EQUIPMENT   = 'equipment'
+    MACHINERIES = 'machineries'
+    SECTION_CHOICES = [
+        (EQUIPMENT,   'Equipment'),
+        (MACHINERIES, 'Machineries/Tools'),
+    ]
+
     admin_id   = models.CharField(max_length=20, db_index=True, default='PENDING')
     name       = models.CharField(max_length=120)
     category   = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default=TRACKED)
+    section    = models.CharField(max_length=20, choices=SECTION_CHOICES, default=EQUIPMENT)
     is_active  = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
