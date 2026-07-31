@@ -142,6 +142,16 @@ def require_app_version(view_func):
         raw = request.headers.get('App-Version', '')
         minimum = getattr(settings, 'SPIM_LITE_MINIMUM_SUPPORTED_VERSION', '0.0.0')
 
+        # Diagnostic breadcrumb — emitted on EVERY gated request so Railway
+        # logs can be grepped for the exact App-Version header the current
+        # APK build sends. Once the value is confirmed and the gate is
+        # tuned to it, this INFO line can be dropped back to DEBUG or
+        # removed entirely.
+        _log.info(
+            'APP_VERSION_CHECK: endpoint=%s app_version=%s minimum=%s',
+            request.path, raw or 'MISSING', minimum,
+        )
+
         parsed = parse_version(raw)
         min_parsed = parse_version(minimum) or (0, 0, 0)
 

@@ -311,17 +311,30 @@ def mobile_profile(request):
     except Exception:
         company_block = None
 
-    # Attendance summary for the current calendar month
-    today = date.today()
-    month_qs = AttendanceRecord.objects.filter(
-        employee=emp, date__year=today.year, date__month=today.month,
+    # Attendance summary for the ACTIVE PAYROLL CYCLE (26th → 25th window
+    # whose end date falls in the current calendar month), not the raw
+    # calendar month. Employees expect the mobile summary to match their
+    # payslip period — a raw month view undercounted days between the 1st
+    # and 25th (missing the cycle's opening 26th-31st of the prior month)
+    # and inflated days between the 26th and end-of-month (which belong to
+    # the NEXT payroll cycle).
+    from accounts.cycle_utils import get_previous_cycle
+    from accounts.date_utils import today_ist
+    _cycle = get_previous_cycle(today_ist())
+    cycle_qs = AttendanceRecord.objects.filter(
+        employee=emp,
+        date__gte=_cycle['start'],
+        date__lte=_cycle['end'],
     )
     attendance_summary = {
-        'month':    today.strftime('%Y-%m'),
-        'present':  month_qs.filter(status='present').count(),
-        'half_day': month_qs.filter(status='half_day').count(),
-        'absent':   month_qs.filter(status='absent').count(),
-        'leave':    month_qs.filter(status='leave').count(),
+        # `month` kept as the payroll month_key ('YYYY-MM') so the response
+        # shape stays byte-identical for existing APK builds; only the
+        # aggregated counts change from calendar-month to cycle-window.
+        'month':    _cycle['month_key'],
+        'present':  cycle_qs.filter(status='present').count(),
+        'half_day': cycle_qs.filter(status='half_day').count(),
+        'absent':   cycle_qs.filter(status='absent').count(),
+        'leave':    cycle_qs.filter(status='leave').count(),
     }
 
     return JsonResponse({
@@ -644,15 +657,11 @@ def mobile_payslips(request):
     """
     emp = request.employee
 
-    # --- 26→25 cycle anchored on today (mirrors mobile_salary) ---
-    today = date.today()
-    if today.day >= 26:
-        if today.month == 12:
-            cycle_end = date(today.year + 1, 1, 25)
-        else:
-            cycle_end = date(today.year, today.month + 1, 25)
-    else:
-        cycle_end = today.replace(day=25)
+    # Active payroll cycle — same rule mobile_salary uses so the payslips
+    # tab and the salary tab agree on which SalaryUpdate row is "current".
+    from accounts.cycle_utils import get_previous_cycle
+    from accounts.date_utils import today_ist
+    cycle_end = get_previous_cycle(today_ist())['end']
 
     rows = list(SalaryUpdate.objects.filter(employee=emp).order_by('-month')[:60])
 
@@ -950,7 +959,6 @@ def mobile_sites(request):
     })
 
 
-@require_app_version
 @mobile_auth_required
 @require_http_methods(['GET'])
 def mobile_payslip_download(request, pk):
@@ -962,6 +970,15 @@ def mobile_payslip_download(request, pk):
 
     Locked until admin clicks "Generate Payslip" (Task 4): a not-yet-generated
     payslip returns 403.
+
+    Version gate note: `@require_app_version` is intentionally OMITTED here.
+    This endpoint is fetched by an external browser / WebView (the mobile
+    app hands the URL off to the system browser so the user can print to
+    PDF), and those clients cannot set custom request headers — see
+    `_extract_token`'s `?token=` fallback which exists for exactly this
+    flow. Leaving the version gate on would 426-block every payslip
+    download regardless of the installed APK build. Authentication is
+    still enforced by @mobile_auth_required via the URL-embedded token.
     """
     from dashboard.models import CompanySettings  # deferred to avoid import cycles
     salary = get_object_or_404(SalaryUpdate, pk=pk, employee=request.employee)
@@ -2195,23 +2212,15 @@ _ATTENDANCE_REPORT_SUMMARY_LABELS = (
 def _hr_attendance_report_cycle_default():
     """
     Fallback attendance window when the caller does not supply date_from /
-    date_to. Same 26→25 anchor rule the Suite uses for salary and the
-    mobile viewer uses client-side.
+    date_to. Returns the active payroll cycle — 26→25 window whose end
+    date is in the current calendar month — same rule mobile_salary,
+    mobile_home, mobile_profile, and mobile_payslips all use so every
+    surface agrees on "the cycle we are working on now".
     """
-    today = date.today()
-    if today.day >= 26:
-        cycle_start = today.replace(day=26)
-        if today.month == 12:
-            cycle_end = date(today.year + 1, 1, 25)
-        else:
-            cycle_end = date(today.year, today.month + 1, 25)
-    else:
-        if today.month == 1:
-            cycle_start = date(today.year - 1, 12, 26)
-        else:
-            cycle_start = date(today.year, today.month - 1, 26)
-        cycle_end = today.replace(day=25)
-    return cycle_start, cycle_end
+    from accounts.cycle_utils import get_previous_cycle
+    from accounts.date_utils import today_ist
+    _cycle = get_previous_cycle(today_ist())
+    return _cycle['start'], _cycle['end']
 
 
 def _hr_attendance_report_rows(hr_admin_id, target_employees, date_from, date_to):
