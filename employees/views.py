@@ -1653,12 +1653,19 @@ def manage_ajax(request):
             month_name  = target_date.strftime('%B')
             year_str    = str(target_date.year)
 
-            active_emps = (Employee.objects.filter(admin_id=admin_id)
-                           .filter(status='active'))
+            # Include every employee under this admin — same scope the
+            # salary_manager dashboard renders. A `status='active'` filter
+            # here previously left inactive / on_leave rows permanently grey
+            # even after HR clicked Generate Payslip, because they still
+            # showed up in the dashboard but were silently skipped by the
+            # batch. Attendance-driven earnings + salary_record.net_pay
+            # already handle "no attendance = ₹0", so it is safe to include
+            # every dashboard row.
+            active_emps = Employee.objects.filter(admin_id=admin_id)
             if not active_emps.exists():
                 return JsonResponse({
                     'success': False,
-                    'error': 'No active employees under this admin.',
+                    'error': 'No employees under this admin.',
                 }, status=400)
 
             gen_time    = timezone.now()
@@ -1763,6 +1770,12 @@ def manage_ajax(request):
                 + (f", {reactivated} reactivated" if reactivated else '')
                 + f". {expense_created} expense(s) created, {expense_skipped} already existed."
             )
+            if errors:
+                sample = ', '.join(
+                    f"{e['employee_name']} ({e['error'][:60]})" for e in errors[:3]
+                )
+                more = f" and {len(errors) - 3} more" if len(errors) > 3 else ''
+                msg += f" — {len(errors)} FAILED: {sample}{more}. See server logs."
 
             return JsonResponse({
                 'success': True,

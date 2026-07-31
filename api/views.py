@@ -1092,22 +1092,19 @@ def mobile_salary(request):
 def _mobile_salary_impl(request):
     """Original mobile_salary body — kept intact so the try/except wrapper
     above logs any regression without altering behavior."""
-    emp   = request.employee
-    today = date.today()
+    emp = request.employee
 
-    # Cycle window
-    if today.day >= 26:
-        cycle_start = today.replace(day=26)
-        if today.month == 12:
-            cycle_end = date(today.year + 1, 1, 25)
-        else:
-            cycle_end = date(today.year, today.month + 1, 25)
-    else:
-        if today.month == 1:
-            cycle_start = date(today.year - 1, 12, 26)
-        else:
-            cycle_start = date(today.year, today.month - 1, 26)
-        cycle_end = today.replace(day=25)
+    # Cycle window: the LAST COMPLETED cycle. Anchoring to today's containing
+    # cycle previously surfaced a partial in-progress window (e.g. 6 days of
+    # attendance mid-cycle) as the employee's monthly earnings — SPIM Lite
+    # rendered ₹3,832 for someone whose full previous cycle earnings were
+    # ₹29,700. get_previous_cycle rolls back to the most recent 26→25 window
+    # that has fully ended so the number matches the generated payslip.
+    from accounts.cycle_utils import get_previous_cycle
+    from accounts.date_utils import today_ist
+    _cycle    = get_previous_cycle(today_ist())
+    cycle_start = _cycle['start']
+    cycle_end   = _cycle['end']
 
     sal = SalaryUpdate.objects.filter(
         employee=emp,

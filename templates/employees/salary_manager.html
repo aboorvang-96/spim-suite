@@ -1004,7 +1004,11 @@
                 if (result.already_generated) {
                     showToast(`Payslips already generated for ${month} ${year}`, 'error');
                 } else {
-                    showToast(result.message || 'Payslips generated');
+                    // Per-employee failures come back in result.errors[]; use
+                    // the error toast style whenever any row failed so HR
+                    // notices before dismissing.
+                    const hasErrors = Array.isArray(result.errors) && result.errors.length > 0;
+                    showToast(result.message || 'Payslips generated', hasErrors ? 'error' : undefined);
                 }
                 fetchData();
             } else {

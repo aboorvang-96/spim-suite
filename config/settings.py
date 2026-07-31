@@ -180,11 +180,16 @@ CURRENCY_CODE = 'INR'
 #   MINIMUM_SUPPORTED_VERSION  — oldest APK still allowed to hit the API.
 #                                Anything older is force-updated (HTTP 426).
 SPIM_LITE_CURRENT_APP_VERSION       = "2.0.0"
-SPIM_LITE_MINIMUM_SUPPORTED_VERSION = "2.0.0"
+# MINIMUM lowered from "2.0.0" → "1.0.0". The APK in production identifies
+# as a pre-2.0.0 build and was hitting HTTP 426 across every mobile
+# endpoint. Dropping the floor to 1.0.0 admits the deployed build while
+# still rejecting requests with missing/malformed App-Version headers
+# (parse_version returns None for those and _wrapped still rejects).
+# Bump this back up in the same commit that ships the next APK rebuild.
+SPIM_LITE_MINIMUM_SUPPORTED_VERSION = "1.0.0"
 
-# Master switch for the App-Version gate. Version 2.0.0 is the sole
-# supported SPIM Lite release; every older APK is now permanently blocked
-# with HTTP 426 by the existing decorator + helper module.
+# Master switch for the App-Version gate. Kept ON so unversioned or
+# malformed clients are still rejected; only the floor was lowered.
 SPIM_LITE_ENFORCE_VERSION_GATE = True
 
 # -------------------------------------------------------------------
