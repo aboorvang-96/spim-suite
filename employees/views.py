@@ -1204,15 +1204,22 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
     """Build the salary report as a landscape A4 PDF HttpResponse using reportlab."""
     from io import BytesIO
     from django.http import HttpResponse
-    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib.pagesizes import landscape, A3
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
+    # Page size: A3 landscape (1190.55 x 841.89 pt).
+    # A4 landscape only offers ~841 pt wide; even after narrowing margins to
+    # 10pt and shrinking every column to its legibility floor, the 20-column
+    # salary report sums to ~1140+ pt. A4 clipped Emp ID / Emp Name / Total
+    # Deduction / Net Pay into the page margins. A3 gives 1190pt so the same
+    # widths render fully with a small right-side buffer. XLSX renderer is
+    # unchanged — this only affects the printable PDF snapshot.
     buf = BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=landscape(A4),
-        leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18,
+        buf, pagesize=landscape(A3),
+        leftMargin=10, rightMargin=10, topMargin=18, bottomMargin=18,
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('Title14', parent=styles['Title'], fontSize=14, alignment=0)
@@ -1295,12 +1302,30 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
     total_row_cells[19] = '{:,.2f}'.format(float(total_net or 0))
     table_data.append(total_row_cells)
 
-    # 20-column landscape A4 layout — deliberately narrow numeric columns.
-    # The XLSX variant is the primary consumer for the extended breakdown;
-    # the PDF is a printable snapshot.
+    # 20-column landscape A3 layout. Widths respect the design caps:
+    #   text cols <= 75pt, amount cols <= 55pt, Emp Name >= 90pt.
+    # Sum = 1165pt vs A3 landscape printable width 1170.55pt (10pt margins).
     col_widths = [
-        40, 70, 50, 60, 70, 60, 50, 48,
-        42, 46, 46, 34, 50, 46, 46, 42, 48, 48, 46, 50,
+        45,  # 0  EMP ID
+        90,  # 1  EMP NAME
+        60,  # 2  SITE
+        70,  # 3  BANK NAME
+        75,  # 4  ACCOUNT HOLDER
+        70,  # 5  ACCOUNT NUMBER
+        65,  # 6  IFSC CODE
+        55,  # 7  SALARY
+        50,  # 8  SALARY TYPE
+        55,  # 9  BASE
+        55,  # 10 DAILY
+        40,  # 11 PAID DAYS
+        55,  # 12 ATT EARN
+        55,  # 13 OT/EXTRA
+        55,  # 14 ADVANCE
+        50,  # 15 PF
+        55,  # 16 FOOD ALLOW
+        55,  # 17 FOOD USED
+        55,  # 18 TOT DED
+        55,  # 19 NET PAY
     ]
     tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
     style_cmds = [
