@@ -35,6 +35,10 @@
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
         Generate Payslip
     </button>
+    <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.78rem; color:#334155; margin-left:4px;" title="If any payslip in this cycle has already expired (past the 15th of the following month), also re-open its download window when Generate Payslip is clicked.">
+        <input type="checkbox" id="reactivateGreyChk" style="accent-color:#059669;">
+        Reactivate expired downloads
+    </label>
     <button onclick="openSalaryConfigModal()" class="btn btn-outline btn-sm bg-white" title="Manage Role + Level base salary mappings">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         Salary Config
@@ -586,9 +590,11 @@
                         <button class="btn-action-text" onclick="openEdit(${s.id})">Edit</button>
                     </td>
                     <td style="text-align: right;">
-                        ${s.is_payslip_generated
+                        ${s.is_download_active
                             ? `<button class="btn-action-text btn-payslip" onclick="downloadPayslip(${s.id})">Download Payslip</button>`
-                            : `<button class="btn-action-text" style="color:#9ca3af; cursor:not-allowed;" disabled title="Use the 'Generate Payslip' button at the top to unlock downloads for this cycle">Download Payslip</button>`
+                            : (s.is_payslip_generated
+                                ? `<button class="btn-action-text" style="color:#9ca3af; cursor:not-allowed;" disabled title="Download window expired. Re-generate to enable.">Download Payslip</button>`
+                                : `<button class="btn-action-text" style="color:#9ca3af; cursor:not-allowed;" disabled title="Use the 'Generate Payslip' button at the top to unlock downloads for this cycle">Download Payslip</button>`)
                         }
                     </td>
                 </tr>
@@ -975,14 +981,23 @@
         const month = document.getElementById('f-month').value;
         const year  = document.getElementById('f-year').value;
         if (!month || !year) { showToast("Select month and year first", "error"); return; }
-        if (!confirm(`Generate payslips for ALL employees for ${month} ${year}?\n\nThis will also post the matching expense entries (duplicates are prevented).`)) return;
+        const reactivateChk = document.getElementById('reactivateGreyChk');
+        const reactivate    = !!(reactivateChk && reactivateChk.checked);
+        const confirmMsg = reactivate
+            ? `Generate payslips for ALL employees for ${month} ${year}?\n\nExpired downloads in this cycle will ALSO be reactivated (green window reopens). Matching expenses are posted; duplicates are prevented.`
+            : `Generate payslips for ALL employees for ${month} ${year}?\n\nThis will also post the matching expense entries (duplicates are prevented).`;
+        if (!confirm(confirmMsg)) return;
 
         const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
         try {
             const res = await fetch(`{% url 'employees:manage_ajax' %}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-                body: JSON.stringify({ action: 'generate_payslips_batch', month, year }),
+                body: JSON.stringify({
+                    action: 'generate_payslips_batch',
+                    month, year,
+                    reactivate_grey: reactivate,
+                }),
             });
             const result = await res.json();
             if (result.success) {
@@ -1358,6 +1373,12 @@
     function downloadPayslip(id) {
         const s = salaryData.find(x => x.id === id);
         if (!s) return;
+        // Client-side gate mirrors the server rule. is_download_active goes
+        // false past the 15th-of-next-month cutoff unless HR reactivated it.
+        if (!s.is_download_active) {
+            showToast("Download window expired. Re-generate payslip to enable.", "error");
+            return;
+        }
         const empIdDisplay = (s.employee_id || '');
         const doc = renderPayslipPDF(s);
         doc.save(`Payslip_${empIdDisplay}_${s.month || ''}_${s.year || ''}.pdf`);

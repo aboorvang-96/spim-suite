@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
 from accounts.date_utils import validate_not_future
 
@@ -68,6 +69,19 @@ class Transaction(models.Model):
 
     class Meta:
         ordering = ['-date', '-created_at']
+        constraints = [
+            # DB-level dedup for the auto-generated salary payout rows keyed
+            # on reference = "SAL-{employee_pk}-{YYYY-MM}". Prevents concurrent
+            # generate_salary_expenses calls from racing past the app-level
+            # exists() check and inserting duplicate salary expenses. Scoped
+            # to 'SAL-' references so it does not constrain any unrelated
+            # transactions that share a reference string.
+            models.UniqueConstraint(
+                fields=['admin_id', 'reference', 'type'],
+                condition=Q(reference__startswith='SAL-'),
+                name='unique_salary_transaction_ref',
+            ),
+        ]
 
     def __str__(self):
         return self.get_type_display() + ' ' + str(self.amount)

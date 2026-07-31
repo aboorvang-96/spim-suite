@@ -840,6 +840,11 @@ def salary_dashboard(request):
                 'location': e.location,
                 'site': e.site,
                 'is_payslip_generated': bool(salary_record and salary_record.is_payslip_generated),
+                # is_download_active drives the per-row Download Payslip button
+                # colour. Green until the 15th of the month AFTER generation
+                # (or later, if HR ticked "Reactivate expired downloads"),
+                # grey after that. See accounts.cycle_utils.
+                'is_download_active': bool(salary_record and salary_record.is_download_active),
                 'payslip_id': salary_record.id if salary_record else None,
                 'month': month_name or (salary_record.month.strftime('%B') if salary_record else 'N/A'),
                 'year': year or (salary_record.month.year if salary_record else 'N/A'),
@@ -1008,21 +1013,37 @@ def salary_report_download(request):
         else:
             salary_record = e.salary_history.order_by('-month').first()
 
-        gross_base = float(salary_record.basic_salary if salary_record else e.base_salary)
-        ot         = float(salary_record.ot_allowance if salary_record else 0)
-        advance    = float(salary_record.advance_pay if salary_record else 0)
-        ded        = float(salary_record.total_deduction if salary_record else 0)
-        ae_month   = (
+        gross_base    = float(salary_record.basic_salary if salary_record else e.base_salary)
+        ot            = float(salary_record.ot_allowance if salary_record else 0)
+        extra_allow   = float(salary_record.extra_allowance if salary_record else 0)
+        advance       = float(salary_record.advance_pay if salary_record else 0)
+        ded           = float(salary_record.total_deduction if salary_record else 0)
+        pf_amount     = float(salary_record.pf_employee_snapshot if salary_record else 0)
+        food_allow    = float(salary_record.food_allowance if salary_record else 0)
+        food_usage    = float(salary_record.food_usage if salary_record else 0)
+        ae_month      = (
             target_date
             or (salary_record.month if salary_record else timezone.now().date().replace(day=1))
         )
         try:
-            earn_dec, _paid_dec = _compute_attendance_breakdown(e, ae_month, gross_base)
+            earn_dec, paid_dec = _compute_attendance_breakdown(e, ae_month, gross_base)
             attendance_earnings = float(earn_dec)
+            paid_days           = float(paid_dec)
         except Exception as exc:
             print(f'[salary_report_download] attendance compute failed for emp {e.pk}: {exc}')
             attendance_earnings = gross_base
+            paid_days           = 0.0
         net = attendance_earnings + ot - advance - ded
+
+        # Report column 19: Total Deduction per spec — advance + PF + any
+        # food-usage overshoot. Distinct from the SalaryUpdate.total_deduction
+        # snapshot (which is HR-entered generic deductions).
+        food_overshoot = max(0.0, food_usage - food_allow)
+        report_total_deduction = advance + pf_amount + food_overshoot
+
+        salary_type = getattr(e, 'salary_type', 'base_salary') or 'base_salary'
+        is_daily    = salary_type == 'daily_basis'
+        emp_base    = float(e.base_salary or 0)
 
         bank = getattr(e, 'bank_details', None)
         rows.append({
@@ -1035,6 +1056,20 @@ def salary_report_download(request):
             'account_number': bank.account_number if bank else '',
             'ifsc_code':      bank.ifsc_code      if bank else '',
             'is_vehicle':     bool(getattr(e, 'is_vehicle', False)),
+            # Extended report-only columns (9-20). Not surfaced in the on-
+            # screen table — the download output is the ONLY consumer.
+            'salary_type_label':    'Daily Pay' if is_daily else 'Base Pay',
+            'base_salary_col':      '' if is_daily else emp_base,
+            'daily_salary_col':     emp_base if is_daily else '',
+            'paid_days':            paid_days,
+            'attendance_earnings':  attendance_earnings,
+            'ot_extra':             ot + extra_allow,
+            'advance_pay':          advance,
+            'pf_amount':            pf_amount,
+            'food_allowance':       food_allow,
+            'food_usage':           food_usage,
+            'total_deduction':      report_total_deduction,
+            'net_pay':              net,
         })
         total_net += net
 
@@ -1068,6 +1103,11 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
         'EMP ID', 'EMP NAME', 'SITE',
         'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE',
         'SALARY (₹)',
+        # Extended columns (report-only)
+        'SALARY TYPE', 'BASE SALARY (₹)', 'DAILY SALARY (₹)', 'PAID DAYS',
+        'ATTENDANCE EARNINGS (₹)', 'OT / EXTRA (₹)', 'ADVANCE PAY (₹)',
+        'PF AMOUNT (₹)', 'FOOD ALLOWANCE (₹)', 'ACTUAL FOOD USAGE (₹)',
+        'TOTAL DEDUCTION (₹)', 'NET PAY (₹)',
     ]
     ws.append(headers)
     header_font = Font(bold=True, color='FFFFFF')
@@ -1093,6 +1133,8 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
         cell.alignment = Alignment(horizontal='left')
 
     def _append_data(r):
+        def _n(v):
+            return '' if v == '' or v is None else float(v)
         ws.append([
             r['emp_id'],
             r['emp_name'],
@@ -1102,6 +1144,18 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
             r['account_number'],
             r['ifsc_code'],
             float(r['salary'] or 0),
+            r.get('salary_type_label', ''),
+            _n(r.get('base_salary_col', '')),
+            _n(r.get('daily_salary_col', '')),
+            float(r.get('paid_days') or 0),
+            float(r.get('attendance_earnings') or 0),
+            float(r.get('ot_extra') or 0),
+            float(r.get('advance_pay') or 0),
+            float(r.get('pf_amount') or 0),
+            float(r.get('food_allowance') or 0),
+            float(r.get('food_usage') or 0),
+            float(r.get('total_deduction') or 0),
+            float(r.get('net_pay') or 0),
         ])
 
     people   = [r for r in rows if not r['is_vehicle']]
@@ -1117,17 +1171,23 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
         for r in vehicles:
             _append_data(r)
 
-    # Blank separator + totals footer
+    # Blank separator + totals footer. Only column 8 (SALARY) and 20
+    # (NET PAY) carry monetary totals; other extended columns stay blank.
     ws.append([])
-    ws.append([
-        f'Total Employees: {len(rows)}', '', '',
-        '', 'Total Salary Paid', '', '',
-        float(total_net or 0),
-    ])
+    total_row = [''] * len(headers)
+    total_row[0]  = f'Total Employees: {len(rows)}'
+    total_row[4]  = 'Total Salary Paid'
+    total_row[7]  = float(total_net or 0)
+    total_row[19] = float(total_net or 0)
+    ws.append(total_row)
 
-    widths = [14, 24, 18, 22, 26, 22, 18, 14]
+    widths = [
+        14, 24, 18, 22, 26, 22, 18, 14,
+        14, 16, 16, 12, 20, 16, 16, 14, 18, 20, 18, 14,
+    ]
+    from openpyxl.utils import get_column_letter as _colletter
     for i, w in enumerate(widths, start=1):
-        ws.column_dimensions[chr(64 + i)].width = w
+        ws.column_dimensions[_colletter(i)].width = w
 
     buf = BytesIO()
     wb.save(buf)
@@ -1171,7 +1231,18 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
         'EMP ID', 'EMP NAME', 'SITE',
         'BANK NAME', 'ACCOUNT HOLDER', 'ACCOUNT NUMBER', 'IFSC CODE',
         'SALARY (Rs)',
+        'SALARY TYPE', 'BASE (Rs)', 'DAILY (Rs)', 'PAID DAYS',
+        'ATT EARN (Rs)', 'OT/EXTRA (Rs)', 'ADVANCE (Rs)',
+        'PF (Rs)', 'FOOD ALLOW (Rs)', 'FOOD USED (Rs)',
+        'TOT DED (Rs)', 'NET PAY (Rs)',
     ]]
+    NUM_COLS = len(table_data[0])
+
+    def _money_or_blank(v):
+        if v == '' or v is None:
+            return '-'
+        return '{:,.2f}'.format(float(v))
+
     def _data_row(r):
         return [
             r['emp_id']         or '-',
@@ -1182,6 +1253,18 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
             r['account_number'] or '-',
             r['ifsc_code']      or '-',
             '{:,.2f}'.format(float(r['salary'] or 0)),
+            r.get('salary_type_label', '-') or '-',
+            _money_or_blank(r.get('base_salary_col', '')),
+            _money_or_blank(r.get('daily_salary_col', '')),
+            '{:g}'.format(float(r.get('paid_days') or 0)),
+            '{:,.2f}'.format(float(r.get('attendance_earnings') or 0)),
+            '{:,.2f}'.format(float(r.get('ot_extra') or 0)),
+            '{:,.2f}'.format(float(r.get('advance_pay') or 0)),
+            '{:,.2f}'.format(float(r.get('pf_amount') or 0)),
+            '{:,.2f}'.format(float(r.get('food_allowance') or 0)),
+            '{:,.2f}'.format(float(r.get('food_usage') or 0)),
+            '{:,.2f}'.format(float(r.get('total_deduction') or 0)),
+            '{:,.2f}'.format(float(r.get('net_pay') or 0)),
         ]
 
     people   = [r for r in rows if not r['is_vehicle']]
@@ -1192,7 +1275,7 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
 
     def _append_section(label):
         section_header_idx.append(len(table_data))
-        table_data.append([label, '', '', '', '', '', '', ''])
+        table_data.append([label] + [''] * (NUM_COLS - 1))
 
     # "Employees" header only when vehicles also exist; "Vehicles" header
     # omitted entirely when there are no vehicles — no empty headings.
@@ -1205,22 +1288,31 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
         for r in vehicles:
             table_data.append(_data_row(r))
 
-    table_data.append([
-        f'Total Employees: {len(rows)}', '', '',
-        '', 'Total Salary Paid', '', '',
-        '{:,.2f}'.format(float(total_net or 0)),
-    ])
+    total_row_cells = [''] * NUM_COLS
+    total_row_cells[0]  = f'Total Employees: {len(rows)}'
+    total_row_cells[4]  = 'Total Salary Paid'
+    total_row_cells[7]  = '{:,.2f}'.format(float(total_net or 0))
+    total_row_cells[19] = '{:,.2f}'.format(float(total_net or 0))
+    table_data.append(total_row_cells)
 
-    col_widths = [55, 95, 75, 95, 110, 95, 70, 65]
+    # 20-column landscape A4 layout — deliberately narrow numeric columns.
+    # The XLSX variant is the primary consumer for the extended breakdown;
+    # the PDF is a printable snapshot.
+    col_widths = [
+        40, 70, 50, 60, 70, 60, 50, 48,
+        42, 46, 46, 34, 50, 46, 46, 42, 48, 48, 46, 50,
+    ]
     tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
     style_cmds = [
         ('BACKGROUND', (0, 0), (-1, 0),  colors.HexColor('#1E293B')),
         ('TEXTCOLOR',  (0, 0), (-1, 0),  colors.white),
         ('FONTNAME',   (0, 0), (-1, 0),  'Helvetica-Bold'),
-        ('FONTSIZE',   (0, 0), (-1, -1), 7),
-        ('ALIGN',      (7, 1), (7, -1),  'RIGHT'),
-        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+        ('FONTSIZE',   (0, 0), (-1, -1), 5.5),
+        # Right-align numeric columns in data rows: salary(7) + 9..19
+        ('ALIGN',      (7, 1),  (7, -1),  'RIGHT'),
+        ('ALIGN',      (9, 1),  (-1, -1), 'RIGHT'),
+        ('VALIGN',     (0, 0),  (-1, -1), 'MIDDLE'),
+        ('GRID',       (0, 0),  (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
         ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
         ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
@@ -1262,17 +1354,17 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     See _compute_attendance_earnings for the formula and fallback semantics.
     """
     from attendance.models import AttendanceRecord
+    from accounts.cycle_utils import get_salary_cycle
 
     # Coerce to Decimal to prevent float × Decimal TypeError
     basic_salary = Decimal(str(basic_salary))
 
     # ---- 26→25 cycle anchored on month_date's END month ----
-    cycle_end = month_date.replace(day=25)
-    if month_date.month == 1:
-        prev = month_date.replace(year=month_date.year - 1, month=12)
-    else:
-        prev = month_date.replace(month=month_date.month - 1)
-    cycle_start = prev.replace(day=26)
+    # month_date is stored as first-of-month; the cycle ends on the 25th
+    # of that same month. get_salary_cycle handles the Jan wrap.
+    cycle = get_salary_cycle(month_date.replace(day=25))
+    cycle_start = cycle['start']
+    cycle_end   = cycle['end']
 
     # ---- CycleDays = actual calendar days in the cycle window ----
     cycle_days = (cycle_end - cycle_start).days + 1
@@ -1505,72 +1597,160 @@ def manage_ajax(request):
         #      matching expense already exists, return an early "already
         #      generated" message without touching anything.
         if data.get('action') == 'generate_payslips_batch':
-            month_name = (data.get('month') or '').strip()
-            year_str   = (data.get('year') or '').strip()
-            if not month_name or not year_str:
-                return JsonResponse({'success': False, 'error': 'month and year are required.'}, status=400)
-            try:
-                target_date = datetime.date(int(year_str), timezone_month_map(month_name), 1)
-            except (ValueError, TypeError):
-                return JsonResponse({'success': False, 'error': 'Invalid month/year.'}, status=400)
-            admin_id = get_admin_id(request.user)
-            tenant_emps = Employee.objects.filter(admin_id=admin_id)
-            rows = SalaryUpdate.objects.filter(
-                employee__in=tenant_emps,
-                month__year=target_date.year,
-                month__month=target_date.month,
+            from accounts.cycle_utils import (
+                get_salary_cycle, get_previous_cycle, get_force_active_until,
             )
-            if not rows.exists():
+            import logging as _logging
+            _log = _logging.getLogger(__name__)
+
+            admin_id       = get_admin_id(request.user)
+            month_name     = (data.get('month') or '').strip()
+            year_str       = (data.get('year') or '').strip()
+            cycle_month_key = (data.get('cycle_month_key') or '').strip()
+            reactivate     = bool(data.get('reactivate_grey'))
+
+            # Resolve the target cycle. cycle_month_key ('YYYY-MM') wins;
+            # otherwise fall back to month+year; otherwise use the most
+            # recent completed cycle from today (IST).
+            try:
+                if cycle_month_key:
+                    y_s, m_s = cycle_month_key.split('-', 1)
+                    cycle = get_salary_cycle(datetime.date(int(y_s), int(m_s), 25))
+                elif month_name and year_str:
+                    m_idx = timezone_month_map(month_name)
+                    cycle = get_salary_cycle(datetime.date(int(year_str), m_idx, 25))
+                else:
+                    cycle = get_previous_cycle()
+            except (ValueError, TypeError):
+                return JsonResponse({'success': False, 'error': 'Invalid cycle month.'}, status=400)
+
+            target_date = cycle['end'].replace(day=1)   # payroll month first-of-month
+            month_name  = target_date.strftime('%B')
+            year_str    = str(target_date.year)
+
+            active_emps = (Employee.objects.filter(admin_id=admin_id)
+                           .filter(status='active'))
+            if not active_emps.exists():
                 return JsonResponse({
                     'success': False,
-                    'error': f'No salary records for {month_name} {year_str}. Process salaries before generating payslips.',
+                    'error': 'No active employees under this admin.',
                 }, status=400)
 
-            already_locked = rows.filter(is_payslip_generated=True).count()
-            total          = rows.count()
+            gen_time    = timezone.now()
+            force_until = get_force_active_until(gen_time.date()) if reactivate else None
+            generated   = 0
+            reactivated = 0
+            recomputed_deltas = 0
+            errors      = []
 
-            # If every row is already locked, treat as a no-op so a stray
-            # double-click does not re-trigger expense generation.
-            if already_locked == total:
-                return JsonResponse({
-                    'success': True,
-                    'already_generated': True,
-                    'message': f'Payslips already generated for {month_name} {year_str}.',
-                    'locked':  total,
-                })
+            for emp in active_emps:
+                try:
+                    with transaction.atomic():
+                        salary_record, created = SalaryUpdate.objects.get_or_create(
+                            employee=emp,
+                            month=target_date,
+                            defaults={
+                                'admin_id':     admin_id,
+                                'basic_salary': emp.base_salary or Decimal('0'),
+                                'food_allowance': emp.fixed_allowance or Decimal('0'),
+                                'created_by':   request.user,
+                            },
+                        )
+                        # Ensure admin_id is set on rows created before that
+                        # field carried an explicit default.
+                        if not salary_record.admin_id or salary_record.admin_id == 'PENDING':
+                            salary_record.admin_id = admin_id
 
-            # Lock all rows for this cycle
-            rows.filter(is_payslip_generated=False).update(
-                is_payslip_generated=True,
-                payslip_generated_at=timezone.now(),
-                payslip_generated_by=request.user,
-            )
+                        # Bug 3B: recompute net_pay from CURRENT attendance
+                        # before locking, so the payslip snapshot matches
+                        # what HR saw at generation time. Warn on drift.
+                        basic          = Decimal(str(salary_record.basic_salary or 0))
+                        ot             = Decimal(str(salary_record.ot_allowance or 0))
+                        advance        = Decimal(str(salary_record.advance_pay or 0))
+                        deduction      = Decimal(str(salary_record.total_deduction or 0))
+                        food_allowance = Decimal(str(salary_record.food_allowance or 0))
+                        food_usage     = Decimal(str(salary_record.food_usage or 0))
+                        food_adj       = food_allowance - food_usage
 
-            # Reuse the idempotent expense-generation path. We call its
-            # internals via the public view by reconstructing the body.
-            from django.test import RequestFactory
-            rf      = RequestFactory()
-            sub_req = rf.post(
-                '/employees/generate-salary-expenses/',
-                data=json.dumps({'month': month_name, 'year': year_str}),
-                content_type='application/json',
-            )
-            sub_req.user = request.user
-            sub_resp = generate_salary_expenses(sub_req)
+                        payable_base = _compute_attendance_earnings(emp, target_date, basic)
+                        new_net_pay  = payable_base + ot - advance - deduction + food_adj
+
+                        prev_net = Decimal(str(salary_record.net_pay or 0))
+                        if abs(new_net_pay - prev_net) > Decimal('1'):
+                            recomputed_deltas += 1
+                            _log.warning(
+                                "Payslip net_pay drift for emp=%s cycle=%s: "
+                                "stored=%s recomputed=%s (attendance changed since Save)",
+                                emp.pk, target_date.isoformat(), prev_net, new_net_pay,
+                            )
+                        salary_record.net_pay = new_net_pay
+
+                        # Lock the payslip. Reactivate override picks a new
+                        # force_active_until when HR asked for it.
+                        was_locked = salary_record.is_payslip_generated
+                        salary_record.is_payslip_generated = True
+                        salary_record.payslip_generated_at = gen_time
+                        salary_record.payslip_generated_by = request.user
+                        if reactivate:
+                            salary_record.payslip_force_active_until = force_until
+                        salary_record.save()
+
+                        if was_locked and reactivate:
+                            reactivated += 1
+                        elif not was_locked:
+                            generated += 1
+                except Exception as exc:
+                    _log.exception(
+                        "generate_payslips_batch failed for emp=%s cycle=%s",
+                        emp.pk, target_date.isoformat(),
+                    )
+                    errors.append({
+                        'employee_id': emp.pk,
+                        'employee_name': emp.name,
+                        'error': str(exc),
+                    })
+
+            # Delegate to the idempotent expense generator for this cycle.
+            expense_created = 0
+            expense_skipped = 0
             try:
+                from django.test import RequestFactory
+                rf      = RequestFactory()
+                sub_req = rf.post(
+                    '/employees/generate-salary-expenses/',
+                    data=json.dumps({'month': month_name, 'year': year_str}),
+                    content_type='application/json',
+                )
+                sub_req.user = request.user
+                sub_resp = generate_salary_expenses(sub_req)
                 sub_data = json.loads(sub_resp.content.decode('utf-8'))
-            except Exception:
-                sub_data = {}
+                expense_created = sub_data.get('created', 0) or 0
+                expense_skipped = sub_data.get('skipped', 0) or 0
+            except Exception as exc:
+                _log.exception("Salary expense generation failed post-batch")
+                errors.append({'employee_id': None, 'employee_name': '(expenses)', 'error': str(exc)})
+
+            already_generated = (generated == 0 and reactivated == 0 and not errors)
+
+            msg = (
+                f"Payslips generated for {cycle['label']}. "
+                f"{generated} newly generated"
+                + (f", {reactivated} reactivated" if reactivated else '')
+                + f". {expense_created} expense(s) created, {expense_skipped} already existed."
+            )
 
             return JsonResponse({
                 'success': True,
-                'already_generated': False,
-                'locked':  total,
-                'expense_created': sub_data.get('created', 0),
-                'expense_skipped': sub_data.get('skipped', 0),
-                'message': f'Payslips generated for {month_name} {year_str}. '
-                           f'{sub_data.get("created", 0)} expense entries created, '
-                           f'{sub_data.get("skipped", 0)} already existed.',
+                'already_generated': already_generated,
+                'generated': generated,
+                'reactivated': reactivated,
+                'recomputed_deltas': recomputed_deltas,
+                'expense_created': expense_created,
+                'expense_skipped': expense_skipped,
+                'cycle_label': cycle['label'],
+                'cycle_month_key': cycle['month_key'],
+                'errors': errors,
+                'message': msg,
             })
 
         # 1b. GENERATE PAYSLIP ACTION (Task 4)
@@ -1732,6 +1912,12 @@ def manage_ajax(request):
             salary_record.pf_employee_snapshot = pf_amount
             salary_record.food_allowance       = food_allowance
             salary_record.food_usage           = food_usage
+            # Only overwrite extra_allowance when the payload explicitly
+            # sends it. The salary_manager modal doesn't expose this field
+            # today, so the DB value is preserved for existing rows and the
+            # model default (0) applies for newly created ones.
+            if 'extra_allowance' in data and data.get('extra_allowance') not in (None, ''):
+                salary_record.extra_allowance = _parse_decimal(data.get('extra_allowance'))
 
             # Compute the payable base server-side from AttendanceRecord rows.
             # The client-sent attendance_earnings is discarded — the server
@@ -1822,6 +2008,9 @@ def generate_salary_expenses(request):
     payroll details are NOT written to any expense field shown in the UI.
     """
     from finance.models import Transaction, Category
+    from django.db import IntegrityError
+    import logging as _sal_logging
+    _sal_log = _sal_logging.getLogger(__name__)
 
     try:
         data = json.loads(request.body)
@@ -1892,22 +2081,34 @@ def generate_salary_expenses(request):
             site = (emp.site or '').strip()
             location_site = f"{loc} / {site}" if loc and site else (loc or site or '')
 
-            Transaction.objects.create(
-                user          = request.user,
-                type          = 'expense',
-                category      = salary_category,
-                amount        = record.net_pay,
-                description   = description,
-                date          = expense_date,
-                purpose       = 'Employee Salary',
-                location_site = location_site,
-                reference     = ref_key,
-                income_source = income_source_val,
-                payment_mode  = account_val,
-                admin_id      = admin_id,
-                created_by    = request.user,
-            )
-            created_count += 1
+            try:
+                Transaction.objects.create(
+                    user          = request.user,
+                    type          = 'expense',
+                    category      = salary_category,
+                    amount        = record.net_pay,
+                    description   = description,
+                    date          = expense_date,
+                    purpose       = 'Employee Salary',
+                    location_site = location_site,
+                    reference     = ref_key,
+                    income_source = income_source_val,
+                    payment_mode  = account_val,
+                    admin_id      = admin_id,
+                    created_by    = request.user,
+                )
+                created_count += 1
+            except IntegrityError:
+                # Race: another request slipped a duplicate past the
+                # exists() check. The partial unique constraint on
+                # (admin_id, reference, type) for SAL- rows blocked it —
+                # treat as an already-generated skip instead of erroring.
+                _sal_log.warning(
+                    "IntegrityError on salary expense insert; "
+                    "treating as duplicate skip. ref=%s admin=%s",
+                    ref_key, admin_id,
+                )
+                skipped_count += 1
 
         msg = f"{created_count} expense(s) generated for {month_name} {year}."
         if skipped_count:

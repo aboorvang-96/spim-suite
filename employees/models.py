@@ -178,11 +178,36 @@ class SalaryUpdate(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='payslips_generated',
     )
+    # HR "Reactivate expired downloads" override. When today (IST) <= this
+    # date, is_download_active stays green even after the standard 15th-of-
+    # next-month cutoff has passed. Cleared automatically by expiring past it.
+    payslip_force_active_until = models.DateField(
+        null=True, blank=True,
+        help_text=(
+            "If set and today <= this date, download stays green regardless "
+            "of the 15th rule"
+        ),
+    )
 
     class Meta:
         verbose_name_plural = 'Salary Updates'
         ordering = ['-month']
         unique_together = (('employee', 'month'),)
+
+    @property
+    def is_download_active(self):
+        """True while the payslip download button should render green.
+
+        Delegates to accounts.cycle_utils.is_payslip_download_active so the
+        15th-of-next-month rule and HR reactivation override live in one
+        place shared with the salary_manager UI logic.
+        """
+        from accounts.cycle_utils import is_payslip_download_active
+        if not self.is_payslip_generated:
+            return False
+        return is_payslip_download_active(
+            self.payslip_generated_at, self.payslip_force_active_until,
+        )
 
     @property
     def food_adjustment(self):
