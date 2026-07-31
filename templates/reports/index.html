@@ -284,10 +284,10 @@
 
     <!-- Custom date range — revealed only when Custom period selected -->
     <div class="custom-date-row {% if not filters.date_from %}hidden{% endif %}" id="customDateRow">
-      <input type="date" name="date_from" value="{{ filters.date_from }}"
+      <input type="date" name="date_from" value="{{ filters.date_from }}" max="{{ today_ist_iso }}"
              class="rpt-filter-input rpt-filter-date" placeholder="From" />
       <span class="custom-sep">–</span>
-      <input type="date" name="date_to" value="{{ filters.date_to }}"
+      <input type="date" name="date_to" value="{{ filters.date_to }}" max="{{ today_ist_iso }}"
              class="rpt-filter-input rpt-filter-date" placeholder="To" />
     </div>
   </form>

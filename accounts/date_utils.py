@@ -35,12 +35,23 @@ def today_ist_context(request):
 
 
 def validate_not_future(value, field_label: str = "Date") -> None:
-    """Raise ValidationError if value (date or datetime) is after today IST.
+    """Raise ValidationError if value (date, datetime, or ISO string) is
+    after today IST.
 
+    Accepts ISO "YYYY-MM-DD" strings because JSON payloads (attendance bulk
+    save, etc.) hand dates to the ORM un-parsed; without this, comparing
+    str > date raised TypeError and every bulk-created row failed.
     None values are ignored so this stays safe for nullable fields.
     """
     if value is None:
         return
+    if isinstance(value, str):
+        try:
+            value = date.fromisoformat(value.strip())
+        except ValueError:
+            raise ValidationError(
+                f"{field_label} is not a valid date (expected YYYY-MM-DD)."
+            )
     d = value.date() if hasattr(value, "date") and callable(value.date) else value
     if d > today_ist():
         raise ValidationError(

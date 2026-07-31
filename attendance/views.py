@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Count
 from employees.models import Employee
 from accounts.views import get_admin_id
+from accounts.date_utils import validate_not_future
 from projects.models import MachineLocation, ProjectClient, Site
 from .models import AttendanceRecord
 from .services import apply_worklog_sideeffect, cleanup_worklog_on_delete
@@ -151,6 +152,19 @@ def save_attendance(request):
             continue
 
         date_val = record.get('date')
+        # Reject malformed / future dates up front (IST-anchored) so the
+        # row fails with the standard message instead of surfacing whatever
+        # update_or_create happens to raise. Model.save() still re-checks
+        # as a backstop for any other write path.
+        try:
+            validate_not_future(date_val, "Attendance date")
+        except ValidationError as e:
+            failures.append({
+                'rowIndex':   idx,
+                'employeeId': emp_id or '',
+                'error':      '; '.join(e.messages),
+            })
+            continue
         raw_status = (record.get('status') or 'Present').lower()
         model_status = _STATUS_MAP.get(raw_status, 'present')
 

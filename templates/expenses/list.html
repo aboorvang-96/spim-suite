@@ -94,8 +94,8 @@
             </div>
             
             <div class="flex gap-2">
-                <input type="date" name="date_from" value="{{ filters.date_from|default:'' }}" class="form-input w-36" title="From Date">
-                <input type="date" name="date_to" value="{{ filters.date_to|default:'' }}" class="form-input w-36" title="To Date">
+                <input type="date" name="date_from" value="{{ filters.date_from|default:'' }}" class="form-input w-36" max="{{ today_ist_iso }}" title="From Date">
+                <input type="date" name="date_to" value="{{ filters.date_to|default:'' }}" class="form-input w-36" max="{{ today_ist_iso }}" title="To Date">
             </div>
 
             <div class="flex gap-2 items-center">
