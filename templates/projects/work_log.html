@@ -301,11 +301,11 @@
         <div class="filter-card">
             <div class="filter-group" style="min-width:130px;">
                 <label>Date From</label>
-                <input type="date" id="s-date-from" class="filter-input" title="Start date">
+                <input type="date" id="s-date-from" class="filter-input" max="{{ today_ist_iso }}" title="Start date">
             </div>
             <div class="filter-group" style="min-width:130px;">
                 <label>Date To</label>
-                <input type="date" id="s-date-to" class="filter-input" title="End date">
+                <input type="date" id="s-date-to" class="filter-input" max="{{ today_ist_iso }}" title="End date">
             </div>
             <div class="filter-group" style="min-width:150px;">
                 <label>Location</label>

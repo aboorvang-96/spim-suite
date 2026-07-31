@@ -34,7 +34,7 @@ w("manage.py", """
 #!/usr/bin/env python
 import os, sys
 def main():
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     from django.core.management import execute_from_command_line
     execute_from_command_line(sys.argv)
 if __name__ == '__main__':
@@ -46,7 +46,7 @@ w("core/__init__.py", "")
 w("core/wsgi.py", """
 import os
 from django.core.wsgi import get_wsgi_application
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 application = get_wsgi_application()
 """)
 
