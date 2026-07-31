@@ -1379,15 +1379,18 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     See _compute_attendance_earnings for the formula and fallback semantics.
     """
     from attendance.models import AttendanceRecord
-    from accounts.cycle_utils import get_salary_cycle
+    from accounts.cycle_utils import get_cycle_ending_in_month
 
     # Coerce to Decimal to prevent float × Decimal TypeError
     basic_salary = Decimal(str(basic_salary))
 
     # ---- 26→25 cycle anchored on month_date's END month ----
-    # month_date is stored as first-of-month; the cycle ends on the 25th
-    # of that same month. get_salary_cycle handles the Jan wrap.
-    cycle = get_salary_cycle(month_date.replace(day=25))
+    # month_date names the payroll month (the month the cycle ENDS in).
+    # get_cycle_ending_in_month is deterministic w.r.t. day-of-month, so
+    # this returns the same window whether callers pass day=1, day=25, or
+    # day=31. Do NOT swap this for get_salary_cycle — that one is day-
+    # sensitive and would flip to "next cycle" whenever month_date.day>=26.
+    cycle = get_cycle_ending_in_month(month_date)
     cycle_start = cycle['start']
     cycle_end   = cycle['end']
 

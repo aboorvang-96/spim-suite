@@ -36,17 +36,21 @@ def get_salary_cycle(reference_date=None):
 
 
 def get_previous_cycle(reference_date=None):
-    """The most recent COMPLETED cycle (default payslip generation target).
+    """The payroll cycle whose END date falls in `reference_date`'s
+    calendar month — i.e. the cycle we are currently operating on for
+    payslip generation and mobile salary display.
 
-    If we are still inside the current cycle (ref <= cycle_end), return the
-    cycle that ended immediately before it.
+    Day-of-month is IGNORED — every day in July resolves to the Jun 26 →
+    Jul 25 cycle; every day in August resolves to the Jul 26 → Aug 25
+    cycle. In particular, on the 26th of a month we still return the
+    prior cycle (that just ended on the 25th), not the freshly-started
+    one — HR needs the full month's window to complete the payroll.
+
+    Equivalent to `get_cycle_ending_in_month(reference_date)`; kept as a
+    named alias because callers read better with this name at the site.
     """
     ref = reference_date or today_ist()
-    current = get_salary_cycle(ref)
-    if ref <= current['end']:
-        prev_end = current['start'] - timedelta(days=1)
-        return get_salary_cycle(prev_end)
-    return current
+    return get_cycle_ending_in_month(ref)
 
 
 def is_payslip_download_active(payslip_generated_at, force_active_until=None):
@@ -68,6 +72,24 @@ def is_payslip_download_active(payslip_generated_at, force_active_until=None):
         return True
     threshold = (gen_date.replace(day=1) + relativedelta(months=1)).replace(day=15)
     return today <= threshold
+
+
+def get_cycle_ending_in_month(month_date):
+    """Return the salary cycle that ENDS in `month_date`'s calendar month.
+
+    Deterministic — day-of-month is ignored. For any input in July, always
+    returns 26 Jun → 25 Jul; for any input in August, always returns
+    26 Jul → 25 Aug. This is the exact pre-refactor semantic used by
+    `_compute_attendance_breakdown` and is the safe choice whenever the
+    caller wants "the cycle for payroll month X" rather than "the cycle
+    containing today". Use `get_salary_cycle` only when the day-sensitive
+    'current cycle' rule is genuinely what you want.
+    """
+    end = month_date.replace(day=25)
+    start = (end - relativedelta(months=1)).replace(day=26)
+    label = f"{start.strftime('%b')}-{end.strftime('%b %Y')}"
+    month_key = end.strftime('%Y-%m')
+    return {'start': start, 'end': end, 'label': label, 'month_key': month_key}
 
 
 def get_force_active_until(reference_date=None):

@@ -1276,20 +1276,17 @@ def mobile_dashboard(request):
     todays_rec   = AttendanceRecord.objects.filter(employee=emp, date=today).first()
     today_status = todays_rec.status if todays_rec else None
 
-    # 26→25 cycle anchored on today — same window mobile_salary uses, so the
-    # home tab and the salary tab agree on the active cycle.
-    if today.day >= 26:
-        cycle_start = today.replace(day=26)
-        if today.month == 12:
-            cycle_end = date(today.year + 1, 1, 25)
-        else:
-            cycle_end = date(today.year, today.month + 1, 25)
-    else:
-        if today.month == 1:
-            cycle_start = date(today.year - 1, 12, 26)
-        else:
-            cycle_start = date(today.year, today.month - 1, 26)
-        cycle_end = today.replace(day=25)
+    # Payroll cycle for the current calendar month — same window
+    # mobile_salary uses (see get_previous_cycle docstring), so the home
+    # tab and the salary tab agree on the active cycle even mid-month.
+    # Inline 26→25 math previously flipped to the next cycle on the 26th,
+    # which made the home tab display an almost-empty in-progress window
+    # while the salary tab still showed the completed one.
+    from accounts.cycle_utils import get_previous_cycle
+    from accounts.date_utils import today_ist
+    _cycle      = get_previous_cycle(today_ist())
+    cycle_start = _cycle['start']
+    cycle_end   = _cycle['end']
 
     # Cycle attendance counts, capped at today so future-dated rows (auto
     # Sunday holidays etc.) do not inflate the present/absent figures.
@@ -1619,21 +1616,13 @@ def mobile_hr_salary(request):
             status=404,
         )
 
-    today = date.today()
-
-    # Cycle window — identical rule to mobile_salary.
-    if today.day >= 26:
-        cycle_start = today.replace(day=26)
-        if today.month == 12:
-            cycle_end = date(today.year + 1, 1, 25)
-        else:
-            cycle_end = date(today.year, today.month + 1, 25)
-    else:
-        if today.month == 1:
-            cycle_start = date(today.year - 1, 12, 26)
-        else:
-            cycle_start = date(today.year, today.month - 1, 26)
-        cycle_end = today.replace(day=25)
+    # Cycle window — identical rule to mobile_salary: the payroll cycle
+    # whose end date falls in the current calendar month.
+    from accounts.cycle_utils import get_previous_cycle
+    from accounts.date_utils import today_ist
+    _cycle      = get_previous_cycle(today_ist())
+    cycle_start = _cycle['start']
+    cycle_end   = _cycle['end']
 
     sal = SalaryUpdate.objects.filter(
         employee=target,

@@ -147,6 +147,9 @@
             </select>
         </div>
         <button class="btn btn-outline h-38 px-4 text-xs" onclick="resetFilters()" title="Reset all filters">Reset</button>
+        <div id="cycle-label" style="display:flex; align-items:center; margin-left:0.75rem; padding:0.35rem 0.7rem; background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; border-radius:6px; font-size:0.72rem; font-weight:700; letter-spacing:0.02em;" title="Selecting a Month picks the 26→25 payroll cycle whose END date falls in that month. This is the cycle the numbers below refer to.">
+            Payroll cycle: —
+        </div>
     </div>
 
     <!-- Table -->
@@ -483,11 +486,37 @@
         }
     }
 
+    // Payroll cycle label — deterministic 26→25 window whose end date
+    // falls in the selected calendar month. Matches the server rule in
+    // accounts.cycle_utils.get_cycle_ending_in_month exactly so the pill
+    // never contradicts the numbers rendered in the table below.
+    function updateCycleLabel() {
+        const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        const monthVal = document.getElementById('f-month').value;
+        const yearVal  = parseInt(document.getElementById('f-year').value, 10);
+        const el = document.getElementById('cycle-label');
+        if (!el) return;
+        const mIdx = monthNames.indexOf(monthVal);
+        if (mIdx < 0 || !yearVal) { el.textContent = 'Payroll cycle: —'; return; }
+        // Cycle ends on the 25th of the selected month; starts on the 26th
+        // of the previous month. JavaScript Date handles the Jan→Dec wrap
+        // via negative month arithmetic.
+        const endDate   = new Date(yearVal, mIdx, 25);
+        const startDate = new Date(yearVal, mIdx - 1, 26);
+        const fmt = (d) => `${String(d.getDate()).padStart(2,'0')} ${monthNames[d.getMonth()].slice(0,3)} ${d.getFullYear()}`;
+        el.textContent = `Payroll cycle: ${fmt(startDate)} → ${fmt(endDate)}`;
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         const d = new Date();
         document.getElementById('f-month').value = months[d.getMonth()];
         document.getElementById('f-year').value = String(d.getFullYear());
+        // Update the payroll-cycle pill whenever month/year change (in
+        // addition to the initial render below).
+        document.getElementById('f-month').addEventListener('change', updateCycleLabel);
+        document.getElementById('f-year').addEventListener('change', updateCycleLabel);
+        updateCycleLabel();
         refreshRoleDatalist();
         fetchCompanySettings();
         preloadLogo();
@@ -1026,6 +1055,7 @@
         document.getElementById('f-bank').value = '';
         const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         document.getElementById('f-month').value = months[new Date().getMonth()];
+        updateCycleLabel();
         fetchData();
     }
 
