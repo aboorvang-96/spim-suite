@@ -261,7 +261,7 @@
         <!-- Date selector bar -->
         <div class="wl-date-bar">
             <label>Date</label>
-            <input type="date" id="wl-date" class="wl-input" title="Select date to view/enter work log" onchange="loadLogForDate()">
+            <input type="date" id="wl-date" class="wl-input" max="{{ today_ist_iso }}" title="Select date to view/enter work log" onchange="loadLogForDate()">
             <button class="btn btn-outline btn-sm" onclick="loadLogForDate()" style="height:34px;">Load</button>
             <button class="btn btn-outline btn-sm" onclick="openAddClientModal()" style="height:34px;" title="Add a client">+ Add Client</button>
             <button class="btn btn-outline btn-sm" onclick="openAddSiteModal()" style="height:34px;" title="Add a site under a client">+ Add Site</button>
@@ -707,7 +707,10 @@ const IS_ADMIN    = {{ is_admin|yesno:'true,false' }};
 let logMap       = {};   // { location_id: entry } for the current date
 let summaryRows  = [];
 let activeTab    = 'log';
-const TODAY_ISO  = new Date().toISOString().split('T')[0];
+// Django context injects today_ist_iso (Asia/Kolkata). Prefer that over
+// new Date().toISOString() — the latter is UTC and flips a day between
+// 00:00 and 05:30 IST, wrongly rejecting same-day IST entries.
+const TODAY_ISO  = "{{ today_ist_iso }}" || new Date().toISOString().split('T')[0];
 
 // Tree expand/collapse state — persisted across re-renders and reloads.
 const expandedClients = new Set();

@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from accounts.date_utils import validate_not_future
 
 
 
@@ -208,3 +209,11 @@ class WorkLog(models.Model):
     def __str__(self):
         loc = self.location.name if self.location else '—'
         return f"{self.date} — {loc}"
+
+    def clean(self):
+        super().clean()
+        validate_not_future(self.date, "Work log date")
+
+    def save(self, *args, **kwargs):
+        validate_not_future(self.date, "Work log date")
+        super().save(*args, **kwargs)

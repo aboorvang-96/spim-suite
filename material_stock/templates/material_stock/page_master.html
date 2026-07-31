@@ -195,9 +195,9 @@
         <input type="hidden" id="ei_id">
         <div class="ms-form-grid">
             <div class="ms-field"><label>Serial No <span class="req">*</span></label><input class="ms-input" id="ei_serial"></div>
-            <div class="ms-field"><label>Purchase Date</label><input class="ms-input" id="ei_purchase" type="date"></div>
+            <div class="ms-field"><label>Purchase Date</label><input class="ms-input" id="ei_purchase" type="date" max="{{ today_ist_iso }}"></div>
             <div class="ms-field ei-batched"><label>Batch No</label><input class="ms-input" id="ei_batch"></div>
-            <div class="ms-field ei-batched"><label>Mfg Date</label><input class="ms-input" id="ei_mfg" type="date"></div>
+            <div class="ms-field ei-batched"><label>Mfg Date</label><input class="ms-input" id="ei_mfg" type="date" max="{{ today_ist_iso }}"></div>
             <div class="ms-field"><label>Current Holder</label><input class="ms-input" id="ei_holder"></div>
             <div class="ms-field"><label>Current Site</label><input class="ms-input" id="ei_site"></div>
             <div class="ms-field"><label>Status</label>

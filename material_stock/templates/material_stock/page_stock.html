@@ -33,11 +33,11 @@
             </div>
             <div class="ms-field tracked-field batched-field">
                 <label>Mfg Date</label>
-                <input class="ms-input" id="f_mfg" type="date">
+                <input class="ms-input" id="f_mfg" type="date" max="{{ today_ist_iso }}">
             </div>
             <div class="ms-field tracked-field">
                 <label>Purchase Date <span class="req">*</span></label>
-                <input class="ms-input" id="f_purchase" type="date" value="{{ today|date:'Y-m-d' }}">
+                <input class="ms-input" id="f_purchase" type="date" value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
             </div>
 
             <div class="ms-field" style="align-self:end;">

@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from accounts.date_utils import validate_not_future
 
 
 class Category(models.Model):
@@ -70,6 +71,14 @@ class Transaction(models.Model):
 
     def __str__(self):
         return self.get_type_display() + ' ' + str(self.amount)
+
+    def clean(self):
+        super().clean()
+        validate_not_future(self.date, "Transaction date")
+
+    def save(self, *args, **kwargs):
+        validate_not_future(self.date, "Transaction date")
+        super().save(*args, **kwargs)
 
 
 class Source(models.Model):

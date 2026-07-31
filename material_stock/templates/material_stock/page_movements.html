@@ -18,7 +18,7 @@
             </div>
             <div class="ms-field">
                 <label>Date</label>
-                <input class="ms-input" id="f_date" type="date" value="{{ today|date:'Y-m-d' }}">
+                <input class="ms-input" id="f_date" type="date" value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
             </div>
             <div class="ms-field ms-ac-wrap">
                 <label>Site</label>

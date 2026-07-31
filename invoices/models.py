@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from accounts.date_utils import validate_not_future
 
 class Invoice(models.Model):
     STATUS = (('draft','Draft'),('sent','Sent'),('paid','Paid'),('overdue','Overdue'))
@@ -19,6 +20,15 @@ class Invoice(models.Model):
 
     def __str__(self):
         return self.invoice_number
+
+    def clean(self):
+        super().clean()
+        # Only issue_date is guarded — due_date is legitimately in the future.
+        validate_not_future(self.issue_date, "Invoice issue date")
+
+    def save(self, *args, **kwargs):
+        validate_not_future(self.issue_date, "Invoice issue date")
+        super().save(*args, **kwargs)
 
     @property
     def subtotal(self):

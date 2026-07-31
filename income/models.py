@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from categories.models import IncomeCategory
+from accounts.date_utils import validate_not_future
 
 
 class Income(models.Model):
@@ -39,6 +40,14 @@ class Income(models.Model):
 
     def __str__(self):
         return f"{self.title} - {self.amount}"
+
+    def clean(self):
+        super().clean()
+        validate_not_future(self.date, "Income date")
+
+    def save(self, *args, **kwargs):
+        validate_not_future(self.date, "Income date")
+        super().save(*args, **kwargs)
 
     class Meta:
         db_table = 'income'

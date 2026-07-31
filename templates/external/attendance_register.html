@@ -542,7 +542,7 @@
                     </div>
                     <div class="form-group">
                         <label>Date</label>
-                        <input type="date" id="attDate" onchange="loadBulkAttendanceTable()">
+                        <input type="date" id="attDate" max="{{ today_ist_iso }}" onchange="loadBulkAttendanceTable()">
                     </div>
                 </div>
 
@@ -706,7 +706,7 @@
             <div class="form-row">
                 <div class="form-group">
                     <label>Date</label>
-                    <input type="date" id="editDate">
+                    <input type="date" id="editDate" max="{{ today_ist_iso }}">
                 </div>
                 <div class="form-group">
                     <label>Status</label>

@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseForbidden
-from django.core.exceptions import MultipleObjectsReturned
+from django.core.exceptions import MultipleObjectsReturned, ValidationError
 from django.db import transaction
 from django.db.models import Count
 from employees.models import Employee
@@ -295,6 +295,16 @@ def save_attendance(request):
                 # errors, etc. — atomic block rolls back the attendance row
                 # AND any partial M2M write.
                 apply_worklog_sideeffect(rec, prev_machine_id, request.user)
+        except ValidationError as e:
+            # Model.save() raises this for future dates (and any other
+            # clean() rule). Surface the joined message rather than the
+            # repr so the UI shows a clean sentence.
+            failures.append({
+                'rowIndex':   idx,
+                'employeeId': emp_id or '',
+                'error':      '; '.join(e.messages),
+            })
+            continue
         except Exception as e:
             failures.append({
                 'rowIndex':   idx,

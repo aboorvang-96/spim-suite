@@ -50,6 +50,10 @@ TEMPLATES = [{
         'django.template.context_processors.request',
         'django.contrib.auth.context_processors.auth',
         'django.contrib.messages.context_processors.messages',
+        # Injects `today_ist` / `today_ist_iso` into every template so
+        # <input type="date"> can render max="{{ today_ist_iso }}" without
+        # each view having to plumb the value through its own context.
+        'accounts.date_utils.today_ist_context',
     ]},
 }]
 

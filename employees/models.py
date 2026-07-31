@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from accounts.date_utils import validate_not_future
 
 
 class JobRole(models.Model):
@@ -190,6 +191,17 @@ class SalaryUpdate(models.Model):
 
     def __str__(self):
         return f"{self.employee.name} - {self.month.strftime('%B %Y')}"
+
+    def clean(self):
+        super().clean()
+        # Payroll for a month that hasn't started yet is always a data-entry
+        # error. `month` is stored as first-of-month, so this rejects any
+        # month whose 1st is after today IST.
+        validate_not_future(self.month, "Salary month")
+
+    def save(self, *args, **kwargs):
+        validate_not_future(self.month, "Salary month")
+        super().save(*args, **kwargs)
 
 
 class EmployeeLevel(models.Model):

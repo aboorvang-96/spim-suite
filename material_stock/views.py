@@ -21,6 +21,7 @@ from datetime import date as date_cls, datetime as datetime_cls
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError
 from django.db.models import Count, Q
 from django.http import JsonResponse
@@ -327,6 +328,8 @@ def item_add(request):
         )
     except IntegrityError:
         return _err(f"Serial '{serial}' already exists for {mt.name}.", status=409)
+    except ValidationError as e:
+        return _err('; '.join(e.messages))
 
     return JsonResponse({'success': True, 'kind': 'item', 'id': item.id})
 
@@ -369,6 +372,8 @@ def item_edit(request, pk):
         item.save()
     except IntegrityError:
         return _err(f"Serial '{serial}' already exists.", status=409)
+    except ValidationError as e:
+        return _err('; '.join(e.messages))
     return JsonResponse({'success': True})
 
 
@@ -547,6 +552,14 @@ def movement_add(request):
     if not site:
         return _err('Site is required.')
     mdate = _to_date(data.get('movement_date')) or timezone.localdate()
+    # Future-date guard for the whole batch. movement_date is shared across
+    # every serial in this request, so one check up front is enough — and
+    # keeps us from failing halfway through the atomic block.
+    try:
+        from accounts.date_utils import validate_not_future
+        validate_not_future(mdate, "Movement date")
+    except ValidationError as e:
+        return _err('; '.join(e.messages))
     from_person = _clean(data.get('from_person'), 150) or None
     to_person   = _clean(data.get('to_person'), 150) or None
     remarks     = _clean(data.get('remarks')) or None

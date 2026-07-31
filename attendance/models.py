@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from employees.models import Employee
+from accounts.date_utils import validate_not_future
 
 class AttendanceRecord(models.Model):
     STATUS_CHOICES = [
@@ -76,3 +77,12 @@ class AttendanceRecord(models.Model):
 
     def __str__(self):
         return f"{self.employee.name} - {self.date} - {self.status}"
+
+    def clean(self):
+        super().clean()
+        validate_not_future(self.date, "Attendance date")
+
+    def save(self, *args, **kwargs):
+        # Guard direct .create()/.save() (bulk endpoint uses update_or_create).
+        validate_not_future(self.date, "Attendance date")
+        super().save(*args, **kwargs)

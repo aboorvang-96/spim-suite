@@ -21,6 +21,9 @@ import traceback
 from functools import wraps
 from datetime import date, datetime, timedelta
 
+from accounts.date_utils import today_ist, validate_not_future
+from django.core.exceptions import ValidationError as _DjValidationError
+
 from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -399,7 +402,10 @@ def mobile_attendance(request):
     if request.method == 'POST':
         # ─── Parse + validate request body ──────────────────────────────
         data         = _json_body(request)
-        date_str     = (data.get('date') or '').strip() or date.today().isoformat()
+        # Anchor default "today" to IST — server runs UTC (Railway) but the
+        # workforce is in India, so `date.today()` would flip a day 5.5 h
+        # early and reject valid same-day marks between 00:00–05:30 IST.
+        date_str     = (data.get('date') or '').strip() or today_ist().isoformat()
         status_val   = (data.get('status') or 'present').strip().lower()
         # Site / Working Site fields (new — Mod 2/3). Both optional. When
         # the SPIM Lite client doesn't send them (older builds), the
@@ -428,9 +434,14 @@ def mobile_attendance(request):
                 emp.pk, date_str,
             )
             return JsonResponse({'success': False, 'error': 'date must be YYYY-MM-DD.'}, status=400)
-        # Don't allow marking attendance for future dates
-        if d > date.today():
-            return JsonResponse({'success': False, 'error': 'Cannot mark attendance for a future date.'}, status=400)
+        # Don't allow marking attendance for future dates (IST-anchored so
+        # the check matches web-app validation and the SPIM Lite user's own
+        # clock). Message intentionally identical to accounts.date_utils so
+        # web + mobile show the same string.
+        try:
+            validate_not_future(d, "Attendance date")
+        except _DjValidationError as e:
+            return JsonResponse({'success': False, 'error': '; '.join(e.messages)}, status=400)
 
         # ─── Resolve admin_id robustly ──────────────────────────────────
         # Bug 1 root cause: when emp.admin_id was 'PENDING' / blank /
@@ -729,7 +740,7 @@ def mobile_worklogs(request):
         status_val  = (data.get('status') or data.get('work_status') or data.get('work_details') or '').strip()
         remarks_val = (data.get('remarks')    or '').strip()
         tmp_val     = data.get('tmp')
-        date_str    = (data.get('date')       or '').strip() or date.today().isoformat()
+        date_str    = (data.get('date')       or '').strip() or today_ist().isoformat()
 
         if not machine_no:
             return JsonResponse({'success': False, 'error': 'machine_no is required.'}, status=400)
@@ -737,8 +748,10 @@ def mobile_worklogs(request):
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
         except ValueError:
             return JsonResponse({'success': False, 'error': 'date must be YYYY-MM-DD.'}, status=400)
-        if d > date.today():
-            return JsonResponse({'success': False, 'error': 'Cannot log work for a future date.'}, status=400)
+        try:
+            validate_not_future(d, "Work log date")
+        except _DjValidationError as e:
+            return JsonResponse({'success': False, 'error': '; '.join(e.messages)}, status=400)
 
         machine = MachineLocation.objects.filter(admin_id=emp.admin_id, name=machine_no).first()
         if not machine:

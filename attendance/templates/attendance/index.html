@@ -413,7 +413,7 @@
                 </div>
                 <div class="fg">
                     <label for="attDate">Date</label>
-                    <input type="date" id="attDate" class="form-input w-full" onchange="syncRowDates()">
+                    <input type="date" id="attDate" class="form-input w-full" max="{{ today_ist_iso }}" onchange="syncRowDates()">
                 </div>
             </div>
 
@@ -600,7 +600,7 @@
         <div class="grid grid-cols-2 gap-3 mb-3">
             <div class="form-group">
                 <label class="text-xs font-semibold text-slate-600">Date</label>
-                <input type="date" id="editDate" class="form-input w-full">
+                <input type="date" id="editDate" class="form-input w-full" max="{{ today_ist_iso }}">
             </div>
             <div class="form-group">
                 <label class="text-xs font-semibold text-slate-600">Status</label>
@@ -1158,7 +1158,7 @@ function loadBulkAttendanceTable() {
                 </div>
             </td>
             <td>
-                <input type="date" class="row-date form-input" value="${date}">
+                <input type="date" class="row-date form-input" value="${date}" max="{{ today_ist_iso }}">
             </td>
             <td>
                 <select class="row-status form-select">

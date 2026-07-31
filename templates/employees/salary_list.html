@@ -91,7 +91,7 @@
             <div class="modal-body space-y-4">
                 <div class="form-group">
                     <label class="form-label">Salary Month</label>
-                    <input type="date" name="month" class="form-input" required value="{{ today|date:'Y-m-d' }}" title="Salary Month">
+                    <input type="date" name="month" class="form-input" required value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}" title="Salary Month">
                 </div>
                 <div class="grid grid-2">
                     <div class="form-group">

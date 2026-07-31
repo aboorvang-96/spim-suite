@@ -1151,7 +1151,7 @@
         <div class="form-row">
           <div>
             <label class="field-label" for="expDateInput">Date</label>
-            <input id="expDateInput" type="date" name="date" class="form-input" required />
+            <input id="expDateInput" type="date" name="date" class="form-input" required max="{{ today_ist_iso }}" />
           </div>
           <div id="accountContainer" class="relative">
             <div class="field-head">
@@ -1830,7 +1830,7 @@
 
       // Date cell -> date input
       const dateCell = row.querySelector('.cell-date');
-      if (dateCell) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}">`;
+      if (dateCell) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}" max="{{ today_ist_iso }}">`;
 
       // Credit From / Credit To cells -> proper <select> dropdowns with an
       // explicit "+ Add new..." sentinel option. Selecting that sentinel

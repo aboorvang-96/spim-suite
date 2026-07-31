@@ -26,6 +26,8 @@ from django.conf import settings
 from django.db import models
 from django.db.models.functions import Lower
 
+from accounts.date_utils import validate_not_future
+
 
 # ===========================================================================
 # LEGACY MODELS  (renamed, db_table pinned — data untouched, UI retired)
@@ -246,6 +248,16 @@ class StockItem(models.Model):
     def __str__(self):
         return f"{self.serial_no} ({self.material_type})"
 
+    def clean(self):
+        super().clean()
+        validate_not_future(self.purchase_date, "Purchase date")
+        validate_not_future(self.mfg_date, "Manufacturing date")
+
+    def save(self, *args, **kwargs):
+        validate_not_future(self.purchase_date, "Purchase date")
+        validate_not_future(self.mfg_date, "Manufacturing date")
+        super().save(*args, **kwargs)
+
 
 class ElectricMotorCatalog(models.Model):
     """Flat catalog for the Electric Motor brand — no stock tracking."""
@@ -291,3 +303,11 @@ class StockMovement(models.Model):
 
     def __str__(self):
         return f"{self.movement_date} · {self.stock_item.serial_no} · {self.from_person or 'STOCK'} → {self.to_person or 'STOCK'}"
+
+    def clean(self):
+        super().clean()
+        validate_not_future(self.movement_date, "Movement date")
+
+    def save(self, *args, **kwargs):
+        validate_not_future(self.movement_date, "Movement date")
+        super().save(*args, **kwargs)
