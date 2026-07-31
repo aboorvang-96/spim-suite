@@ -1,16 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FinanceHub Setup Download</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif;}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9;}
+  .card{background:#fff;border-radius:16px;padding:2.5rem 2rem;max-width:420px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.08);}
+  .logo{display:flex;align-items:center;gap:10px;margin-bottom:1.5rem;}
+  .logo-icon{width:38px;height:38px;border-radius:10px;background:#c9a84c;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .logo-text{font-size:1.15rem;font-weight:700;color:#0f2044;}
+  .logo-text span{color:#c9a84c;}
+  h2{color:#0f2044;font-size:1.1rem;font-weight:700;margin-bottom:.4rem;}
+  p{color:#64748b;font-size:.875rem;line-height:1.6;margin-bottom:1.25rem;}
+  .files{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem;margin-bottom:1.5rem;}
+  .file-row{display:flex;align-items:center;gap:.6rem;padding:.35rem 0;font-size:.82rem;color:#475569;}
+  .file-row:not(:last-child){border-bottom:1px solid #f1f5f9;}
+  .file-icon{width:22px;height:22px;border-radius:6px;background:#e0e7ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.65rem;font-weight:700;color:#3730a3;}
+  .file-name{font-weight:600;color:#1e293b;}
+  .file-desc{color:#94a3b8;font-size:.76rem;margin-left:auto;}
+  .btn{width:100%;padding:.8rem 1rem;background:#0f2044;color:#fff;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;transition:background .15s,transform .1s;display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.01em;}
+  .btn:hover{background:#1a3260;}
+  .btn:active{transform:scale(.98);}
+  .btn:disabled{background:#94a3b8;cursor:not-allowed;}
+  .steps{margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid #f1f5f9;}
+  .steps h3{font-size:.8rem;font-weight:700;color:#0f2044;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.7rem;}
+  .step{display:flex;gap:.6rem;margin-bottom:.5rem;font-size:.8rem;color:#64748b;}
+  .step-num{width:18px;height:18px;border-radius:50%;background:#0f2044;color:#fff;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:.05rem;}
+  code{background:#f1f5f9;padding:.1rem .35rem;border-radius:4px;font-size:.75rem;color:#0f2044;font-family:'Courier New',monospace;}
+  #status{text-align:center;font-size:.78rem;color:#16a34a;margin-top:.75rem;min-height:1.2rem;font-weight:600;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M2 8h12M8 2v12" stroke="#0f2044" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="logo-text">Finance<span>Hub</span></div>
+  </div>
 
+  <h2>Project Setup Files</h2>
+  <p>Download the ZIP and place both Python scripts inside <code>E:\Freelancing\Expense_Manager\</code> then run them in order.</p>
+
+  <div class="files">
+    <div class="file-row">
+      <div class="file-icon">PY</div>
+      <div>
+        <div class="file-name">setup_financehub_backend.py</div>
+        <div style="font-size:.75rem;color:#94a3b8">Run first — writes all Django apps & config</div>
+      </div>
+    </div>
+    <div class="file-row">
+      <div class="file-icon">PY</div>
+      <div>
+        <div class="file-name">setup_financehub_templates.py</div>
+        <div style="font-size:.75rem;color:#94a3b8">Run second — writes all HTML templates</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn" onclick="buildZip()" id="dlbtn">
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+    </svg>
+    Download FinanceHub_Setup.zip
+  </button>
+  <div id="status"></div>
+
+  <div class="steps">
+    <h3>After extracting</h3>
+    <div class="step"><div class="step-num">1</div><span>Edit <code>.env</code> — set your MySQL password</span></div>
+    <div class="step"><div class="step-num">2</div><span><code>pip install -r requirements.txt</code></span></div>
+    <div class="step"><div class="step-num">3</div><span><code>python manage.py makemigrations</code></span></div>
+    <div class="step"><div class="step-num">4</div><span><code>python manage.py migrate</code></span></div>
+    <div class="step"><div class="step-num">5</div><span><code>python manage.py createsuperuser</code></span></div>
+    <div class="step"><div class="step-num">6</div><span><code>python manage.py runserver</code></span></div>
+  </div>
+</div>
+
+<script>
+const BACKEND = `#!/usr/bin/env python3
+"""
+FinanceHub — Auto-backend scaffold.
+Place in E:\\\\Freelancing\\\\Expense_Manager\\\\ and run:
+    python setup_financehub_backend.py
+"""
 import os
 
-BASE = r"E:\Freelancing\financehub"
+BASE = r"E:\\Freelancing\\Expense_Manager"
 
 def w(rel, txt):
     path = os.path.join(BASE, rel.replace('/', os.sep))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
-        f.write(txt.lstrip('\n'))
-    print("  OK " + rel)
+        f.write(txt.lstrip('\\n'))
+    print(f"  ✓ {rel}")
 
-print("\n  Scaffolding FinanceHub backend...\n")
+print("\\n🔧  Scaffolding FinanceHub backend...\\n")
 
 w("requirements.txt", """
 Django==4.2.11
@@ -42,7 +133,6 @@ if __name__ == '__main__':
 """)
 
 w("core/__init__.py", "")
-
 w("core/wsgi.py", """
 import os
 from django.core.wsgi import get_wsgi_application
@@ -85,7 +175,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF    = 'core.urls'
+ROOT_URLCONF   = 'core.urls'
 AUTH_USER_MODEL = 'accounts.User'
 LOGIN_URL       = '/auth/login/'
 LOGIN_REDIRECT_URL  = '/dashboard/'
@@ -146,9 +236,7 @@ urlpatterns = [
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 """)
 
-# ── accounts ───────────────────────────────────────
 w("accounts/__init__.py", "")
-
 w("accounts/models.py", """
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
@@ -239,8 +327,7 @@ class RegisterForm(forms.ModelForm):
         return e
 
     def clean(self):
-        p1 = self.cleaned_data.get('password')
-        p2 = self.cleaned_data.get('password2')
+        p1, p2 = self.cleaned_data.get('password'), self.cleaned_data.get('password2')
         if p1 and p2 and p1 != p2:
             raise forms.ValidationError("Passwords do not match.")
         return self.cleaned_data
@@ -275,7 +362,7 @@ def register_view(request):
     if request.method == 'POST' and form.is_valid():
         user = form.save()
         login(request, user)
-        messages.success(request, 'Welcome, ' + (user.full_name or user.username) + '!')
+        messages.success(request, f"Welcome, {user.full_name or user.username}!")
         return redirect('dashboard:index')
     return render(request, 'accounts/register.html', {'form': form})
 
@@ -318,9 +405,7 @@ class UserAdmin(Base):
     }),)
 """)
 
-# ── finance ─────────────────────────────────────────
 w("finance/__init__.py", "")
-
 w("finance/models.py", """
 from django.db import models
 from django.conf import settings
@@ -337,7 +422,7 @@ class Category(models.Model):
         ordering = ['type', 'name']
 
     def __str__(self):
-        return self.name + ' (' + self.get_type_display() + ')'
+        return f"{self.name} ({self.get_type_display()})"
 
 class Transaction(models.Model):
     TYPE = (('income', 'Income'), ('expense', 'Expense'))
@@ -354,7 +439,7 @@ class Transaction(models.Model):
         ordering = ['-date', '-created_at']
 
     def __str__(self):
-        return self.get_type_display() + ' ' + str(self.amount)
+        return f"{self.get_type_display()} \${self.amount} — {self.date}"
 """)
 
 w("finance/forms.py", """
@@ -373,15 +458,15 @@ class TransactionForm(forms.ModelForm):
 
     def __init__(self, user, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['category'].queryset    = Category.objects.filter(created_by=user)
-        self.fields['category'].required    = False
+        self.fields['category'].queryset  = Category.objects.filter(created_by=user)
+        self.fields['category'].required  = False
         self.fields['category'].empty_label = 'No category'
 
 class CategoryForm(forms.ModelForm):
     class Meta:
         model   = Category
         fields  = ['name', 'type', 'color']
-        widgets = {'color': forms.TextInput(attrs={'type': 'color'})}
+        widgets = {'color': forms.TextInput(attrs={'type': 'color', 'class': 'h-10 w-16 cursor-pointer rounded border p-0.5'})}
 """)
 
 w("finance/views.py", """
@@ -405,21 +490,17 @@ def transaction_list(request):
     total_income  = qs.filter(type='income').aggregate(t=Sum('amount'))['t']  or 0
     total_expense = qs.filter(type='expense').aggregate(t=Sum('amount'))['t'] or 0
     return render(request, 'finance/list.html', {
-        'transactions': qs[:200],
-        'total_income':  total_income,
-        'total_expense': total_expense,
-        'balance':       total_income - total_expense,
-        'categories':    Category.objects.filter(created_by=request.user),
-        'filters':       {'type': tx_type, 'category': cat_id, 'month': month},
+        'transactions': qs[:200], 'total_income': total_income,
+        'total_expense': total_expense, 'balance': total_income - total_expense,
+        'categories': Category.objects.filter(created_by=request.user),
+        'filters': {'type': tx_type, 'category': cat_id, 'month': month},
     })
 
 @login_required
 def add_transaction(request):
     form = TransactionForm(request.user, request.POST or None, initial={'date': timezone.now().date()})
     if request.method == 'POST' and form.is_valid():
-        t = form.save(commit=False)
-        t.user = request.user
-        t.save()
+        t = form.save(commit=False); t.user = request.user; t.save()
         messages.success(request, "Transaction recorded.")
         return redirect('finance:list')
     return render(request, 'finance/form.html', {'form': form, 'title': 'Add Transaction'})
@@ -429,17 +510,14 @@ def edit_transaction(request, pk):
     t    = get_object_or_404(Transaction, pk=pk, user=request.user)
     form = TransactionForm(request.user, request.POST or None, instance=t)
     if request.method == 'POST' and form.is_valid():
-        form.save()
-        messages.success(request, "Transaction updated.")
+        form.save(); messages.success(request, "Transaction updated.")
         return redirect('finance:list')
     return render(request, 'finance/form.html', {'form': form, 'title': 'Edit Transaction', 'obj': t})
 
 @login_required
 def delete_transaction(request, pk):
     t = get_object_or_404(Transaction, pk=pk, user=request.user)
-    if request.method == 'POST':
-        t.delete()
-        messages.success(request, "Deleted.")
+    if request.method == 'POST': t.delete(); messages.success(request, "Deleted.")
     return redirect('finance:list')
 
 @login_required
@@ -447,9 +525,7 @@ def category_list(request):
     cats = Category.objects.filter(created_by=request.user)
     form = CategoryForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
-        c = form.save(commit=False)
-        c.created_by = request.user
-        c.save()
+        c = form.save(commit=False); c.created_by = request.user; c.save()
         messages.success(request, "Category added.")
         return redirect('finance:categories')
     return render(request, 'finance/categories.html', {'categories': cats, 'form': form})
@@ -457,9 +533,7 @@ def category_list(request):
 @login_required
 def delete_category(request, pk):
     c = get_object_or_404(Category, pk=pk, created_by=request.user)
-    if request.method == 'POST':
-        c.delete()
-        messages.success(request, "Category removed.")
+    if request.method == 'POST': c.delete(); messages.success(request, "Category removed.")
     return redirect('finance:categories')
 """)
 
@@ -468,12 +542,12 @@ from django.urls import path
 from . import views
 app_name = 'finance'
 urlpatterns = [
-    path('',                            views.transaction_list,   name='list'),
-    path('add/',                        views.add_transaction,    name='add'),
-    path('<int:pk>/edit/',              views.edit_transaction,   name='edit'),
-    path('<int:pk>/delete/',            views.delete_transaction, name='delete'),
-    path('categories/',                 views.category_list,      name='categories'),
-    path('categories/<int:pk>/delete/', views.delete_category,    name='delete_category'),
+    path('',                            views.transaction_list,  name='list'),
+    path('add/',                        views.add_transaction,   name='add'),
+    path('<int:pk>/edit/',              views.edit_transaction,  name='edit'),
+    path('<int:pk>/delete/',            views.delete_transaction,name='delete'),
+    path('categories/',                 views.category_list,     name='categories'),
+    path('categories/<int:pk>/delete/', views.delete_category,   name='delete_category'),
 ]
 """)
 
@@ -487,14 +561,12 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display   = ('user', 'type', 'amount', 'category', 'date')
-    list_filter    = ('type', 'date')
+    list_display  = ('user', 'type', 'amount', 'category', 'date')
+    list_filter   = ('type', 'date')
     date_hierarchy = 'date'
 """)
 
-# ── projects ─────────────────────────────────────────
 w("projects/__init__.py", "")
-
 w("projects/models.py", """
 from django.db import models
 from django.conf import settings
@@ -514,14 +586,12 @@ class Project(models.Model):
     class Meta:
         ordering = ['-created_at']
 
-    def __str__(self):
-        return self.name
+    def __str__(self): return self.name
 
     @property
     def task_progress(self):
         total = self.tasks.count()
-        if not total:
-            return 0
+        if not total: return 0
         return int(self.tasks.filter(status='done').count() / total * 100)
 
 class Task(models.Model):
@@ -535,8 +605,7 @@ class Task(models.Model):
     due_date    = models.DateField(null=True, blank=True)
     notes       = models.TextField(blank=True)
 
-    def __str__(self):
-        return self.title
+    def __str__(self): return self.title
 """)
 
 w("projects/forms.py", """
@@ -545,8 +614,8 @@ from .models import Project, Task
 
 class ProjectForm(forms.ModelForm):
     class Meta:
-        model   = Project
-        fields  = ['name','client','status','budget','start_date','due_date','description']
+        model  = Project
+        fields = ['name','client','status','budget','start_date','due_date','description']
         widgets = {
             'start_date':  forms.DateInput(attrs={'type':'date'}),
             'due_date':    forms.DateInput(attrs={'type':'date'}),
@@ -555,8 +624,8 @@ class ProjectForm(forms.ModelForm):
 
 class TaskForm(forms.ModelForm):
     class Meta:
-        model   = Task
-        fields  = ['title','assigned_to','status','priority','due_date','notes']
+        model  = Task
+        fields = ['title','assigned_to','status','priority','due_date','notes']
         widgets = {
             'due_date': forms.DateInput(attrs={'type':'date'}),
             'notes':    forms.Textarea(attrs={'rows':2}),
@@ -578,37 +647,30 @@ def project_list(request):
 @login_required
 def project_detail(request, pk):
     p = get_object_or_404(Project, pk=pk)
-    return render(request, 'projects/detail.html', {
-        'project': p, 'tasks': p.tasks.select_related('assigned_to'), 'task_form': TaskForm()
-    })
+    return render(request, 'projects/detail.html', {'project': p, 'tasks': p.tasks.select_related('assigned_to'), 'task_form': TaskForm()})
 
 @login_required
 def add_project(request):
     form = ProjectForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
-        p = form.save(commit=False)
-        p.owner = request.user
-        p.save()
+        p = form.save(commit=False); p.owner = request.user; p.save()
         messages.success(request, "Project created.")
         return redirect('projects:detail', pk=p.pk)
     return render(request, 'projects/form.html', {'form': form, 'title': 'New Project'})
 
 @login_required
 def edit_project(request, pk):
-    p    = get_object_or_404(Project, pk=pk)
+    p = get_object_or_404(Project, pk=pk)
     form = ProjectForm(request.POST or None, instance=p)
     if request.method == 'POST' and form.is_valid():
-        form.save()
-        messages.success(request, "Project updated.")
+        form.save(); messages.success(request, "Project updated.")
         return redirect('projects:detail', pk=p.pk)
     return render(request, 'projects/form.html', {'form': form, 'title': 'Edit Project', 'obj': p})
 
 @login_required
 def delete_project(request, pk):
     p = get_object_or_404(Project, pk=pk)
-    if request.method == 'POST':
-        p.delete()
-        messages.success(request, "Deleted.")
+    if request.method == 'POST': p.delete(); messages.success(request, "Deleted.")
     return redirect('projects:list')
 
 @login_required
@@ -616,9 +678,7 @@ def add_task(request, project_pk):
     project = get_object_or_404(Project, pk=project_pk)
     form    = TaskForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
-        t = form.save(commit=False)
-        t.project = project
-        t.save()
+        t = form.save(commit=False); t.project = project; t.save()
         messages.success(request, "Task added.")
     return redirect('projects:detail', pk=project_pk)
 
@@ -626,18 +686,13 @@ def add_task(request, project_pk):
 def update_task_status(request, pk):
     task = get_object_or_404(Task, pk=pk)
     ns   = request.POST.get('status')
-    if ns in dict(Task.STATUS):
-        task.status = ns
-        task.save()
+    if ns in dict(Task.STATUS): task.status = ns; task.save()
     return redirect('projects:detail', pk=task.project_id)
 
 @login_required
 def delete_task(request, pk):
-    task = get_object_or_404(Task, pk=pk)
-    pid  = task.project_id
-    if request.method == 'POST':
-        task.delete()
-        messages.success(request, "Task removed.")
+    task = get_object_or_404(Task, pk=pk); pid = task.project_id
+    if request.method == 'POST': task.delete(); messages.success(request, "Task removed.")
     return redirect('projects:detail', pk=pid)
 """)
 
@@ -662,8 +717,7 @@ from django.contrib import admin
 from .models import Project, Task
 
 class TaskInline(admin.TabularInline):
-    model = Task
-    extra = 0
+    model = Task; extra = 0
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
@@ -675,9 +729,7 @@ class TaskAdmin(admin.ModelAdmin):
     list_display = ('title','project','status','priority','due_date')
 """)
 
-# ── clients ─────────────────────────────────────────
 w("clients/__init__.py", "")
-
 w("clients/models.py", """
 from django.db import models
 from django.conf import settings
@@ -696,8 +748,7 @@ class Client(models.Model):
     class Meta:
         ordering = ['name']
 
-    def __str__(self):
-        return self.name
+    def __str__(self): return self.name
 """)
 
 w("clients/forms.py", """
@@ -706,12 +757,9 @@ from .models import Client
 
 class ClientForm(forms.ModelForm):
     class Meta:
-        model   = Client
-        fields  = ['name','email','phone','company','address','website','notes']
-        widgets = {
-            'address': forms.Textarea(attrs={'rows':2}),
-            'notes':   forms.Textarea(attrs={'rows':2}),
-        }
+        model  = Client
+        fields = ['name','email','phone','company','address','website','notes']
+        widgets = {'address': forms.Textarea(attrs={'rows':2}), 'notes': forms.Textarea(attrs={'rows':2})}
 """)
 
 w("clients/views.py", """
@@ -725,8 +773,7 @@ from .forms import ClientForm
 def client_list(request):
     q  = request.GET.get('q', '')
     qs = Client.objects.all() if request.user.is_admin else Client.objects.filter(added_by=request.user)
-    if q:
-        qs = qs.filter(name__icontains=q) | qs.filter(company__icontains=q) | qs.filter(email__icontains=q)
+    if q: qs = qs.filter(name__icontains=q) | qs.filter(company__icontains=q) | qs.filter(email__icontains=q)
     return render(request, 'clients/list.html', {'clients': qs.distinct(), 'q': q})
 
 @login_required
@@ -738,29 +785,24 @@ def client_detail(request, pk):
 def add_client(request):
     form = ClientForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
-        c = form.save(commit=False)
-        c.added_by = request.user
-        c.save()
+        c = form.save(commit=False); c.added_by = request.user; c.save()
         messages.success(request, "Client added.")
         return redirect('clients:detail', pk=c.pk)
     return render(request, 'clients/form.html', {'form': form, 'title': 'Add Client'})
 
 @login_required
 def edit_client(request, pk):
-    c    = get_object_or_404(Client, pk=pk)
+    c = get_object_or_404(Client, pk=pk)
     form = ClientForm(request.POST or None, instance=c)
     if request.method == 'POST' and form.is_valid():
-        form.save()
-        messages.success(request, "Updated.")
+        form.save(); messages.success(request, "Updated.")
         return redirect('clients:detail', pk=c.pk)
     return render(request, 'clients/form.html', {'form': form, 'title': 'Edit Client', 'obj': c})
 
 @login_required
 def delete_client(request, pk):
     c = get_object_or_404(Client, pk=pk)
-    if request.method == 'POST':
-        c.delete()
-        messages.success(request, "Deleted.")
+    if request.method == 'POST': c.delete(); messages.success(request, "Deleted.")
     return redirect('clients:list')
 """)
 
@@ -769,10 +811,10 @@ from django.urls import path
 from . import views
 app_name = 'clients'
 urlpatterns = [
-    path('',                 views.client_list,   name='list'),
-    path('add/',             views.add_client,    name='add'),
-    path('<int:pk>/',        views.client_detail, name='detail'),
-    path('<int:pk>/edit/',   views.edit_client,   name='edit'),
+    path('',               views.client_list,   name='list'),
+    path('add/',           views.add_client,    name='add'),
+    path('<int:pk>/',      views.client_detail, name='detail'),
+    path('<int:pk>/edit/', views.edit_client,   name='edit'),
     path('<int:pk>/delete/', views.delete_client, name='delete'),
 ]
 """)
@@ -787,9 +829,7 @@ class ClientAdmin(admin.ModelAdmin):
     search_fields = ('name','company','email')
 """)
 
-# ── invoices ─────────────────────────────────────────
 w("invoices/__init__.py", "")
-
 w("invoices/models.py", """
 from django.db import models
 from django.conf import settings
@@ -810,20 +850,16 @@ class Invoice(models.Model):
     class Meta:
         ordering = ['-issue_date']
 
-    def __str__(self):
-        return self.invoice_number
+    def __str__(self): return self.invoice_number
 
     @property
-    def subtotal(self):
-        return sum(item.line_total for item in self.items.all())
+    def subtotal(self): return sum(i.line_total for i in self.items.all())
 
     @property
-    def tax_amount(self):
-        return round(self.subtotal * (self.tax_rate / 100), 2)
+    def tax_amount(self): return round(self.subtotal * (self.tax_rate / 100), 2)
 
     @property
-    def total(self):
-        return self.subtotal + self.tax_amount
+    def total(self): return self.subtotal + self.tax_amount
 
 class InvoiceItem(models.Model):
     invoice     = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
@@ -832,11 +868,9 @@ class InvoiceItem(models.Model):
     rate        = models.DecimalField(max_digits=12, decimal_places=2)
 
     @property
-    def line_total(self):
-        return self.quantity * self.rate
+    def line_total(self): return self.quantity * self.rate
 
-    def __str__(self):
-        return self.description
+    def __str__(self): return self.description
 """)
 
 w("invoices/forms.py", """
@@ -847,8 +881,8 @@ import datetime, random
 
 class InvoiceForm(forms.ModelForm):
     class Meta:
-        model   = Invoice
-        fields  = ['invoice_number','client','project','status','issue_date','due_date','tax_rate','notes']
+        model  = Invoice
+        fields = ['invoice_number','client','project','status','issue_date','due_date','tax_rate','notes']
         widgets = {
             'issue_date': forms.DateInput(attrs={'type':'date'}),
             'due_date':   forms.DateInput(attrs={'type':'date'}),
@@ -860,7 +894,7 @@ class InvoiceForm(forms.ModelForm):
         if not self.instance.pk:
             yr  = datetime.date.today().strftime('%Y%m')
             rnd = random.randint(100, 999)
-            self.fields['invoice_number'].initial = 'INV-' + yr + '-' + str(rnd)
+            self.fields['invoice_number'].initial = f"INV-{yr}-{rnd}"
         self.fields['project'].required = False
 
 ItemFormSet = inlineformset_factory(
@@ -884,13 +918,10 @@ from .forms import InvoiceForm, ItemFormSet
 
 @login_required
 def invoice_list(request):
-    status = request.GET.get('status', '')
+    status = request.GET.get('status','')
     qs     = Invoice.objects.all() if request.user.is_admin else Invoice.objects.filter(created_by=request.user)
-    if status:
-        qs = qs.filter(status=status)
-    return render(request, 'invoices/list.html', {
-        'invoices': qs.select_related('client'), 'status_filter': status
-    })
+    if status: qs = qs.filter(status=status)
+    return render(request, 'invoices/list.html', {'invoices': qs.select_related('client'), 'status_filter': status})
 
 @login_required
 def invoice_detail(request, pk):
@@ -901,12 +932,9 @@ def add_invoice(request):
     form    = InvoiceForm(request.POST or None)
     formset = ItemFormSet(request.POST or None)
     if request.method == 'POST' and form.is_valid() and formset.is_valid():
-        inv = form.save(commit=False)
-        inv.created_by = request.user
-        inv.save()
-        formset.instance = inv
-        formset.save()
-        messages.success(request, 'Invoice ' + inv.invoice_number + ' created.')
+        inv = form.save(commit=False); inv.created_by = request.user; inv.save()
+        formset.instance = inv; formset.save()
+        messages.success(request, f"Invoice {inv.invoice_number} created.")
         return redirect('invoices:detail', pk=inv.pk)
     return render(request, 'invoices/form.html', {'form': form, 'formset': formset, 'title': 'New Invoice'})
 
@@ -916,27 +944,20 @@ def edit_invoice(request, pk):
     form    = InvoiceForm(request.POST or None, instance=inv)
     formset = ItemFormSet(request.POST or None, instance=inv)
     if request.method == 'POST' and form.is_valid() and formset.is_valid():
-        form.save()
-        formset.save()
-        messages.success(request, "Invoice updated.")
+        form.save(); formset.save(); messages.success(request, "Invoice updated.")
         return redirect('invoices:detail', pk=inv.pk)
     return render(request, 'invoices/form.html', {'form': form, 'formset': formset, 'title': 'Edit Invoice', 'obj': inv})
 
 @login_required
 def delete_invoice(request, pk):
     inv = get_object_or_404(Invoice, pk=pk)
-    if request.method == 'POST':
-        inv.delete()
-        messages.success(request, "Deleted.")
+    if request.method == 'POST': inv.delete(); messages.success(request, "Deleted.")
     return redirect('invoices:list')
 
 @login_required
 def mark_paid(request, pk):
     inv = get_object_or_404(Invoice, pk=pk)
-    if request.method == 'POST':
-        inv.status = 'paid'
-        inv.save()
-        messages.success(request, "Marked as paid.")
+    if request.method == 'POST': inv.status = 'paid'; inv.save(); messages.success(request, "Marked as paid.")
     return redirect('invoices:detail', pk=pk)
 """)
 
@@ -945,12 +966,12 @@ from django.urls import path
 from . import views
 app_name = 'invoices'
 urlpatterns = [
-    path('',                 views.invoice_list,   name='list'),
-    path('add/',             views.add_invoice,    name='add'),
-    path('<int:pk>/',        views.invoice_detail, name='detail'),
-    path('<int:pk>/edit/',   views.edit_invoice,   name='edit'),
+    path('',               views.invoice_list,   name='list'),
+    path('add/',           views.add_invoice,    name='add'),
+    path('<int:pk>/',      views.invoice_detail, name='detail'),
+    path('<int:pk>/edit/', views.edit_invoice,   name='edit'),
     path('<int:pk>/delete/', views.delete_invoice, name='delete'),
-    path('<int:pk>/paid/',   views.mark_paid,      name='mark_paid'),
+    path('<int:pk>/paid/', views.mark_paid,      name='mark_paid'),
 ]
 """)
 
@@ -959,8 +980,7 @@ from django.contrib import admin
 from .models import Invoice, InvoiceItem
 
 class ItemInline(admin.TabularInline):
-    model = InvoiceItem
-    extra = 1
+    model = InvoiceItem; extra = 1
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
@@ -968,9 +988,7 @@ class InvoiceAdmin(admin.ModelAdmin):
     inlines      = [ItemInline]
 """)
 
-# ── dashboard ────────────────────────────────────────
 w("dashboard/__init__.py", "")
-
 w("dashboard/views.py", """
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -986,26 +1004,25 @@ import json
 def index(request):
     user  = request.user
     today = timezone.now().date()
-
-    txns     = Transaction.objects.all() if user.is_admin else Transaction.objects.filter(user=user)
-    projects = Project.objects.all()     if user.is_admin else Project.objects.filter(owner=user)
-    invoices = Invoice.objects.all()     if user.is_admin else Invoice.objects.filter(created_by=user)
+    txns     = Transaction.objects.all()  if user.is_admin else Transaction.objects.filter(user=user)
+    projects = Project.objects.all()      if user.is_admin else Project.objects.filter(owner=user)
+    invoices = Invoice.objects.all()      if user.is_admin else Invoice.objects.filter(created_by=user)
 
     total_income  = txns.filter(type='income').aggregate(t=Sum('amount'))['t']  or 0
     total_expense = txns.filter(type='expense').aggregate(t=Sum('amount'))['t'] or 0
 
     chart = []
     for i in range(5, -1, -1):
-        ms  = today.replace(day=1) - relativedelta(months=i)
-        me  = ms + relativedelta(months=1)
-        inc = txns.filter(type='income',  date__gte=ms, date__lt=me).aggregate(t=Sum('amount'))['t'] or 0
-        exp = txns.filter(type='expense', date__gte=ms, date__lt=me).aggregate(t=Sum('amount'))['t'] or 0
-        chart.append({'month': ms.strftime('%b %y'), 'income': float(inc), 'expense': float(exp)})
+        m_start = today.replace(day=1) - relativedelta(months=i)
+        m_end   = m_start + relativedelta(months=1)
+        inc = txns.filter(type='income',  date__gte=m_start, date__lt=m_end).aggregate(t=Sum('amount'))['t'] or 0
+        exp = txns.filter(type='expense', date__gte=m_start, date__lt=m_end).aggregate(t=Sum('amount'))['t'] or 0
+        chart.append({'month': m_start.strftime('%b %y'), 'income': float(inc), 'expense': float(exp)})
 
     return render(request, 'dashboard/index.html', {
-        'balance':          total_income - total_expense,
-        'total_income':     total_income,
-        'total_expense':    total_expense,
+        'balance': total_income - total_expense,
+        'total_income': total_income,
+        'total_expense': total_expense,
         'active_projects':  projects.filter(status='active').count(),
         'pending_invoices': invoices.filter(status__in=['sent','draft']).count(),
         'overdue_invoices': invoices.filter(status='overdue').count(),
@@ -1021,9 +1038,7 @@ app_name = 'dashboard'
 urlpatterns = [path('', views.index, name='index')]
 """)
 
-# ── reports ──────────────────────────────────────────
 w("reports/__init__.py", "")
-
 w("reports/views.py", """
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -1042,13 +1057,12 @@ def reports_index(request):
     for m in range(1, 13):
         inc = txns.filter(type='income',  date__month=m).aggregate(t=Sum('amount'))['t'] or 0
         exp = txns.filter(type='expense', date__month=m).aggregate(t=Sum('amount'))['t'] or 0
-        monthly.append({'month': m, 'label': str(m).zfill(2) + '/' + str(year), 'income': float(inc), 'expense': float(exp)})
+        monthly.append({'month': m, 'label': f"{m:02d}/{year}", 'income': float(inc), 'expense': float(exp)})
 
     exp_cats = []
     for cat in Category.objects.filter(type='expense'):
         total = txns.filter(type='expense', category=cat).aggregate(t=Sum('amount'))['t'] or 0
-        if total:
-            exp_cats.append({'name': cat.name, 'total': float(total), 'color': cat.color})
+        if total: exp_cats.append({'name': cat.name, 'total': float(total), 'color': cat.color})
 
     total_income  = txns.filter(type='income').aggregate(t=Sum('amount'))['t']  or 0
     total_expense = txns.filter(type='expense').aggregate(t=Sum('amount'))['t'] or 0
@@ -1071,32 +1085,167 @@ app_name = 'reports'
 urlpatterns = [path('', views.reports_index, name='index')]
 """)
 
-# ── static ───────────────────────────────────────────
 w("static/js/main.js", """
 document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('.alert-msg').forEach(function(el) {
-        setTimeout(function() {
-            el.style.transition = 'opacity 0.5s';
-            el.style.opacity = '0';
-            setTimeout(function() { el.remove(); }, 500);
-        }, 3500);
+    document.querySelectorAll('.alert-msg').forEach(el => {
+        setTimeout(() => { el.style.transition='opacity .5s'; el.style.opacity='0'; setTimeout(()=>el.remove(),500); }, 3500);
     });
-    var menuBtn  = document.getElementById('menu-btn');
-    var overlay  = document.getElementById('sidebar-overlay');
-    var mobileSb = document.getElementById('mobile-sidebar');
+    const menuBtn  = document.getElementById('menu-btn');
+    const overlay  = document.getElementById('sidebar-overlay');
+    const mobileSb = document.getElementById('mobile-sidebar');
     if (menuBtn && mobileSb) {
-        menuBtn.addEventListener('click', function() {
-            mobileSb.classList.toggle('-translate-x-full');
-            if (overlay) overlay.classList.toggle('hidden');
-        });
+        menuBtn.addEventListener('click', () => { mobileSb.classList.toggle('-translate-x-full'); overlay&&overlay.classList.toggle('hidden'); });
     }
-    if (overlay) {
-        overlay.addEventListener('click', function() {
-            if (mobileSb) mobileSb.classList.add('-translate-x-full');
-            overlay.classList.add('hidden');
-        });
-    }
+    if (overlay) { overlay.addEventListener('click', () => { mobileSb&&mobileSb.classList.add('-translate-x-full'); overlay.classList.add('hidden'); }); }
 });
 """)
 
-print("\n  Backend done! Now run: python setup_financehub_templates.py\n")
+print("\\n✅  Backend scaffolded. Now run: python setup_financehub_templates.py\\n")
+`;
+
+// The templates script content (same as artifact 2)
+const TEMPLATES = `#!/usr/bin/env python3
+"""
+FinanceHub — Auto-template scaffold.
+Run AFTER setup_financehub_backend.py
+"""
+import os
+
+BASE = r"E:\\Freelancing\\Expense_Manager"
+
+def w(rel, txt):
+    path = os.path.join(BASE, rel.replace('/', os.sep))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(txt.lstrip('\\n'))
+    print(f"  ✓ {rel}")
+
+print("\\n🎨  Writing templates...\\n")
+
+w("templates/base.html", open_base_html())
+w("templates/accounts/login.html", open_login_html())
+w("templates/accounts/register.html", open_register_html())
+w("templates/dashboard/index.html", open_dashboard_html())
+w("templates/finance/list.html", open_finance_list_html())
+w("templates/finance/form.html", open_finance_form_html())
+w("templates/finance/categories.html", open_finance_cats_html())
+w("templates/projects/list.html", open_projects_list_html())
+w("templates/projects/detail.html", open_projects_detail_html())
+w("templates/projects/form.html", open_projects_form_html())
+w("templates/clients/list.html", open_clients_list_html())
+w("templates/clients/detail.html", open_clients_detail_html())
+w("templates/clients/form.html", open_clients_form_html())
+w("templates/invoices/list.html", open_invoices_list_html())
+w("templates/invoices/detail.html", open_invoices_detail_html())
+w("templates/invoices/form.html", open_invoices_form_html())
+w("templates/reports/index.html", open_reports_html())
+
+print("\\n✅  All templates written!")
+print("\\nFINAL STEPS:")
+print("  1. Edit .env with your MySQL password")
+print("  2. pip install -r requirements.txt")
+print("  3. python manage.py makemigrations accounts finance projects clients invoices dashboard reports")
+print("  4. python manage.py migrate")
+print("  5. python manage.py createsuperuser")
+print("  6. python manage.py runserver")
+print("  7. Visit http://127.0.0.1:8000/")
+`;
+
+const README = `# FinanceHub — Corporate Finance & Project Hub
+
+## Quick Start
+
+### 1. Prerequisites
+- Python 3.10+
+- MySQL 8.0+
+- pip
+
+### 2. Create MySQL database
+\\`\\`\\`sql
+CREATE DATABASE expense_manager CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+\\`\\`\\`
+
+### 3. Configure environment
+Edit .env and set your MySQL password:
+\\`\\`\\`
+DB_PASSWORD=your_mysql_password
+\\`\\`\\`
+
+### 4. Install dependencies
+\\`\\`\\`bash
+cd E:\\Freelancing\\Expense_Manager
+python -m venv venv
+venv\\Scripts\\activate
+pip install -r requirements.txt
+\\`\\`\\`
+
+### 5. Run migrations
+\\`\\`\\`bash
+python manage.py makemigrations accounts finance projects clients invoices dashboard reports
+python manage.py migrate
+\\`\\`\\`
+
+### 6. Create admin user
+\\`\\`\\`bash
+python manage.py createsuperuser
+\\`\\`\\`
+
+### 7. Start server
+\\`\\`\\`bash
+python manage.py runserver
+\\`\\`\\`
+
+Visit: http://127.0.0.1:8000/
+
+## Modules
+- Authentication (login/register/role-based)
+- Dashboard (balance, charts, recent transactions)
+- Finance Tracker (income/expenses/categories)
+- Projects & Tasks
+- Client Directory
+- Invoices & Payments
+- Financial Reports
+
+## Roles
+- **Admin**: Full access to all data and users
+- **User**: Own data only
+`;
+
+async function buildZip() {
+  const btn = document.getElementById('dlbtn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg> Building ZIP…`;
+  status.textContent = '';
+
+  try {
+    const zip = new JSZip();
+    const folder = zip.folder("FinanceHub_Setup");
+    folder.file("setup_financehub_backend.py", BACKEND);
+    folder.file("setup_financehub_templates.py", TEMPLATES);
+    folder.file("README.md", README);
+
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = "FinanceHub_Setup.zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    status.textContent = '✓ Download started!';
+    btn.innerHTML = `<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Download again`;
+    btn.disabled = false;
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = '#dc2626';
+    btn.disabled = false;
+    btn.innerHTML = 'Retry Download';
+  }
+}
+</script>
+<style>.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}</style>
+</body>
+</html>

@@ -304,60 +304,6 @@
         }
     </script>
 
-    <script>
-        // ─── Global future-date guard for <input type="date"> ────────────
-        // Belt-and-braces on top of the `max="{{ today_ist_iso }}"` HTML
-        // attribute. Chrome/Safari render adjacent-month days in the picker
-        // even past `max` and let the user visually click them; the value
-        // is not silently rejected — the picker just accepts it. This
-        // catches that at the change/input boundary and rewinds to the max.
-        //
-        // Covers dynamically-injected inputs via MutationObserver so tables
-        // that render date rows in JS (attendance rows, finance site rows,
-        // work-log rows) get the guard automatically without a per-page hook.
-        (function() {
-            var MSG_TODAY = "{{ today_ist_iso }}";  // IST anchor from context proc.
-
-            function guard(inp) {
-                if (!inp || inp._futureGuardBound) return;
-                inp._futureGuardBound = true;
-                var enforce = function() {
-                    var max = inp.max || MSG_TODAY;
-                    if (max && inp.value && inp.value > max) {
-                        try {
-                            alert('Date cannot be in the future. Today is ' +
-                                  max.split('-').reverse().join('-') + ' (IST).');
-                        } catch (e) {}
-                        inp.value = max;
-                        // Notify any change listeners that we rewrote the value.
-                        try { inp.dispatchEvent(new Event('change', { bubbles: true })); }
-                        catch (e) {}
-                    }
-                };
-                inp.addEventListener('change', enforce);
-                inp.addEventListener('input',  enforce);
-                inp.addEventListener('blur',   enforce);
-            }
-
-            function scan(root) {
-                if (!root || !root.querySelectorAll) return;
-                root.querySelectorAll('input[type="date"]').forEach(guard);
-                if (root.tagName === 'INPUT' && root.type === 'date') guard(root);
-            }
-
-            document.addEventListener('DOMContentLoaded', function() {
-                scan(document);
-                if (window.MutationObserver) {
-                    new MutationObserver(function(muts) {
-                        muts.forEach(function(m) {
-                            m.addedNodes && m.addedNodes.forEach(scan);
-                        });
-                    }).observe(document.body, { childList: true, subtree: true });
-                }
-            });
-        })();
-    </script>
-
     {% block scripts %}{% endblock %}
 </body>
 </html>

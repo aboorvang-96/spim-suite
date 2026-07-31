@@ -536,7 +536,7 @@
                     </div>
                     <div>
                         <label class="field-label">Filter Date</label>
-                        <input type="date" id="rptDate" class="form-input form-input-sm" max="{{ today_ist_iso }}">
+                        <input type="date" id="rptDate" class="form-input form-input-sm">
                     </div>
                     <div>
                         <div class="ms-download-wrap">
@@ -927,7 +927,7 @@
       return `
         <tr class="draft-main-row${r.editingId?" editing-row":""}${r.selected?" selected-row":""}" data-row-id="${r.draftId}">
           <td><input type="radio" name="selD" data-field="selected" ${r.selected?"checked":""}></td>
-          <td><input type="date" class="field" data-field="date" value="${r.date}" max="{{ today_ist_iso }}"></td>
+          <td><input type="date" class="field" data-field="date" value="${r.date}"></td>
           <td><input type="text" list="siteDatalist" class="field" data-field="fromSite" value="${escapeHtml(r.fromSite)}" placeholder="From site…"></td>
           <td><input type="text" list="siteDatalist" class="field" data-field="toSite" value="${escapeHtml(r.toSite)}" placeholder="To site…"></td>
           <td><select class="field-select" data-field="serialNumber">${buildSerialOptions(r.serialNumber, r.itemName)}</select></td>
