@@ -1089,6 +1089,29 @@ def _render_payslip_pdf(salary):
     lbl_style = ParagraphStyle('Lbl',  parent=styles['Heading4'], fontSize=11, spaceBefore=6, spaceAfter=4)
     small     = ParagraphStyle('Sm',   parent=styles['Normal'], fontSize=8,  textColor=colors.grey, alignment=1)
 
+    watermark = _load_payslip_watermark()
+
+    def _draw_watermark(canvas, _doc):
+        """Draws the faded logo centered on every page BEFORE story renders.
+        Mirrors the web payslip's `.ps-watermark` (static/img/Logo.png, low
+        opacity, centered)."""
+        if not watermark:
+            return
+        try:
+            pw, ph = A4
+            iw, ih = watermark.getSize()
+            w = pw * 0.50
+            h = w * (float(ih) / float(iw)) if iw else w
+            canvas.saveState()
+            canvas.drawImage(
+                watermark, (pw - w) / 2, (ph - h) / 2,
+                width=w, height=h, mask='auto',
+            )
+            canvas.restoreState()
+        except Exception:
+            # Watermark is decorative — never let it break the payslip.
+            pass
+
     story = []
     story.append(Paragraph((company.name if company else 'Company').upper(), h_style))
     if company and company.address:
@@ -1203,7 +1226,7 @@ def _render_payslip_pdf(salary):
         small,
     ))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_draw_watermark, onLaterPages=_draw_watermark)
     pdf = buf.getvalue()
     buf.close()
 
@@ -1212,6 +1235,33 @@ def _render_payslip_pdf(salary):
     resp['Content-Disposition'] = f'attachment; filename="{filename}"'
     resp['Content-Length']      = str(len(pdf))
     return resp
+
+
+def _load_payslip_watermark():
+    """Return a ReportLab ImageReader for `static/img/Logo.png` pre-faded to
+    ~10% alpha (matches the web payslip's `.ps-watermark` treatment), or
+    None if the file cannot be located or PIL fails to open it.
+
+    ReportLab's `setFillAlpha` does not reliably affect raster images, so
+    the transparency is baked into the PNG's alpha channel via Pillow —
+    Pillow is already a project dependency for other image handling."""
+    try:
+        from django.contrib.staticfiles import finders
+        path = finders.find('img/Logo.png')
+        if not path:
+            return None
+        from io import BytesIO
+        from PIL import Image
+        from reportlab.lib.utils import ImageReader
+        im = Image.open(path).convert('RGBA')
+        alpha = im.split()[3].point(lambda p: int(p * 0.10))
+        im.putalpha(alpha)
+        buf = BytesIO()
+        im.save(buf, format='PNG')
+        buf.seek(0)
+        return ImageReader(buf)
+    except Exception:
+        return None
 
 
 @csrf_exempt
