@@ -92,6 +92,39 @@ def get_cycle_ending_in_month(month_date):
     return {'start': start, 'end': end, 'label': label, 'month_key': month_key}
 
 
+def get_last_completed_cycle(reference_date=None):
+    """The most recent 26→25 cycle whose END is STRICTLY in the past.
+
+    A cycle ending *today* is still in progress (HR hasn't finished the
+    day's attendance yet) and is NOT considered completed until tomorrow.
+
+    Contrast with `get_previous_cycle`, which is day-of-month insensitive
+    and returns the cycle ending in `ref`'s calendar month — that's the
+    right helper for HR / web payroll flows (they want the month's window
+    even while it's still open). SPIM Lite (the employee-facing mobile
+    app) instead uses THIS helper so employees never see a payslip for a
+    cycle that has not yet closed.
+
+    Examples (ref → returned cycle):
+        2026-07-31 → Jun 26 – Jul 25 ('2026-07')
+        2026-08-25 → Jun 26 – Jul 25 ('2026-07')   # 25th is TODAY, not past
+        2026-08-26 → Jul 26 – Aug 25 ('2026-08')
+        2026-01-15 → Nov 26 – Dec 25 ('2025-12')
+    """
+    ref = reference_date or today_ist()
+    if ref.day > 25:
+        end = ref.replace(day=25)
+    else:
+        end = (ref - relativedelta(months=1)).replace(day=25)
+    start = (end - relativedelta(months=1)).replace(day=26)
+    return {
+        'start':     start,
+        'end':       end,
+        'label':     f"{start.strftime('%b')}-{end.strftime('%b %Y')}",
+        'month_key': end.strftime('%Y-%m'),
+    }
+
+
 def get_force_active_until(reference_date=None):
     """Default force-active window end for the "Reactivate" toggle:
     15th of the month AFTER `reference_date`."""

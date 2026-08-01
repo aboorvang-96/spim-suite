@@ -318,9 +318,9 @@ def mobile_profile(request):
     # and 25th (missing the cycle's opening 26th-31st of the prior month)
     # and inflated days between the 26th and end-of-month (which belong to
     # the NEXT payroll cycle).
-    from accounts.cycle_utils import get_previous_cycle
+    from accounts.cycle_utils import get_last_completed_cycle
     from accounts.date_utils import today_ist
-    _cycle = get_previous_cycle(today_ist())
+    _cycle = get_last_completed_cycle(today_ist())
     cycle_qs = AttendanceRecord.objects.filter(
         employee=emp,
         date__gte=_cycle['start'],
@@ -659,9 +659,12 @@ def mobile_payslips(request):
 
     # Active payroll cycle — same rule mobile_salary uses so the payslips
     # tab and the salary tab agree on which SalaryUpdate row is "current".
-    from accounts.cycle_utils import get_previous_cycle
+    # STRICT last-completed cycle: a cycle whose end-date has not yet
+    # passed is never surfaced to the employee — even if HR generated the
+    # SalaryUpdate row early, it would represent an in-progress window.
+    from accounts.cycle_utils import get_last_completed_cycle
     from accounts.date_utils import today_ist
-    cycle_end = get_previous_cycle(today_ist())['end']
+    cycle_end = get_last_completed_cycle(today_ist())['end']
 
     rows = list(SalaryUpdate.objects.filter(employee=emp).order_by('-month')[:60])
 
@@ -1385,11 +1388,12 @@ def _mobile_salary_impl(request):
     # cycle previously surfaced a partial in-progress window (e.g. 6 days of
     # attendance mid-cycle) as the employee's monthly earnings — SPIM Lite
     # rendered ₹3,832 for someone whose full previous cycle earnings were
-    # ₹29,700. get_previous_cycle rolls back to the most recent 26→25 window
-    # that has fully ended so the number matches the generated payslip.
-    from accounts.cycle_utils import get_previous_cycle
+    # ₹29,700. get_last_completed_cycle rolls back to the most recent 26→25
+    # window whose END has strictly passed so the number matches the
+    # generated payslip and never leaks a still-open cycle.
+    from accounts.cycle_utils import get_last_completed_cycle
     from accounts.date_utils import today_ist
-    _cycle    = get_previous_cycle(today_ist())
+    _cycle    = get_last_completed_cycle(today_ist())
     cycle_start = _cycle['start']
     cycle_end   = _cycle['end']
 
@@ -1564,14 +1568,13 @@ def mobile_dashboard(request):
     today_status = todays_rec.status if todays_rec else None
 
     # Payroll cycle for the current calendar month — same window
-    # mobile_salary uses (see get_previous_cycle docstring), so the home
-    # tab and the salary tab agree on the active cycle even mid-month.
-    # Inline 26→25 math previously flipped to the next cycle on the 26th,
-    # which made the home tab display an almost-empty in-progress window
-    # while the salary tab still showed the completed one.
-    from accounts.cycle_utils import get_previous_cycle
+    # mobile_salary uses so the home tab and the salary tab agree on the
+    # active cycle even mid-month. STRICT last-completed rule: a cycle
+    # whose end-date is today or later is still in progress and must not
+    # surface on the employee-facing app.
+    from accounts.cycle_utils import get_last_completed_cycle
     from accounts.date_utils import today_ist
-    _cycle      = get_previous_cycle(today_ist())
+    _cycle      = get_last_completed_cycle(today_ist())
     cycle_start = _cycle['start']
     cycle_end   = _cycle['end']
 
@@ -1903,11 +1906,11 @@ def mobile_hr_salary(request):
             status=404,
         )
 
-    # Cycle window — identical rule to mobile_salary: the payroll cycle
-    # whose end date falls in the current calendar month.
-    from accounts.cycle_utils import get_previous_cycle
+    # Cycle window — identical rule to mobile_salary: the most recent
+    # 26→25 cycle whose end has strictly passed.
+    from accounts.cycle_utils import get_last_completed_cycle
     from accounts.date_utils import today_ist
-    _cycle      = get_previous_cycle(today_ist())
+    _cycle      = get_last_completed_cycle(today_ist())
     cycle_start = _cycle['start']
     cycle_end   = _cycle['end']
 
@@ -2482,14 +2485,14 @@ _ATTENDANCE_REPORT_SUMMARY_LABELS = (
 def _hr_attendance_report_cycle_default():
     """
     Fallback attendance window when the caller does not supply date_from /
-    date_to. Returns the active payroll cycle — 26→25 window whose end
-    date is in the current calendar month — same rule mobile_salary,
-    mobile_home, mobile_profile, and mobile_payslips all use so every
-    surface agrees on "the cycle we are working on now".
+    date_to. Returns the most recent 26→25 cycle whose end has strictly
+    passed — same rule mobile_salary, mobile_home, mobile_profile, and
+    mobile_payslips all use so every mobile surface agrees on "the last
+    fully-completed cycle" and never leaks a still-open window.
     """
-    from accounts.cycle_utils import get_previous_cycle
+    from accounts.cycle_utils import get_last_completed_cycle
     from accounts.date_utils import today_ist
-    _cycle = get_previous_cycle(today_ist())
+    _cycle = get_last_completed_cycle(today_ist())
     return _cycle['start'], _cycle['end']
 
 
