@@ -54,10 +54,24 @@
                         <input class="ms-input ms-serial-input" id="e_serial_display" type="text"
                                readonly placeholder="— pick material first —">
                         <div class="ms-serial-pop" id="e_serial_pop">
-                            <div class="ms-serial-list" id="e_serial_list"></div>
-                            <div class="ms-serial-foot">
-                                <span class="ms-serial-count" id="e_serial_count">0 selected</span>
-                                <button type="button" class="btn btn-primary btn-sm" id="e_serial_done">Done</button>
+                            <div id="e_serial_body">
+                                <div class="ms-serial-list" id="e_serial_list"></div>
+                                <div class="ms-serial-foot">
+                                    <a href="#" class="ms-serial-add-link" id="e_serial_add_open">+ Add Serial</a>
+                                    <span class="ms-serial-count" id="e_serial_count">0 selected</span>
+                                    <button type="button" class="btn btn-primary btn-sm" id="e_serial_done">Done</button>
+                                </div>
+                            </div>
+                            <div id="e_serial_addform" class="ms-serial-addform" style="display:none;">
+                                <div class="ms-serial-addform-title">Add new serial</div>
+                                <div class="ms-serial-addform-meta">Item: <span id="e_serial_add_item">—</span></div>
+                                <input type="text" class="ms-input" id="e_serial_add_input"
+                                       placeholder="Serial no" maxlength="120" autocomplete="off">
+                                <div class="ms-serial-add-err" id="e_serial_add_err" style="display:none;"></div>
+                                <div class="ms-serial-addform-actions">
+                                    <button type="button" class="btn btn-sm"         id="e_serial_add_cancel">Cancel</button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="e_serial_add_save">Save</button>
+                                </div>
                             </div>
                         </div>
                     </td>
@@ -132,6 +146,17 @@ document.getElementById('f_month').addEventListener('change', function () {
     const list    = document.getElementById('e_serial_list');
     const counter = document.getElementById('e_serial_count');
     const doneBtn = document.getElementById('e_serial_done');
+    const body    = document.getElementById('e_serial_body');
+    const addForm = document.getElementById('e_serial_addform');
+    const addOpen = document.getElementById('e_serial_add_open');
+    const addCancel = document.getElementById('e_serial_add_cancel');
+    const addSave   = document.getElementById('e_serial_add_save');
+    const addInput  = document.getElementById('e_serial_add_input');
+    const addErr    = document.getElementById('e_serial_add_err');
+    const addItem   = document.getElementById('e_serial_add_item');
+
+    // material_type_id -> {id, brand_id, label} lookup for the current tenant.
+    const MTYPE_BY_ID = new Map(MTYPES.map(m => [String(m.id), m]));
 
     function opt(v, t) { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
     function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
@@ -222,6 +247,71 @@ document.getElementById('f_month').addEventListener('change', function () {
     window.addEventListener('resize', () => { if (pop.classList.contains('open')) positionPop(); });
 
     mSel.addEventListener('change', loadSerials);
+
+    // ── + Add Serial (inline form inside the popover) ────────────────────
+    function showAddForm(show) {
+        body.style.display    = show ? 'none'  : '';
+        addForm.style.display = show ? 'block' : 'none';
+        addErr.style.display  = 'none';
+        addErr.textContent    = '';
+        if (show) {
+            const mt = MTYPE_BY_ID.get(String(mSel.value));
+            addItem.textContent = mt ? mt.label : '—';
+            addInput.value = '';
+            setTimeout(() => addInput.focus(), 0);
+            positionPop();
+        }
+    }
+
+    addOpen.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!mSel.value) { MS.toast('Pick a material type first.', false); return; }
+        showAddForm(true);
+    });
+    addCancel.addEventListener('click', () => showAddForm(false));
+    addInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter')  { e.preventDefault(); addSave.click(); }
+        if (e.key === 'Escape') { e.preventDefault(); showAddForm(false); }
+    });
+
+    addSave.addEventListener('click', async () => {
+        const serial = addInput.value.trim();
+        if (!serial) { addErr.textContent = 'Serial no is required.'; addErr.style.display = 'block'; return; }
+        const mt = MTYPE_BY_ID.get(String(mSel.value));
+        if (!mt) { addErr.textContent = 'Pick a material type first.'; addErr.style.display = 'block'; return; }
+
+        addSave.disabled = true;
+        // Reuses Master Control's item_add — same validation, duplicate check,
+        // admin_id scoping and DB write path. Purchase date defaults to today
+        // server-side; batched types get NULL batch/mfg until edited later.
+        const r = await MS.post("{% url 'material_stock:item_add' %}", {
+            brand_id:         mt.brand_id,
+            material_type_id: mt.id,
+            serial_no:        serial,
+        });
+        addSave.disabled = false;
+
+        if (!r.ok) {
+            addErr.textContent = (r.data && r.data.error) || 'Failed to add serial.';
+            addErr.style.display = 'block';
+            return;
+        }
+
+        const newId = r.data && r.data.id;
+        showAddForm(false);
+        MS.toast(`Serial ${serial} added.`);
+        await loadSerials();
+        // Auto-select the row we just created so the user can Save without
+        // re-clicking. Match on id (falls back to serial text for safety).
+        const cb = list.querySelector(`input[type="checkbox"][value="${newId}"]`)
+                || Array.from(list.querySelectorAll('input[type="checkbox"]'))
+                        .find(x => x.dataset.serial === serial);
+        if (cb) {
+            cb.checked = true;
+            selected.set(cb.value, cb.dataset.serial);
+            updateDisplay();
+        }
+    });
 
     // Autocomplete: from / to (persons), site (sites).
     MS.autocomplete(document.getElementById('e_from'), "{% url 'material_stock:persons_suggest' %}");

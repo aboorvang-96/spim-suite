@@ -263,7 +263,8 @@ def movements(request):
                       brand__category=Brand.TRACKED, brand__is_active=True)
               .select_related('brand').order_by('brand__name', 'name'))
     mtype_payload = [
-        {'id': mt.id, 'label': f"{mt.brand.name} · {mt.name}"} for mt in mtypes
+        {'id': mt.id, 'brand_id': mt.brand_id, 'label': f"{mt.brand.name} · {mt.name}"}
+        for mt in mtypes
     ]
 
     # Build a month dropdown of the last 12 months (+ current).

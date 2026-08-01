@@ -127,6 +127,17 @@
                       padding:8px 10px; border-top:1px solid var(--slate-100); background:#fafbfc; }
     .ms-serial-count{ font-size:.78rem; font-weight:600; color:var(--slate-500); }
     .ms-serial-input{ cursor:pointer; background:#fff !important; }
+
+    /* + Add Serial inline form inside the popover */
+    .ms-serial-add-link { font-size:.78rem; font-weight:600; color:var(--brand-500, #0B5FFF);
+                          text-decoration:none; margin-right:auto; }
+    .ms-serial-add-link:hover { text-decoration:underline; }
+    .ms-serial-addform { padding:12px; }
+    .ms-serial-addform-title { font-weight:600; font-size:.9rem; margin-bottom:6px; }
+    .ms-serial-addform-meta  { font-size:.75rem; color:var(--slate-500); margin-bottom:8px; }
+    .ms-serial-addform .ms-input { width:100%; margin-bottom:8px; }
+    .ms-serial-addform-actions { display:flex; gap:6px; justify-content:flex-end; }
+    .ms-serial-add-err { color:#c92a2a; font-size:.78rem; margin-bottom:8px; }
 </style>
 {% block ms_head %}{% endblock %}
 {% endblock %}
