@@ -1032,12 +1032,186 @@ def mobile_payslip_download(request, pk):
         download_url = f"{base}{path}?token={request.mobile_token.key}"
         return JsonResponse({'success': True, 'download_url': download_url})
 
-    from dashboard.models import CompanySettings  # deferred to avoid import cycles
-    return render(request, 'employees/payslip.html', {
-        'salary':   salary,
-        'employee': salary.employee,
-        'company':  CompanySettings.get_settings(salary.employee.admin_id),
-    })
+    # Non-JSON = the system browser opened the tokenized URL. Stream a
+    # standalone PDF so the phone triggers a real file download instead
+    # of rendering the site-wrapped HTML template (which has no auth
+    # session anyway and would render blank/broken).
+    return _render_payslip_pdf(salary)
+
+
+def _render_payslip_pdf(salary):
+    """Build a single-page A4 payslip PDF via reportlab and return it as
+    an attachment. Reads the same fields `PayslipGenerator` uses so the
+    numbers match the on-screen payslip exactly."""
+    from io import BytesIO
+    from decimal import Decimal
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+    )
+
+    from dashboard.models import CompanySettings
+    from accounts.cycle_utils import get_cycle_ending_in_month
+
+    emp     = salary.employee
+    bank    = getattr(emp, 'bank_details', None)
+    company = CompanySettings.get_settings(emp.admin_id)
+    cycle   = get_cycle_ending_in_month(salary.month)
+
+    def d(v):
+        return Decimal(str(v or 0))
+
+    basic       = d(salary.basic_salary)
+    extra       = d(salary.extra_allowance)
+    ot          = d(salary.ot_allowance)
+    food_allow  = d(salary.food_allowance)
+    advance     = d(salary.advance_pay)
+    total_ded   = d(salary.total_deduction)
+    food_used   = d(salary.food_usage)
+    net_pay     = d(salary.net_pay)
+
+    earnings_total = basic + extra + ot + food_allow
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=15 * mm, bottomMargin=15 * mm,
+        title=f"Payslip {emp.employee_id or emp.pk} {salary.month.strftime('%Y-%m')}",
+    )
+    styles = getSampleStyleSheet()
+    h_style   = ParagraphStyle('H',    parent=styles['Title'],  fontSize=16, alignment=1, spaceAfter=2)
+    sub_style = ParagraphStyle('Sub',  parent=styles['Normal'], fontSize=9,  alignment=1, textColor=colors.grey)
+    lbl_style = ParagraphStyle('Lbl',  parent=styles['Heading4'], fontSize=11, spaceBefore=6, spaceAfter=4)
+    small     = ParagraphStyle('Sm',   parent=styles['Normal'], fontSize=8,  textColor=colors.grey, alignment=1)
+
+    story = []
+    story.append(Paragraph((company.name if company else 'Company').upper(), h_style))
+    if company and company.address:
+        story.append(Paragraph(company.address.replace('\n', ' · '), sub_style))
+    story.append(Paragraph(f"Payslip for {cycle['label']} ({cycle['start'].strftime('%d %b')} – {cycle['end'].strftime('%d %b %Y')})", sub_style))
+    story.append(Spacer(1, 8))
+
+    # Employee + bank block (two columns)
+    emp_rows = [
+        ['Employee ID',  emp.employee_id or '—', 'Bank',      (bank.bank_name if bank else '—') or '—'],
+        ['Name',         emp.name or '—',         'A/C Holder', (bank.account_holder if bank else '—') or '—'],
+        ['Designation',  emp.designation or '—',  'A/C No.',   (bank.account_number if bank else '—') or '—'],
+        ['Level',        emp.level or '—',        'IFSC',      (bank.ifsc_code if bank else '—') or '—'],
+        ['Site',         emp.site or '—',         'Branch',    (bank.branch if bank else '—') or '—'],
+    ]
+    emp_tbl = Table(emp_rows, colWidths=[28 * mm, 55 * mm, 25 * mm, 55 * mm])
+    emp_tbl.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.grey),
+        ('TEXTCOLOR', (2, 0), (2, -1), colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING',    (0, 0), (-1, -1), 3),
+    ]))
+    story.append(emp_tbl)
+    story.append(Spacer(1, 10))
+
+    def _money(v):
+        return '{:,.2f}'.format(float(v))
+
+    # Earnings + Deductions side-by-side
+    earn_data = [
+        ['Earnings', 'Amount (INR)'],
+        ['Base Salary',              _money(basic)],
+        ['Attendance / Extra',       _money(extra)],
+        ['OT Allowance',             _money(ot)],
+        ['Food Allowance',           _money(food_allow)],
+        ['Total Earnings',           _money(earnings_total)],
+    ]
+    ded_data = [
+        ['Deductions', 'Amount (INR)'],
+        ['Advance Pay',              _money(advance)],
+        ['Food Used',                _money(food_used)],
+        ['Other Deductions',         _money(max(Decimal('0'), total_ded - advance))],
+        ['',                         ''],
+        ['Total Deductions',         _money(total_ded)],
+    ]
+
+    def _amount_table(data):
+        t = Table(data, colWidths=[52 * mm, 30 * mm])
+        t.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F1F1')),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.grey),
+            ('LINEABOVE', (0, -1), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING',    (0, 0), (-1, -1), 4),
+        ]))
+        return t
+
+    side_by_side = Table(
+        [[_amount_table(earn_data), _amount_table(ded_data)]],
+        colWidths=[85 * mm, 85 * mm],
+    )
+    side_by_side.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(side_by_side)
+    story.append(Spacer(1, 12))
+
+    # Net pay banner
+    net_tbl = Table(
+        [['NET PAY', f'INR {_money(net_pay)}']],
+        colWidths=[100 * mm, 70 * mm],
+    )
+    net_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0B5FFF')),
+        ('TEXTCOLOR',  (0, 0), (-1, 0), colors.white),
+        ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, 0), 13),
+        ('ALIGN',      (1, 0), (1, 0),  'RIGHT'),
+        ('TOPPADDING',    (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('LEFTPADDING',   (0, 0), (0, 0),  10),
+        ('RIGHTPADDING',  (1, 0), (1, 0),  10),
+    ]))
+    story.append(net_tbl)
+    story.append(Spacer(1, 30))
+
+    # Signature line + footer
+    sig = Table(
+        [['_________________________', '_________________________'],
+         ['Employee Signature',        'Authorised Signatory']],
+        colWidths=[85 * mm, 85 * mm],
+    )
+    sig.setStyle(TableStyle([
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('ALIGN',    (0, 0), (-1, -1), 'CENTER'),
+        ('TEXTCOLOR',(0, 1), (-1, 1),  colors.grey),
+    ]))
+    story.append(sig)
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(
+        "This is a system-generated payslip and does not require a physical signature.",
+        small,
+    ))
+
+    doc.build(story)
+    pdf = buf.getvalue()
+    buf.close()
+
+    filename = f"Payslip_{emp.employee_id or emp.pk}_{salary.month.strftime('%Y-%m')}.pdf"
+    resp = HttpResponse(pdf, content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp['Content-Length']      = str(len(pdf))
+    return resp
 
 
 @csrf_exempt
