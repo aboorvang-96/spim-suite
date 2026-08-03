@@ -3,7 +3,6 @@
 
 {% block ms_body %}
 {{ brands|json_script:"ms-brands-data" }}
-{{ sites|json_script:"ms-sites-data" }}
 
 {% if is_admin %}
 <div class="ms-panel">
@@ -39,15 +38,6 @@
             <div class="ms-field tracked-field">
                 <label>Purchase Date <span class="req">*</span></label>
                 <input class="ms-input" id="f_purchase" type="date" value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
-            </div>
-            <div class="ms-field tracked-field">
-                <label>Site <span class="req">*</span></label>
-                <select class="ms-select" id="f_site">
-                    <option value="">— Select site —</option>
-                    {% for s in sites %}
-                    <option value="{{ s.id }}">{{ s.name }}</option>
-                    {% endfor %}
-                </select>
             </div>
 
             <div class="ms-field" style="align-self:end;">
@@ -87,7 +77,7 @@
                         {% else %}<span class="badge badge-old">Old</span>{% endif %}
                     </td>
                     <td>{{ g.material_label }}</td>
-                    <td>{{ g.site_label }}</td>
+                    <td>{{ g.site_label|default:'—' }}</td>
                     <td>{{ g.quantity }}</td>
                     <td>{{ g.stock_in }}</td>
                     <td>{{ g.stock_out }}</td>
@@ -156,11 +146,9 @@
             batch_no:         document.getElementById('f_batch').value.trim(),
             mfg_date:         document.getElementById('f_mfg').value,
             purchase_date:    document.getElementById('f_purchase').value,
-            site_id:          document.getElementById('f_site').value,
         };
         if (!payload.material_type_id) { MS.toast('Select a material type.', false); return; }
         if (!payload.serial_no)        { MS.toast('Serial number is required.', false); return; }
-        if (!payload.site_id)          { MS.toast('Select a site.', false); return; }
 
         const btn = document.getElementById('addBtn');
         btn.disabled = true;

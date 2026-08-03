@@ -220,9 +220,11 @@ class StockItem(models.Model):
 
     admin_id      = models.CharField(max_length=20, db_index=True, default='PENDING')
     material_type = models.ForeignKey(MaterialType, on_delete=models.PROTECT, related_name='items')
-    # Home site — where this physical unit lives.
+    # Home site — optional at the Stock page's Add form; enforced only where
+    # it matters (StockMovement.site is still NOT NULL).
     site          = models.ForeignKey(
-        'projects.Site', on_delete=models.PROTECT, related_name='stock_items',
+        'projects.Site', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='stock_items',
     )
     serial_no     = models.CharField(max_length=120)
     batch_no      = models.CharField(max_length=120, null=True, blank=True)   # batched only

@@ -198,7 +198,6 @@ def index(request):
         'is_admin':    is_admin_user(request.user),
         'groups':      group_list,
         'brands':      _brands_payload(admin_id),
-        'sites':       _sites_payload(admin_id),
         'today':       today,
     })
 
@@ -275,6 +274,16 @@ def movements(request):
     else:
         next_start = date_cls(month_start.year, month_start.month + 1, 1)
 
+    # Bounds for the in-card Date input. Never past today (validate_not_future
+    # would reject anyway). Default: today if we're on the current month,
+    # otherwise the 1st of the selected month.
+    from datetime import timedelta as _td
+    month_end   = next_start - _td(days=1)
+    is_current  = (today.year, today.month) == (month_start.year, month_start.month)
+    date_max    = today if today <= month_end else month_end
+    date_min    = month_start
+    date_default = today if is_current else month_start
+
     history = (StockMovement.objects
                .filter(admin_id=admin_id,
                        movement_date__gte=month_start,
@@ -293,10 +302,18 @@ def movements(request):
         for mt in mtypes
     ]
 
-    # Build a month dropdown of the last 12 months (+ current).
+    # Build the header Month dropdown: current + previous 12 + next 1 = 14
+    # options, newest first. Uses YYYY-MM strings; the view resolves them.
     months = []
+    # Next month first (top of list).
+    if today.month == 12:
+        ny, nm = today.year + 1, 1
+    else:
+        ny, nm = today.year, today.month + 1
+    months.append(date_cls(ny, nm, 1).strftime('%Y-%m'))
+    # Then current month and the previous 12.
     cy, cm = today.year, today.month
-    for _ in range(12):
+    for _ in range(13):
         months.append(date_cls(cy, cm, 1).strftime('%Y-%m'))
         cm -= 1
         if cm == 0:
@@ -311,6 +328,9 @@ def movements(request):
         'sites':         _sites_payload(admin_id),
         'month':         month,
         'months':        months,
+        'date_default':  date_default,
+        'date_min':      date_min,
+        'date_max':      date_max,
         'today':         today,
     })
 
@@ -342,10 +362,12 @@ def item_add(request):
         batch_no = _clean(data.get('batch_no'), 120) or None
         mfg_date = _to_date(data.get('mfg_date'))
 
-    # Site FK — hard-required (NOT NULL in DB after 0006_site_fks_clean).
+    # Site FK — optional at Stock-page add time (nullable after 0007).
+    # The + Add Serial popover on Stock In/Out still enforces site via
+    # quick_add_item, which validates before dispatching here.
     site = _get_tenant_site(admin_id, data.get('site_id'))
-    if site is None:
-        return _err('Site is required.', status=400)
+    if data.get('site_id') and site is None:
+        return _err('Invalid site for this account.', status=400)
 
     # Friendly duplicate check before the DB constraint fires.
     if StockItem.objects.filter(admin_id=admin_id, material_type=mt,

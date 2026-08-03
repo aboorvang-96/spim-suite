@@ -5,22 +5,6 @@
 {{ mtypes|json_script:"ms-mtypes-data" }}
 {{ sites|json_script:"ms-sites-data" }}
 
-<!-- ── Month filter bar (unchanged) ── -->
-<div class="ms-panel">
-    <div class="ms-panel-body">
-        <div class="ms-form-grid">
-            <div class="ms-field">
-                <label>Month</label>
-                <select class="ms-select" id="f_month">
-                    {% for mo in months %}
-                    <option value="{{ mo }}" {% if mo == month %}selected{% endif %}>{{ mo }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-    </div>
-</div>
-
 {% if is_admin %}
 <!-- ── New Movement — header + batch rows ── -->
 <div class="ms-panel">
@@ -34,12 +18,18 @@
         <div class="ms-form-grid" style="margin-bottom:14px;">
             <div class="ms-field">
                 <label>Month</label>
-                <input class="ms-input" id="h_month" type="text" readonly value="{{ month }}">
+                <select class="ms-select" id="h_month">
+                    {% for mo in months %}
+                    <option value="{{ mo }}" {% if mo == month %}selected{% endif %}>{{ mo }}</option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="ms-field">
                 <label>Date <span class="req">*</span></label>
                 <input class="ms-input" id="h_date" type="date"
-                       value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
+                       value="{{ date_default|date:'Y-m-d' }}"
+                       min="{{ date_min|date:'Y-m-d' }}"
+                       max="{{ date_max|date:'Y-m-d' }}">
             </div>
             <div class="ms-field">
                 <label>Site <span class="req">*</span></label>
@@ -125,8 +115,10 @@
 
 {% block ms_scripts %}
 <script>
-// Month filter reloads the page with ?month=.
-document.getElementById('f_month').addEventListener('change', function () {
+// In-card Month select reloads the page with ?month=YYYY-MM. The server
+// sends back a Date input with matching min / max / default, and the
+// Movements list below re-filters accordingly.
+document.getElementById('h_month').addEventListener('change', function () {
     const u = new URL(location.href);
     u.searchParams.set('month', this.value);
     location.href = u.toString();
