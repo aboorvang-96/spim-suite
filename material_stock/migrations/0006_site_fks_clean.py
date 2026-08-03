@@ -46,6 +46,7 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
 
     dependencies = [
         ('projects', '0010_tighten_nullable_fks'),
