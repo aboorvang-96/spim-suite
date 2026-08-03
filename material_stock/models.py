@@ -220,6 +220,10 @@ class StockItem(models.Model):
 
     admin_id      = models.CharField(max_length=20, db_index=True, default='PENDING')
     material_type = models.ForeignKey(MaterialType, on_delete=models.PROTECT, related_name='items')
+    # Home site — where this physical unit lives.
+    site          = models.ForeignKey(
+        'projects.Site', on_delete=models.PROTECT, related_name='stock_items',
+    )
     serial_no     = models.CharField(max_length=120)
     batch_no      = models.CharField(max_length=120, null=True, blank=True)   # batched only
     mfg_date      = models.DateField(null=True, blank=True)                   # batched only
@@ -242,6 +246,9 @@ class StockItem(models.Model):
         ordering        = ['material_type', 'purchase_date', 'serial_no']
         # Serial unique per tenant + material type.
         unique_together = (('admin_id', 'material_type', 'serial_no'),)
+        indexes = [
+            models.Index(fields=['admin_id', 'site'], name='ms_item_admin_site_idx'),
+        ]
         verbose_name        = 'Stock Item'
         verbose_name_plural = 'Stock Items'
 
@@ -284,7 +291,9 @@ class StockMovement(models.Model):
     admin_id      = models.CharField(max_length=20, db_index=True, default='PENDING')
     stock_item    = models.ForeignKey(StockItem, on_delete=models.PROTECT, related_name='movements')
     movement_date = models.DateField()
-    site_name     = models.CharField(max_length=200)
+    site          = models.ForeignKey(
+        'projects.Site', on_delete=models.PROTECT, related_name='stock_movements',
+    )
     from_person   = models.CharField(max_length=150, null=True, blank=True)  # null if from stock
     to_person     = models.CharField(max_length=150, null=True, blank=True)  # null if returning to stock
     remarks       = models.TextField(null=True, blank=True)
@@ -298,6 +307,10 @@ class StockMovement(models.Model):
     class Meta:
         db_table = 'ms_stock_movement'
         ordering = ['-movement_date', '-created_at']
+        indexes = [
+            models.Index(fields=['admin_id', 'site', 'movement_date'],
+                         name='ms_mv_admin_site_date_idx'),
+        ]
         verbose_name        = 'Stock Movement'
         verbose_name_plural = 'Stock Movements'
 

@@ -2,6 +2,7 @@
 {% load static %}
 
 {% block ms_body %}
+{{ sites|json_script:"ms-sites-data" }}
 <div class="ms-master-layout">
 
     <!-- ── Equipment / Machineries sidebar ── -->
@@ -82,6 +83,7 @@
                                 {% if blk.mtype.is_batched %}<th>Batch No</th>{% endif %}
                                 <th>Serial No</th>
                                 {% if blk.mtype.is_batched %}<th>Mfg Date</th>{% endif %}
+                                <th>Site</th>
                                 <th>Current Holder</th>
                                 <th>Current Site</th>
                                 <th style="width:110px;">Status</th>
@@ -97,6 +99,7 @@
                                     {% if blk.mtype.is_batched %}<td>{{ it.batch_no|default:'—' }}</td>{% endif %}
                                     <td>{{ it.serial_no }}</td>
                                     {% if blk.mtype.is_batched %}<td>{{ it.mfg_date|date:'d M Y'|default:'—' }}</td>{% endif %}
+                                    <td>{{ it.site_label }}</td>
                                     <td>{{ it.current_holder_name|default:'—' }}</td>
                                     <td>{{ it.current_site_name|default:'—' }}</td>
                                     <td><span class="st-chip st-{{ it.status }}">{{ it.get_status_display }}</span></td>
@@ -111,6 +114,7 @@
                                                 data-mfg="{{ it.mfg_date|date:'Y-m-d'|default:'' }}"
                                                 data-holder="{{ it.current_holder_name|default:'' }}"
                                                 data-site="{{ it.current_site_name|default:'' }}"
+                                                data-site-id="{{ it.site_id|default:'' }}"
                                                 data-status="{{ it.status }}"
                                                 data-remarks="{{ it.remarks|default:'' }}"
                                                 data-batched="{{ blk.mtype.is_batched|yesno:'1,0' }}"
@@ -121,7 +125,7 @@
                                     {% endif %}
                                 </tr>
                                 {% empty %}
-                                <tr><td colspan="9" class="ms-empty">No items in this material type.</td></tr>
+                                <tr><td colspan="10" class="ms-empty">No items in this material type.</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -198,8 +202,17 @@
             <div class="ms-field"><label>Purchase Date</label><input class="ms-input" id="ei_purchase" type="date" max="{{ today_ist_iso }}"></div>
             <div class="ms-field ei-batched"><label>Batch No</label><input class="ms-input" id="ei_batch"></div>
             <div class="ms-field ei-batched"><label>Mfg Date</label><input class="ms-input" id="ei_mfg" type="date" max="{{ today_ist_iso }}"></div>
+            <div class="ms-field">
+                <label>Home Site <span class="req">*</span></label>
+                <select class="ms-select" id="ei_site_id">
+                    <option value="">— Select site —</option>
+                    {% for s in sites %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div class="ms-field"><label>Current Holder</label><input class="ms-input" id="ei_holder"></div>
-            <div class="ms-field"><label>Current Site</label><input class="ms-input" id="ei_site"></div>
+            <div class="ms-field"><label>Current Site (free text)</label><input class="ms-input" id="ei_site"></div>
             <div class="ms-field"><label>Status</label>
                 <select class="ms-select" id="ei_status">
                     <option value="available">Available</option>
@@ -284,6 +297,7 @@ function editItem(btn) {
     document.getElementById('ei_mfg').value      = d.mfg;
     document.getElementById('ei_holder').value   = d.holder;
     document.getElementById('ei_site').value     = d.site;
+    document.getElementById('ei_site_id').value  = d.siteId || '';
     document.getElementById('ei_status').value   = d.status;
     document.getElementById('ei_remarks').value  = d.remarks;
     document.querySelectorAll('.ei-batched').forEach(el => el.classList.toggle('hidden', d.batched !== '1'));
@@ -298,9 +312,11 @@ async function saveItem() {
         mfg_date:            document.getElementById('ei_mfg').value,
         current_holder_name: document.getElementById('ei_holder').value.trim(),
         current_site_name:   document.getElementById('ei_site').value.trim(),
+        site_id:             document.getElementById('ei_site_id').value,
         status:              document.getElementById('ei_status').value,
         remarks:             document.getElementById('ei_remarks').value.trim(),
     };
+    if (!payload.site_id) { MS.toast('Select a home site.', false); return; }
     const r = await MS.post(`/material-stock/api/items/${id}/edit/`, payload);
     if (r.ok) location.reload();
     else      MS.toast(r.data.error || 'Failed.', false);

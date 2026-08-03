@@ -3,8 +3,9 @@
 
 {% block ms_body %}
 {{ mtypes|json_script:"ms-mtypes-data" }}
+{{ sites|json_script:"ms-sites-data" }}
 
-<!-- ── Filter bar ── -->
+<!-- ── Month filter bar (unchanged) ── -->
 <div class="ms-panel">
     <div class="ms-panel-body">
         <div class="ms-form-grid">
@@ -16,72 +17,68 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="ms-field">
-                <label>Date</label>
-                <input class="ms-input" id="f_date" type="date" value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
-            </div>
-            <div class="ms-field ms-ac-wrap">
-                <label>Site</label>
-                <input class="ms-input" id="f_site" type="text" placeholder="Site / location" autocomplete="off">
-            </div>
         </div>
     </div>
 </div>
 
 {% if is_admin %}
-<!-- ── Entry table ── -->
+<!-- ── New Movement — header + batch rows ── -->
 <div class="ms-panel">
     <div class="ms-panel-head">
         <h3 class="ms-panel-title">New Movement</h3>
-        <p class="ms-panel-note">Pick material → serial, then who it moves from / to.</p>
+        <p class="ms-panel-note">Pick a site → add one or more material/serial rows → Save All.</p>
     </div>
-    <div class="ms-scroll">
-        <table class="data-table" style="min-width:960px;">
-            <thead><tr>
-                <th style="width:50px;">SL</th>
-                <th style="width:200px;">Item (Material)</th>
-                <th style="width:220px;">Serial No</th>
-                <th>From (person)</th>
-                <th>To (person)</th>
-                <th>Remarks</th>
-                <th style="width:90px;">Action</th>
-            </tr></thead>
-            <tbody>
-                <tr>
-                    <td>1</td>
-                    <td><select class="ms-select" id="e_mtype"></select></td>
-                    <td class="ms-ac-wrap">
-                        <input class="ms-input ms-serial-input" id="e_serial_display" type="text"
-                               readonly placeholder="— pick material first —">
-                        <div class="ms-serial-pop" id="e_serial_pop">
-                            <div id="e_serial_body">
-                                <div class="ms-serial-list" id="e_serial_list"></div>
-                                <div class="ms-serial-foot">
-                                    <a href="#" class="ms-serial-add-link" id="e_serial_add_open">+ Add Serial</a>
-                                    <span class="ms-serial-count" id="e_serial_count">0 selected</span>
-                                    <button type="button" class="btn btn-primary btn-sm" id="e_serial_done">Done</button>
-                                </div>
-                            </div>
-                            <div id="e_serial_addform" class="ms-serial-addform" style="display:none;">
-                                <div class="ms-serial-addform-title">Add new serial</div>
-                                <div class="ms-serial-addform-meta">Item: <span id="e_serial_add_item">—</span></div>
-                                <input type="text" class="ms-input" id="e_serial_add_input"
-                                       placeholder="Serial no" maxlength="120" autocomplete="off">
-                                <div class="ms-serial-add-err" id="e_serial_add_err" style="display:none;"></div>
-                                <div class="ms-serial-addform-actions">
-                                    <button type="button" class="btn btn-sm"         id="e_serial_add_cancel">Cancel</button>
-                                    <button type="button" class="btn btn-primary btn-sm" id="e_serial_add_save">Save</button>
-                                </div>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="ms-ac-wrap"><input class="ms-input" id="e_from" type="text" autocomplete="off"></td>
-                    <td class="ms-ac-wrap"><input class="ms-input" id="e_to" type="text" autocomplete="off"></td>
-                    <td><input class="ms-input" id="e_remarks" type="text"></td>
-                    <td><button class="btn btn-primary btn-sm" id="e_save">Save</button></td>
-                </tr>
-            </tbody>
-        </table>
+    <div class="ms-panel-body">
+
+        <!-- Batch header (applies to every row below) -->
+        <div class="ms-form-grid" style="margin-bottom:14px;">
+            <div class="ms-field">
+                <label>Month</label>
+                <input class="ms-input" id="h_month" type="text" readonly value="{{ month }}">
+            </div>
+            <div class="ms-field">
+                <label>Date <span class="req">*</span></label>
+                <input class="ms-input" id="h_date" type="date"
+                       value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
+            </div>
+            <div class="ms-field">
+                <label>Site <span class="req">*</span></label>
+                <select class="ms-select" id="h_site">
+                    <option value="">— Select site —</option>
+                    {% for s in sites %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="ms-field ms-ac-wrap">
+                <label>From (Person)</label>
+                <input class="ms-input" id="h_from" type="text" autocomplete="off">
+            </div>
+            <div class="ms-field ms-ac-wrap">
+                <label>To (Person)</label>
+                <input class="ms-input" id="h_to" type="text" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Line items table -->
+        <div class="ms-scroll">
+            <table class="data-table" style="min-width:820px;">
+                <thead><tr>
+                    <th style="width:50px;">SL</th>
+                    <th style="width:220px;">Item (Material)</th>
+                    <th style="width:240px;">Serial No</th>
+                    <th>Remarks</th>
+                    <th style="width:80px;">Action</th>
+                </tr></thead>
+                <tbody id="batch_rows"><!-- rows injected by JS --></tbody>
+            </table>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:12px; align-items:center;">
+            <button type="button" class="btn btn-outline btn-sm" id="btn_add_row">+ Add Row</button>
+            <div style="flex:1;"></div>
+            <button type="button" class="btn btn-primary btn-sm" id="btn_save_all">Save All</button>
+        </div>
     </div>
 </div>
 {% endif %}
@@ -92,7 +89,7 @@
         <h3 class="ms-panel-title">Movements — {{ month }}</h3>
     </div>
     <div class="ms-scroll">
-        <table class="data-table" style="min-width:940px;">
+        <table class="data-table" style="min-width:1000px;">
             <thead><tr>
                 <th style="width:120px;">Date</th>
                 <th>Site</th>
@@ -107,7 +104,7 @@
                 {% for mv in history %}
                 <tr>
                     <td>{{ mv.movement_date|date:'d M Y' }}</td>
-                    <td>{{ mv.site_name }}</td>
+                    <td>{{ mv.site.name }}</td>
                     <td>{{ mv.stock_item.material_type.brand.name }} · {{ mv.stock_item.material_type.name }}</td>
                     <td>{{ mv.stock_item.serial_no }}</td>
                     <td>{{ mv.from_person|default:'— stock —' }}</td>
@@ -140,209 +137,356 @@ document.getElementById('f_month').addEventListener('change', function () {
 <script>
 (function () {
     const MTYPES  = JSON.parse(document.getElementById('ms-mtypes-data').textContent || '[]');
-    const mSel    = document.getElementById('e_mtype');
-    const display = document.getElementById('e_serial_display');
-    const pop     = document.getElementById('e_serial_pop');
-    const list    = document.getElementById('e_serial_list');
-    const counter = document.getElementById('e_serial_count');
-    const doneBtn = document.getElementById('e_serial_done');
-    const body    = document.getElementById('e_serial_body');
-    const addForm = document.getElementById('e_serial_addform');
-    const addOpen = document.getElementById('e_serial_add_open');
-    const addCancel = document.getElementById('e_serial_add_cancel');
-    const addSave   = document.getElementById('e_serial_add_save');
-    const addInput  = document.getElementById('e_serial_add_input');
-    const addErr    = document.getElementById('e_serial_add_err');
-    const addItem   = document.getElementById('e_serial_add_item');
+    const SITES   = JSON.parse(document.getElementById('ms-sites-data').textContent  || '[]');
 
-    // material_type_id -> {id, brand_id, label} lookup for the current tenant.
+    // material_type_id -> {id, brand_id, label}
     const MTYPE_BY_ID = new Map(MTYPES.map(m => [String(m.id), m]));
 
-    function opt(v, t) { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
+    const hSite   = document.getElementById('h_site');
+    const hDate   = document.getElementById('h_date');
+    const hFrom   = document.getElementById('h_from');
+    const hTo     = document.getElementById('h_to');
+    const tbody   = document.getElementById('batch_rows');
+    const btnAdd  = document.getElementById('btn_add_row');
+    const btnSave = document.getElementById('btn_save_all');
+
+    // Cache of items-by-site payload for the currently selected site.
+    // Reset every time the site changes.
+    let siteGroups = [];   // [{material_type_id, brand_id, label, items:[{id,serial,...}]}]
+    let rowSeq     = 0;
+
     function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 
-    mSel.appendChild(opt('', '— Select material —'));
-    MTYPES.forEach(m => mSel.appendChild(opt(m.id, m.label)));
-
-    // stock_item_id -> serial (the current selection).
-    const selected = new Map();
-
-    // The popover lives inside `.ms-scroll` (overflow-x:auto), which per CSS
-    // forces overflow-y to `auto` and would CLIP an absolutely-positioned
-    // panel hanging below this single-row table.  So we pin it with
-    // position:fixed and place it under the input via getBoundingClientRect —
-    // fixed positioning escapes the scroll container's clipping entirely.
-    function positionPop() {
-        const r = display.getBoundingClientRect();
-        pop.style.position = 'fixed';
-        pop.style.top   = (r.bottom + 2) + 'px';
-        pop.style.left  = r.left + 'px';
-        pop.style.right = 'auto';
-        pop.style.width = Math.max(r.width, 280) + 'px';
+    // ── Row rendering ────────────────────────────────────────────────
+    function renderRow(rowId) {
+        const tr = document.createElement('tr');
+        tr.dataset.rowId = rowId;
+        tr.innerHTML = `
+            <td class="row-sl"></td>
+            <td>
+                <select class="ms-select row-mtype"></select>
+            </td>
+            <td class="ms-ac-wrap" style="position:relative;">
+                <input class="ms-input ms-serial-input row-serial-display" type="text"
+                       readonly placeholder="— pick material first —">
+                <div class="ms-serial-pop row-serial-pop">
+                    <div class="row-serial-body">
+                        <div class="ms-serial-list row-serial-list"></div>
+                        <div class="ms-serial-foot">
+                            <a href="#" class="ms-serial-add-link row-serial-add-open">+ Add Serial</a>
+                            <span class="ms-serial-count row-serial-count">0 selected</span>
+                            <button type="button" class="btn btn-primary btn-sm row-serial-done">Done</button>
+                        </div>
+                    </div>
+                    <div class="ms-serial-addform row-serial-addform" style="display:none;">
+                        <div class="ms-serial-addform-title">Add new serial</div>
+                        <div class="ms-serial-addform-meta">Item: <span class="row-serial-add-item">—</span></div>
+                        <input type="text" class="ms-input row-serial-add-input"
+                               placeholder="Serial no" maxlength="120" autocomplete="off">
+                        <div class="ms-serial-add-err row-serial-add-err" style="display:none;"></div>
+                        <div class="ms-serial-addform-actions">
+                            <button type="button" class="btn btn-sm row-serial-add-cancel">Cancel</button>
+                            <button type="button" class="btn btn-primary btn-sm row-serial-add-save">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </td>
+            <td><input class="ms-input row-remarks" type="text"></td>
+            <td><button type="button" class="mini-btn danger row-remove" title="Remove row">🗑️</button></td>
+        `;
+        // Row state kept on the DOM node itself.
+        tr._selected = new Map();  // stock_item_id -> serial
+        tbody.appendChild(tr);
+        wireRow(tr);
+        populateMtypeSelect(tr);
+        renumber();
+        return tr;
     }
 
-    function openPop(open) {
-        if (open) positionPop();
-        pop.classList.toggle('open', !!open);
-    }
-
-    function updateDisplay() {
-        display.value = [...selected.values()].join(', ');
-        counter.textContent = `${selected.size} selected`;
-        if (!selected.size) {
-            display.placeholder = mSel.value ? '— select serials —' : '— pick material first —';
-        }
-    }
-
-    async function loadSerials() {
-        list.innerHTML = '';
-        selected.clear();
-        updateDisplay();
-        openPop(false);
-        if (!mSel.value) { display.placeholder = '— pick material first —'; return; }
-
-        const data  = await MS.get(`{% url 'material_stock:serials_suggest' %}?material_type_id=${mSel.value}`);
-        const items = data.results || [];
-        if (!items.length) {
-            list.innerHTML = '<div class="ms-empty" style="padding:16px;">No items.</div>';
-            display.placeholder = '— no items —';
-            return;
-        }
-        display.placeholder = '— select serials —';
-        items.forEach(it => {
-            const meta = [];
-            if (it.holder) meta.push('Holder: ' + esc(it.holder));
-            if (it.site)   meta.push('Site: ' + esc(it.site));
-            const row = document.createElement('label');
-            row.className = 'ms-serial-row';
-            row.innerHTML =
-                `<input type="checkbox" value="${it.id}" data-serial="${esc(it.serial)}">` +
-                `<span class="ms-serial-no">${esc(it.serial)}</span>` +
-                `<span class="st-chip st-${esc(it.status)}">${esc(it.status)}</span>` +
-                `<span class="ms-serial-meta">${meta.join(' · ')}</span>`;
-            list.appendChild(row);
+    function populateMtypeSelect(tr) {
+        const sel = tr.querySelector('.row-mtype');
+        sel.innerHTML = '';
+        const first = document.createElement('option');
+        first.value = ''; first.textContent = hSite.value ? '— Select material —' : '— pick site first —';
+        sel.appendChild(first);
+        if (!hSite.value) { sel.disabled = true; return; }
+        sel.disabled = false;
+        // Only material types that have at least one available item at this site.
+        siteGroups.forEach(g => {
+            const o = document.createElement('option');
+            o.value = g.material_type_id;
+            o.textContent = g.label;
+            sel.appendChild(o);
         });
     }
 
-    // Checkbox → selection map.
-    list.addEventListener('change', (e) => {
-        const cb = e.target;
-        if (cb.type !== 'checkbox') return;
-        if (cb.checked) selected.set(cb.value, cb.dataset.serial);
-        else            selected.delete(cb.value);
-        updateDisplay();
-    });
-
-    // Open / close the popover.
-    display.addEventListener('click', () => {
-        if (!mSel.value) { MS.toast('Pick a material type first.', false); return; }
-        openPop(!pop.classList.contains('open'));
-    });
-    doneBtn.addEventListener('click', () => openPop(false));
-    document.addEventListener('click', (e) => {
-        if (!pop.contains(e.target) && e.target !== display) openPop(false);
-    });
-    // Keep the fixed popover glued to the input while open.
-    window.addEventListener('scroll', () => { if (pop.classList.contains('open')) positionPop(); }, true);
-    window.addEventListener('resize', () => { if (pop.classList.contains('open')) positionPop(); });
-
-    mSel.addEventListener('change', loadSerials);
-
-    // ── + Add Serial (inline form inside the popover) ────────────────────
-    function showAddForm(show) {
-        body.style.display    = show ? 'none'  : '';
-        addForm.style.display = show ? 'block' : 'none';
-        addErr.style.display  = 'none';
-        addErr.textContent    = '';
-        if (show) {
-            const mt = MTYPE_BY_ID.get(String(mSel.value));
-            addItem.textContent = mt ? mt.label : '—';
-            addInput.value = '';
-            setTimeout(() => addInput.focus(), 0);
-            positionPop();
-        }
+    function renumber() {
+        [...tbody.querySelectorAll('tr')].forEach((tr, i) => {
+            tr.querySelector('.row-sl').textContent = (i + 1);
+        });
     }
 
-    addOpen.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (!mSel.value) { MS.toast('Pick a material type first.', false); return; }
-        showAddForm(true);
-    });
-    addCancel.addEventListener('click', () => showAddForm(false));
-    addInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter')  { e.preventDefault(); addSave.click(); }
-        if (e.key === 'Escape') { e.preventDefault(); showAddForm(false); }
-    });
+    // ── Per-row wiring ───────────────────────────────────────────────
+    function wireRow(tr) {
+        const mSel     = tr.querySelector('.row-mtype');
+        const display  = tr.querySelector('.row-serial-display');
+        const pop      = tr.querySelector('.row-serial-pop');
+        const list     = tr.querySelector('.row-serial-list');
+        const counter  = tr.querySelector('.row-serial-count');
+        const doneBtn  = tr.querySelector('.row-serial-done');
+        const body     = tr.querySelector('.row-serial-body');
+        const addForm  = tr.querySelector('.row-serial-addform');
+        const addOpen  = tr.querySelector('.row-serial-add-open');
+        const addCancel= tr.querySelector('.row-serial-add-cancel');
+        const addSave  = tr.querySelector('.row-serial-add-save');
+        const addInput = tr.querySelector('.row-serial-add-input');
+        const addErr   = tr.querySelector('.row-serial-add-err');
+        const addItem  = tr.querySelector('.row-serial-add-item');
+        const removeBtn= tr.querySelector('.row-remove');
 
-    addSave.addEventListener('click', async () => {
-        const serial = addInput.value.trim();
-        if (!serial) { addErr.textContent = 'Serial no is required.'; addErr.style.display = 'block'; return; }
-        const mt = MTYPE_BY_ID.get(String(mSel.value));
-        if (!mt) { addErr.textContent = 'Pick a material type first.'; addErr.style.display = 'block'; return; }
-
-        addSave.disabled = true;
-        // Reuses Master Control's item_add — same validation, duplicate check,
-        // admin_id scoping and DB write path. Purchase date defaults to today
-        // server-side; batched types get NULL batch/mfg until edited later.
-        const r = await MS.post("{% url 'material_stock:item_add' %}", {
-            brand_id:         mt.brand_id,
-            material_type_id: mt.id,
-            serial_no:        serial,
-        });
-        addSave.disabled = false;
-
-        if (!r.ok) {
-            addErr.textContent = (r.data && r.data.error) || 'Failed to add serial.';
-            addErr.style.display = 'block';
-            return;
+        function positionPop() {
+            const r = display.getBoundingClientRect();
+            pop.style.position = 'fixed';
+            pop.style.top   = (r.bottom + 2) + 'px';
+            pop.style.left  = r.left + 'px';
+            pop.style.right = 'auto';
+            pop.style.width = Math.max(r.width, 280) + 'px';
+        }
+        function openPop(open) {
+            if (open) positionPop();
+            pop.classList.toggle('open', !!open);
+        }
+        function updateDisplay() {
+            display.value = [...tr._selected.values()].join(', ');
+            counter.textContent = `${tr._selected.size} selected`;
+            if (!tr._selected.size) {
+                display.placeholder = mSel.value ? '— select serials —' : '— pick material first —';
+            }
         }
 
-        const newId = r.data && r.data.id;
-        showAddForm(false);
-        MS.toast(`Serial ${serial} added.`);
-        await loadSerials();
-        // Auto-select the row we just created so the user can Save without
-        // re-clicking. Match on id (falls back to serial text for safety).
-        const cb = list.querySelector(`input[type="checkbox"][value="${newId}"]`)
-                || Array.from(list.querySelectorAll('input[type="checkbox"]'))
-                        .find(x => x.dataset.serial === serial);
-        if (cb) {
-            cb.checked = true;
-            selected.set(cb.value, cb.dataset.serial);
+        function currentGroup() {
+            return siteGroups.find(g => String(g.material_type_id) === String(mSel.value));
+        }
+
+        function renderSerialList() {
+            list.innerHTML = '';
+            tr._selected.clear();
             updateDisplay();
+            const g = currentGroup();
+            if (!g) { display.placeholder = '— pick material first —'; return; }
+            if (!g.items.length) {
+                list.innerHTML = '<div class="ms-empty" style="padding:16px;">No items.</div>';
+                display.placeholder = '— no items —';
+                return;
+            }
+            display.placeholder = '— select serials —';
+            g.items.forEach(it => {
+                const meta = [];
+                if (it.holder) meta.push('Holder: ' + esc(it.holder));
+                const row = document.createElement('label');
+                row.className = 'ms-serial-row';
+                row.innerHTML =
+                    `<input type="checkbox" value="${it.id}" data-serial="${esc(it.serial)}">` +
+                    `<span class="ms-serial-no">${esc(it.serial)}</span>` +
+                    `<span class="st-chip st-${esc(it.status)}">${esc(it.status)}</span>` +
+                    `<span class="ms-serial-meta">${meta.join(' · ')}</span>`;
+                list.appendChild(row);
+            });
         }
+
+        list.addEventListener('change', (e) => {
+            const cb = e.target;
+            if (cb.type !== 'checkbox') return;
+            if (cb.checked) tr._selected.set(cb.value, cb.dataset.serial);
+            else            tr._selected.delete(cb.value);
+            updateDisplay();
+        });
+
+        display.addEventListener('click', () => {
+            if (!hSite.value) { MS.toast('Pick a site in the header first.', false); return; }
+            if (!mSel.value)  { MS.toast('Pick a material type first.', false); return; }
+            openPop(!pop.classList.contains('open'));
+        });
+        doneBtn.addEventListener('click', () => openPop(false));
+        document.addEventListener('click', (e) => {
+            if (!pop.contains(e.target) && e.target !== display) openPop(false);
+        });
+        window.addEventListener('scroll', () => { if (pop.classList.contains('open')) positionPop(); }, true);
+        window.addEventListener('resize', () => { if (pop.classList.contains('open')) positionPop(); });
+
+        mSel.addEventListener('change', renderSerialList);
+
+        // + Add Serial (inline form). Sends site_id from the header.
+        function showAddForm(show) {
+            body.style.display    = show ? 'none'  : '';
+            addForm.style.display = show ? 'block' : 'none';
+            addErr.style.display  = 'none';
+            addErr.textContent    = '';
+            if (show) {
+                const g = currentGroup();
+                addItem.textContent = g ? g.label : '—';
+                addInput.value = '';
+                setTimeout(() => addInput.focus(), 0);
+                positionPop();
+            }
+        }
+        addOpen.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!hSite.value) { MS.toast('Pick a site in the header first.', false); return; }
+            if (!mSel.value)  { MS.toast('Pick a material type first.', false); return; }
+            showAddForm(true);
+        });
+        addCancel.addEventListener('click', () => showAddForm(false));
+        addInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter')  { e.preventDefault(); addSave.click(); }
+            if (e.key === 'Escape') { e.preventDefault(); showAddForm(false); }
+        });
+        addSave.addEventListener('click', async () => {
+            const serial = addInput.value.trim();
+            if (!serial) { addErr.textContent = 'Serial no is required.'; addErr.style.display = 'block'; return; }
+            const g = currentGroup();
+            if (!g) { addErr.textContent = 'Pick a material type first.'; addErr.style.display = 'block'; return; }
+
+            addSave.disabled = true;
+            // NEW: quick-add endpoint — requires site_id. Server auto-sets site
+            // to the selected header site, so the new item lands in the current
+            // items-by-site bucket immediately.
+            const r = await MS.post("{% url 'material_stock:quick_add_item' %}", {
+                brand_id:         g.brand_id,
+                material_type_id: g.material_type_id,
+                serial_no:        serial,
+                site_id:          hSite.value,
+            });
+            addSave.disabled = false;
+
+            if (!r.ok) {
+                addErr.textContent = (r.data && r.data.error) || 'Failed to add serial.';
+                addErr.style.display = 'block';
+                return;
+            }
+
+            const newId = r.data && r.data.id;
+            // Push into the local cache so the checkbox list picks it up
+            // without a round-trip.
+            g.items.push({
+                id:     newId,
+                serial: serial,
+                status: 'available',
+                holder: '',
+            });
+            g.items.sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
+
+            showAddForm(false);
+            MS.toast(`Serial ${serial} added.`);
+            renderSerialList();
+            // Auto-check the row we just created.
+            const cb = list.querySelector(`input[type="checkbox"][value="${newId}"]`);
+            if (cb) {
+                cb.checked = true;
+                tr._selected.set(cb.value, cb.dataset.serial);
+                updateDisplay();
+            }
+        });
+
+        // Autocomplete on the header From/To — wire only once (guarded).
+        if (!hFrom.dataset.acWired) {
+            MS.autocomplete(hFrom, "{% url 'material_stock:persons_suggest' %}");
+            hFrom.dataset.acWired = '1';
+        }
+        if (!hTo.dataset.acWired) {
+            MS.autocomplete(hTo, "{% url 'material_stock:persons_suggest' %}");
+            hTo.dataset.acWired = '1';
+        }
+
+        removeBtn.addEventListener('click', () => {
+            if (tbody.querySelectorAll('tr').length <= 1) {
+                MS.toast('At least one row is required.', false);
+                return;
+            }
+            tr.remove();
+            renumber();
+        });
+    }
+
+    // ── Header: Site change → re-fetch, warn if rows would be cleared ─
+    async function loadItemsForSite() {
+        siteGroups = [];
+        if (!hSite.value) {
+            [...tbody.querySelectorAll('tr')].forEach(populateMtypeSelect);
+            return;
+        }
+        const r = await MS.get(`{% url 'material_stock:items_by_site' %}?site_id=${hSite.value}`);
+        siteGroups = (r && r.groups) || [];
+        // Refresh every row's material dropdown; clear any prior selection.
+        [...tbody.querySelectorAll('tr')].forEach(tr => {
+            tr._selected.clear();
+            const disp = tr.querySelector('.row-serial-display');
+            disp.value = ''; disp.placeholder = '— pick material first —';
+            tr.querySelector('.row-serial-count').textContent = '0 selected';
+            tr.querySelector('.row-serial-list').innerHTML = '';
+            populateMtypeSelect(tr);
+        });
+    }
+
+    let lastSite = '';
+    hSite.addEventListener('change', async () => {
+        const hasRowData = [...tbody.querySelectorAll('tr')].some(tr => tr._selected.size > 0);
+        if (hasRowData && lastSite && lastSite !== hSite.value) {
+            if (!MS.confirm('Changing site will clear all pending rows. Continue?')) {
+                hSite.value = lastSite;
+                return;
+            }
+            // Wipe all rows down to one empty row.
+            tbody.innerHTML = '';
+            renderRow(++rowSeq);
+        }
+        lastSite = hSite.value;
+        await loadItemsForSite();
     });
 
-    // Autocomplete: from / to (persons), site (sites).
-    MS.autocomplete(document.getElementById('e_from'), "{% url 'material_stock:persons_suggest' %}");
-    MS.autocomplete(document.getElementById('e_to'),   "{% url 'material_stock:persons_suggest' %}");
-    MS.autocomplete(document.getElementById('f_site'), "{% url 'material_stock:sites_suggest' %}");
+    // ── Save All ─────────────────────────────────────────────────────
+    btnAdd.addEventListener('click', () => renderRow(++rowSeq));
 
-    document.getElementById('e_save').addEventListener('click', async () => {
-        if (selected.size === 0) { MS.toast('Select at least one serial.', false); return; }
-        const site = document.getElementById('f_site').value.trim();
-        if (!site) { MS.toast('Enter a site in the filter bar.', false); return; }
-        const toPerson = document.getElementById('e_to').value.trim();
-        const payload = {
-            serial_ids:    [...selected.keys()],
-            movement_date: document.getElementById('f_date').value,
-            site_name:     site,
-            from_person:   document.getElementById('e_from').value.trim(),
-            to_person:     toPerson,
-            remarks:       document.getElementById('e_remarks').value.trim(),
-        };
-        const btn = document.getElementById('e_save');
-        btn.disabled = true;
-        const r = await MS.post("{% url 'material_stock:movement_add' %}", payload);
-        btn.disabled = false;
+    btnSave.addEventListener('click', async () => {
+        if (!hSite.value) { MS.toast('Pick a site.', false); return; }
+        if (!hDate.value) { MS.toast('Pick a date.', false); return; }
+        const rows = [];
+        let anySelected = false;
+        [...tbody.querySelectorAll('tr')].forEach(tr => {
+            const mtype = tr.querySelector('.row-mtype').value;
+            const sids  = [...tr._selected.keys()];
+            if (mtype && sids.length) {
+                anySelected = true;
+                rows.push({
+                    material_type_id: parseInt(mtype, 10),
+                    serial_ids:       sids.map(x => parseInt(x, 10)),
+                    remarks:          tr.querySelector('.row-remarks').value.trim(),
+                });
+            }
+        });
+        if (!anySelected) { MS.toast('Add at least one row with serials selected.', false); return; }
+
+        btnSave.disabled = true;
+        const r = await MS.post("{% url 'material_stock:movement_batch_add' %}", {
+            movement_date: hDate.value,
+            site_id:       parseInt(hSite.value, 10),
+            from_person:   hFrom.value.trim(),
+            to_person:     hTo.value.trim(),
+            rows:          rows,
+        });
+        btnSave.disabled = false;
+
         if (r.ok) {
-            const n = r.data.saved_count || selected.size;
-            MS.toast(`Moved ${n} item${n === 1 ? '' : 's'} to ${toPerson || 'stock'}.`);
+            const n = r.data.saved_count || 0;
+            MS.toast(`Saved ${n} movement${n === 1 ? '' : 's'}.`);
             location.reload();
         } else {
-            MS.toast(r.data.error || 'Failed.', false);
+            MS.toast((r.data && r.data.error) || 'Failed.', false);
         }
     });
+
+    // Kick off with one empty row.
+    renderRow(++rowSeq);
 })();
 
 async function delMovement(id) {

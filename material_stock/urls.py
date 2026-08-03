@@ -27,8 +27,12 @@ urlpatterns = [
     path('api/motor/<int:pk>/delete/', views.motor_delete, name='motor_delete'),
 
     # ── Movement CRUD ───────────────────────────────────────────────────
-    path('api/movements/add/',             views.movement_add,    name='movement_add'),
-    path('api/movements/<int:pk>/delete/', views.movement_delete, name='movement_delete'),
+    path('api/movements/batch/',           views.movement_batch_add, name='movement_batch_add'),
+    path('api/movements/<int:pk>/delete/', views.movement_delete,    name='movement_delete'),
+
+    # ── Site-scoped item lookup + quick-add ─────────────────────────────
+    path('api/items-by-site/',   views.items_by_site,  name='items_by_site'),
+    path('api/quick-add-item/',  views.quick_add_item, name='quick_add_item'),
 
     # ── Autocomplete ────────────────────────────────────────────────────
     path('api/persons/suggest/', views.persons_suggest, name='persons_suggest'),

@@ -31,10 +31,28 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 
 from accounts.views import get_admin_id, is_admin_user
 from projects.decorators import admin_required
+from projects.models import Site
 from .models import (
     LegacyStockSite, LegacyStockItem, LegacyStockEntry,   # retired UI backend
     Brand, MaterialType, StockItem, StockMovement,
 )
+
+
+def _sites_payload(admin_id):
+    """Active-tenant Site list [{id, name}] for header dropdowns."""
+    return [{'id': s.id, 'name': s.name}
+            for s in Site.objects.filter(admin_id=admin_id, is_active=True)
+                                 .order_by('name')]
+
+
+def _get_tenant_site(admin_id, site_id):
+    """Return the Site iff it belongs to this tenant, else None."""
+    if not site_id:
+        return None
+    try:
+        return Site.objects.filter(admin_id=admin_id, id=int(site_id)).first()
+    except (ValueError, TypeError):
+        return None
 
 
 # ===========================================================================
@@ -135,7 +153,7 @@ def index(request):
     today    = timezone.localdate()
 
     items = (StockItem.objects.filter(admin_id=admin_id)
-             .select_related('material_type', 'material_type__brand'))
+             .select_related('material_type', 'material_type__brand', 'site'))
 
     # Movement in/out counts per stock item (single query).
     mv_rows = (StockMovement.objects.filter(admin_id=admin_id)
@@ -146,15 +164,17 @@ def index(request):
                ))
     mv_map = {r['stock_item_id']: (r['ins'], r['outs']) for r in mv_rows}
 
-    # Group by (material_type, purchase_date).
+    # Group by (material_type, site, purchase_date) — site is first-class now,
+    # so the summary shows a separate row per site instead of blending across.
     groups = {}
     for it in items:
-        key = (it.material_type_id, it.purchase_date)
+        key = (it.material_type_id, it.site_id, it.purchase_date)
         g = groups.get(key)
         if g is None:
             g = groups[key] = {
                 'material_type_id': it.material_type_id,
                 'material_label':   f"{it.material_type.brand.name} · {it.material_type.name}",
+                'site_label':       it.site.name if it.site_id else '',
                 'purchase_date':    it.purchase_date,
                 'is_new':           it.purchase_date == today,
                 'quantity':         0,
@@ -167,7 +187,8 @@ def index(request):
         g['stock_out'] += outs
 
     group_list = sorted(groups.values(),
-                        key=lambda g: (g['material_label'], g['purchase_date'] or date_cls.min))
+                        key=lambda g: (g['material_label'], g['site_label'],
+                                       g['purchase_date'] or date_cls.min))
     for i, g in enumerate(group_list, start=1):
         g['sl'] = i
         g['balance'] = g['quantity'] + g['stock_in'] - g['stock_out']
@@ -177,6 +198,7 @@ def index(request):
         'is_admin':    is_admin_user(request.user),
         'groups':      group_list,
         'brands':      _brands_payload(admin_id),
+        'sites':       _sites_payload(admin_id),
         'today':       today,
     })
 
@@ -214,9 +236,11 @@ def master(request):
         mtypes = list(selected.material_types.filter(is_active=True).order_by('name'))
         items_by_type = {}
         items = (StockItem.objects.filter(admin_id=admin_id, material_type__in=mtypes)
+                 .select_related('site')
                  .order_by('purchase_date', 'serial_no'))
         for it in items:
             it.is_new = (it.purchase_date == today)
+            it.site_label = it.site.name if it.site_id else ''
             items_by_type.setdefault(it.material_type_id, []).append(it)
         # Attach items + a running SL to each material type for the template.
         blocks = []
@@ -224,6 +248,7 @@ def master(request):
             blocks.append({'mtype': mt, 'items': items_by_type.get(mt.id, [])})
         ctx['blocks'] = blocks
 
+    ctx['sites'] = _sites_payload(admin_id)
     return render(request, 'material_stock/page_master.html', ctx)
 
 
@@ -254,7 +279,8 @@ def movements(request):
                .filter(admin_id=admin_id,
                        movement_date__gte=month_start,
                        movement_date__lt=next_start)
-               .select_related('stock_item', 'stock_item__material_type',
+               .select_related('site',
+                               'stock_item', 'stock_item__material_type',
                                'stock_item__material_type__brand'))
 
     # Material types that actually track stock (exclude catalog-only brands).
@@ -282,6 +308,7 @@ def movements(request):
         'is_admin':      is_admin_user(request.user),
         'history':       history,
         'mtypes':        mtype_payload,
+        'sites':         _sites_payload(admin_id),
         'month':         month,
         'months':        months,
         'today':         today,
@@ -315,6 +342,11 @@ def item_add(request):
         batch_no = _clean(data.get('batch_no'), 120) or None
         mfg_date = _to_date(data.get('mfg_date'))
 
+    # Site FK — hard-required (NOT NULL in DB after 0006_site_fks_clean).
+    site = _get_tenant_site(admin_id, data.get('site_id'))
+    if site is None:
+        return _err('Site is required.', status=400)
+
     # Friendly duplicate check before the DB constraint fires.
     if StockItem.objects.filter(admin_id=admin_id, material_type=mt,
                                 serial_no=serial).exists():
@@ -323,6 +355,7 @@ def item_add(request):
     try:
         item = StockItem.objects.create(
             admin_id=admin_id, material_type=mt, serial_no=serial,
+            site=site,
             batch_no=batch_no, mfg_date=mfg_date, purchase_date=purchase_date,
             remarks=_clean(data.get('remarks')) or None,
             created_by=request.user if request.user.is_authenticated else None,
@@ -332,7 +365,13 @@ def item_add(request):
     except ValidationError as e:
         return _err('; '.join(e.messages))
 
-    return JsonResponse({'success': True, 'kind': 'item', 'id': item.id})
+    return JsonResponse({
+        'success': True,
+        'kind':    'item',
+        'id':      item.id,
+        'serial':  item.serial_no,
+        'label':   f"{mt.brand.name} · {mt.name}",
+    })
 
 
 @login_required
@@ -367,6 +406,11 @@ def item_edit(request, pk):
         item.current_holder_name = _clean(data.get('current_holder_name'), 150) or None
     if 'current_site_name' in data:
         item.current_site_name = _clean(data.get('current_site_name'), 200) or None
+    if 'site_id' in data:
+        new_site = _get_tenant_site(admin_id, data.get('site_id'))
+        if new_site is None:
+            return _err('Site is required.', status=400)
+        item.site = new_site
     item.remarks = _clean(data.get('remarks')) or None
 
     try:
@@ -510,101 +554,124 @@ def motor_delete(request, pk):
 # CRUD — Stock Movements  (Page 3) — atomic in/out + reverse-on-delete
 # ===========================================================================
 
-@login_required
-@admin_required
-@require_POST
-def movement_add(request):
-    """Create one StockMovement per selected serial.
-
-    Accepts either:
-      * `serial_ids`: [id, id, ...]  (multi-select batch), OR
-      * `serial_id` / `stock_item_id`: single id  (backward compat).
-
-    The From / To / Site / Remarks / Date fields apply to the WHOLE batch.
-    All movements are created inside a single `transaction.atomic()` block:
-    if any one serial fails, the entire batch rolls back (all-or-nothing).
-    """
-    admin_id = get_admin_id(request.user)
-    data = _body(request)
-
-    # Collect the requested serial ids (array wins; else fall back to single).
-    raw_ids = data.get('serial_ids')
-    if raw_ids is None:
-        single = data.get('serial_id') or data.get('stock_item_id')
-        raw_ids = [single] if single else []
-    if not isinstance(raw_ids, (list, tuple)):
-        raw_ids = [raw_ids]
-
-    # Normalise to a de-duplicated list of positive ints, preserving order.
-    seen, serial_ids = set(), []
-    for r in raw_ids:
+def _collect_serial_ids(raw):
+    """Normalise anything sane into a de-duped ordered list of positive ints."""
+    if raw is None:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raw = [raw]
+    seen, out = set(), []
+    for r in raw:
         try:
             n = int(r)
         except (ValueError, TypeError):
             continue
         if n > 0 and n not in seen:
             seen.add(n)
-            serial_ids.append(n)
+            out.append(n)
+    return out
 
-    if not serial_ids:
-        return _err('Select at least one serial.')
 
-    site = _clean(data.get('site_name'), 200)
-    if not site:
-        return _err('Site is required.')
+@login_required
+@admin_required
+@require_POST
+def movement_batch_add(request):
+    """Header-then-rows batch create for stock movements.
+
+    Payload:
+        {
+          "movement_date": "YYYY-MM-DD",
+          "site_id":       <int>,
+          "from_person":   "...",   # optional (whole batch)
+          "to_person":     "...",   # optional (whole batch)
+          "rows": [
+            {"material_type_id": N, "serial_ids": [id, ...], "remarks": "..."},
+            ...
+          ]
+        }
+
+    One StockMovement per selected serial. All-or-nothing — a single row
+    error rolls back the whole batch.
+    """
+    admin_id = get_admin_id(request.user)
+    data = _body(request)
+
+    # ── Header ──────────────────────────────────────────────────────────
     mdate = _to_date(data.get('movement_date')) or timezone.localdate()
-    # Future-date guard for the whole batch. movement_date is shared across
-    # every serial in this request, so one check up front is enough — and
-    # keeps us from failing halfway through the atomic block.
     try:
         from accounts.date_utils import validate_not_future
         validate_not_future(mdate, "Movement date")
     except ValidationError as e:
         return _err('; '.join(e.messages))
+
+    site = _get_tenant_site(admin_id, data.get('site_id'))
+    if site is None:
+        return _err('Site is required.')
+
     from_person = _clean(data.get('from_person'), 150) or None
     to_person   = _clean(data.get('to_person'), 150) or None
-    remarks     = _clean(data.get('remarks')) or None
 
-    saved_ids, failures = [], []
+    raw_rows = data.get('rows')
+    if not isinstance(raw_rows, list) or not raw_rows:
+        return _err('Select at least one serial.')
+    rows = []
+    for idx, r in enumerate(raw_rows):
+        if not isinstance(r, dict):
+            continue
+        sids = _collect_serial_ids(r.get('serial_ids'))
+        if not sids:
+            continue
+        rows.append({
+            'index':   idx,
+            'sids':    sids,
+            'remarks': _clean(r.get('remarks')) or None,
+        })
+    if not rows:
+        return _err('Select at least one serial.')
+
+    # ── Atomic write ────────────────────────────────────────────────────
+    saved_ids, per_row_errors = [], {}
     try:
         with transaction.atomic():
-            for sid in serial_ids:
-                item = (StockItem.objects.select_for_update()
-                        .filter(id=sid, admin_id=admin_id).first())
-                if item is None:
-                    # Abort the whole batch (all-or-nothing).
-                    raise _BatchError(sid, None,
-                                      'Serial not found for this account.')
+            for row in rows:
+                for sid in row['sids']:
+                    item = (StockItem.objects.select_for_update()
+                            .filter(id=sid, admin_id=admin_id).first())
+                    if item is None:
+                        per_row_errors.setdefault(row['index'], []).append({
+                            'serial_id': sid,
+                            'error':     'Serial not found for this account.',
+                        })
+                        raise _BatchError(sid, None,
+                                          'Serial not found for this account.')
 
-                mv = StockMovement.objects.create(
-                    admin_id=admin_id, stock_item=item, movement_date=mdate,
-                    site_name=site, from_person=from_person, to_person=to_person,
-                    remarks=remarks,
-                    created_by=request.user if request.user.is_authenticated else None,
-                )
+                    mv = StockMovement.objects.create(
+                        admin_id=admin_id, stock_item=item, movement_date=mdate,
+                        site=site,
+                        from_person=from_person, to_person=to_person,
+                        remarks=row['remarks'],
+                        created_by=request.user if request.user.is_authenticated else None,
+                    )
 
-                # Update the item's live pointer.
-                item.current_holder_name = to_person
-                item.current_site_name   = site or None
-                item.status = StockItem.ISSUED if to_person else StockItem.AVAILABLE
-                item.save(update_fields=['current_holder_name', 'current_site_name',
-                                         'status', 'updated_at'])
-                saved_ids.append(mv.id)
+                    # Live pointer on the item.
+                    item.current_holder_name = to_person
+                    item.current_site_name   = site.name
+                    item.status = StockItem.ISSUED if to_person else StockItem.AVAILABLE
+                    item.save(update_fields=['current_holder_name', 'current_site_name',
+                                             'status', 'updated_at'])
+                    saved_ids.append(mv.id)
     except _BatchError as e:
-        # Whole transaction rolled back → nothing saved.
         return JsonResponse({
-            'success':     False,
-            'saved_count': 0,
-            'error':       f"{e.message} Nothing was saved.",
-            'failures':    [{'serial_id': e.serial_id, 'serial': e.serial,
-                             'error': e.message}],
+            'success':      False,
+            'saved_count':  0,
+            'error':        f"{e.message} Nothing was saved.",
+            'row_errors':   per_row_errors,
         }, status=409)
 
     return JsonResponse({
         'success':     True,
         'saved_count': len(saved_ids),
         'ids':         saved_ids,
-        'failures':    failures,
     })
 
 
@@ -632,7 +699,7 @@ def movement_delete(request, pk):
 
         if prior:
             item.current_holder_name = prior.to_person or None
-            item.current_site_name   = prior.site_name or None
+            item.current_site_name   = prior.site.name if prior.site_id else None
             item.status = StockItem.ISSUED if prior.to_person else StockItem.AVAILABLE
         else:
             # First-ever movement → back to unissued stock.
@@ -703,12 +770,18 @@ def serials_suggest(request):
     admin_id = get_admin_id(request.user)
     q  = (request.GET.get('q') or '').strip()
     mt = request.GET.get('material_type_id')
+    site_id = request.GET.get('site_id')
 
     # Only AVAILABLE units can be issued out, so the picker never lists
     # serials that are already issued / lost / damaged.
     qs = StockItem.objects.filter(admin_id=admin_id, status=StockItem.AVAILABLE)
     if mt:
         qs = qs.filter(material_type_id=mt)
+    if site_id:
+        try:
+            qs = qs.filter(site_id=int(site_id))
+        except (ValueError, TypeError):
+            pass
     if q:
         qs = qs.filter(serial_no__icontains=q)
     qs = qs.order_by('serial_no')[:20]
@@ -721,6 +794,67 @@ def serials_suggest(request):
         'site':     it.current_site_name or '',
     } for it in qs]
     return JsonResponse({'results': results})
+
+
+@login_required
+@require_GET
+def items_by_site(request):
+    """Available stock at a site, grouped by material type.
+
+    Used by the Stock In/Out header→batch UI to populate material dropdowns
+    once a site is chosen. Only AVAILABLE items are returned.
+    """
+    admin_id = get_admin_id(request.user)
+    site = _get_tenant_site(admin_id, request.GET.get('site_id'))
+    if site is None:
+        return _err('Invalid or missing site_id.', status=400)
+
+    qs = (StockItem.objects
+          .filter(admin_id=admin_id, site=site, status=StockItem.AVAILABLE)
+          .select_related('material_type', 'material_type__brand')
+          .order_by('material_type__brand__name',
+                    'material_type__name', 'serial_no'))
+
+    groups = {}
+    for it in qs:
+        mt = it.material_type
+        g = groups.get(mt.id)
+        if g is None:
+            g = groups[mt.id] = {
+                'material_type_id': mt.id,
+                'brand_id':         mt.brand_id,
+                'label':            f"{mt.brand.name} · {mt.name}",
+                'items':            [],
+            }
+        g['items'].append({
+            'id':     it.id,
+            'serial': it.serial_no,
+            'status': it.status,
+            'holder': it.current_holder_name or '',
+        })
+
+    return JsonResponse({
+        'site':   {'id': site.id, 'name': site.name},
+        'groups': sorted(groups.values(), key=lambda g: g['label']),
+    })
+
+
+@login_required
+@admin_required
+@require_POST
+def quick_add_item(request):
+    """Inline stock-item creation from the + Add Serial popover.
+
+    Thin wrapper over `item_add` — the only difference is that `site_id` is
+    strictly required here (whereas item_add tolerates NULL for legacy
+    callers). Keeps the endpoint the popover targets stable / discoverable.
+    """
+    data = _body(request)
+    if not data.get('site_id'):
+        return _err('Site is required.')
+    if not _get_tenant_site(get_admin_id(request.user), data.get('site_id')):
+        return _err('Invalid site for this account.', status=400)
+    return item_add(request)
 
 
 # ===========================================================================
