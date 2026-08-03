@@ -277,125 +277,72 @@ def _group_expenses_by_site(expenses, user):
 
 
 def _dynamic_site_options(admin_id, month_yyyy_mm=None, exact_date=None):
-    """Sites to surface in the Expense-page site filter dropdown.
+    """Site NAMES to surface in the Expense-page site filter dropdown.
 
     Scope is EITHER a single date (`exact_date`, higher priority) OR a
-    month string 'YYYY-MM'. Union of matching rows from:
-      * projects.Site referenced by AttendanceRecord.site_ref
-      * projects.Site referenced by projects.WorkLog.site
-      * projects.Site referenced by finance.Transaction.site
+    month string 'YYYY-MM'. Union of names from:
+      * attendance.AttendanceRecord.site (CharField, mobile back-compat)
+      * attendance.AttendanceRecord.site_ref.name (FK on projects.Site)
+      * projects.WorkLog.site.name (FK on projects.Site)
       * distinct non-empty Transaction.location_site strings (legacy)
 
-    Returns [{'id': <site_id or None>, 'name': <display>, 'kind':
-    'fk'|'legacy'}] sorted by name. FK entries preferred when the same
-    name appears both as an FK and a legacy string (deduped on lower name).
+    Returns [{'name': <display>}] deduped on lower(name), sorted by name.
     Returns [] when scope is empty (no date, no month).
     """
     if not exact_date and not month_yyyy_mm:
         return []
-    from projects.models import Site
 
     def _scope_filter(qs, date_field):
         if exact_date is not None:
             return qs.filter(**{date_field: exact_date})
         return qs.filter(**{f"{date_field}__startswith": month_yyyy_mm})
 
-    site_ids = set()
+    names = set()
 
     try:
         from attendance.models import AttendanceRecord
-        site_ids.update(_scope_filter(
-            AttendanceRecord.objects.filter(admin_id=admin_id,
-                                            site_ref__isnull=False),
+        att_qs = _scope_filter(
+            AttendanceRecord.objects.filter(admin_id=admin_id),
             'date',
-        ).values_list('site_ref_id', flat=True).distinct())
+        )
+        for n in att_qs.exclude(site__isnull=True).exclude(site='') \
+                       .values_list('site', flat=True).distinct():
+            if n:
+                names.add(n.strip())
+        for n in att_qs.filter(site_ref__isnull=False) \
+                       .values_list('site_ref__name', flat=True).distinct():
+            if n:
+                names.add(n.strip())
     except Exception:  # noqa: BLE001
         pass
 
     try:
         from projects.models import WorkLog
-        site_ids.update(_scope_filter(
+        for n in _scope_filter(
             WorkLog.objects.filter(admin_id=admin_id, site__isnull=False),
             'date',
-        ).values_list('site_id', flat=True).distinct())
+        ).values_list('site__name', flat=True).distinct():
+            if n:
+                names.add(n.strip())
     except Exception:  # noqa: BLE001
         pass
 
-    site_ids.update(_scope_filter(
-        Transaction.objects.filter(admin_id=admin_id, site__isnull=False),
-        'date',
-    ).values_list('site_id', flat=True).distinct())
-
-    fk_sites = list(Site.objects.filter(admin_id=admin_id, id__in=site_ids)
-                    .values('id', 'name'))
-    seen_lower = {(s['name'] or '').strip().lower() for s in fk_sites}
-
-    legacy_names = _scope_filter(
+    for n in _scope_filter(
         Transaction.objects.filter(admin_id=admin_id), 'date',
     ).exclude(location_site__isnull=True).exclude(location_site='') \
-     .values_list('location_site', flat=True).distinct()
-    legacy_list = []
-    for name in legacy_names:
-        key = (name or '').strip().lower()
-        if not key or key in seen_lower:
-            continue
-        seen_lower.add(key)
-        legacy_list.append({'id': None, 'name': name.strip(), 'kind': 'legacy'})
+     .values_list('location_site', flat=True).distinct():
+        if n:
+            names.add(n.strip())
 
-    fk_list = [{'id': s['id'], 'name': s['name'], 'kind': 'fk'} for s in fk_sites]
-    return sorted(fk_list + legacy_list,
-                  key=lambda o: (o['name'] or '').strip().lower())
-
-
-def _salary_breakdown_for(txs):
-    """Given a list of expense Transactions (already scoped to one site or
-    the whole page), return the salary breakdown structure the template
-    renders under each site card:
-
-        {
-          'employees': [
-             {'name': 'Rajkumar', 'total': Decimal,
-              'attendance_rows': [{'date': ..., 'status': ..., 'amount': ...}],
-              'payslip_rows':    [{'cycle_label': 'YYYY-MM', 'amount': ...}],
-             }, ...
-          ],
-          'grand_total': Decimal,
-        }
-    """
-    from decimal import Decimal as _D
-    emp_map = {}
-    for t in txs:
-        src = getattr(t, 'source', '') or ''
-        if src not in ('salary_attendance', 'salary_payslip'):
-            continue
-        emp = t.employee
-        key = (emp.pk if emp else 0, getattr(emp, 'name', '') or 'Unknown')
-        e = emp_map.setdefault(key, {
-            'name':            key[1],
-            'total':           _D('0'),
-            'attendance_rows': [],
-            'payslip_rows':    [],
-        })
-        e['total'] += (t.amount or _D('0'))
-        if src == 'salary_attendance':
-            e['attendance_rows'].append({
-                'date':   t.date,
-                'status': (t.attendance_record.status
-                          if t.attendance_record_id and t.attendance_record else ''),
-                'amount': t.amount,
-            })
-        else:  # salary_payslip
-            # Monthly rows — pull cycle label from reference "SAL-<pk>-YYYY-MM"
-            ref = t.reference or ''
-            cycle = ref.split('-', 2)[-1] if ref.count('-') >= 2 else str(t.date)
-            e['payslip_rows'].append({'cycle_label': cycle, 'amount': t.amount})
-    for e in emp_map.values():
-        e['attendance_rows'].sort(key=lambda r: r['date'] or datetime.date.min)
-        e['payslip_rows'].sort(key=lambda r: r['cycle_label'])
-    return {
-        'employees':   sorted(emp_map.values(), key=lambda e: e['name']),
-        'grand_total': sum((e['total'] for e in emp_map.values()), _D('0')),
-    }
+    dedup = {}
+    for n in names:
+        key = n.lower()
+        if key and key not in dedup:
+            dedup[key] = n
+    return sorted(
+        ({'name': v} for v in dedup.values()),
+        key=lambda o: o['name'].lower(),
+    )
 
 
 def _group_expenses_by_account(qs):
@@ -504,16 +451,7 @@ def transaction_list(request):
     search        = request.GET.get('search', '')
     account       = request.GET.get('account', '')
     income_source = request.GET.get('income_source', '')
-    site_filter   = request.GET.get('site', '')  # '' | site_id | 'UNASSIGNED'
-    # Source filter — user-selectable dropdown INTENTIONALLY excludes the
-    # two salary sources (salary_attendance / salary_payslip). Salary rows
-    # are surfaced via the dedicated Salary Breakdown panel instead. If a
-    # crafted querystring sneaks a salary value through, we coerce it back
-    # to '' so the filter is a no-op.
-    _ALLOWED_SOURCE_FILTERS = {'', 'manual', 'material', 'other'}
-    source_filter = request.GET.get('source', '')
-    if source_filter not in _ALLOWED_SOURCE_FILTERS:
-        source_filter = ''
+    site_filter   = request.GET.get('site', '')  # '' | site_name | 'UNASSIGNED'
     # Date filter — takes precedence over month. Default = today (IST) on
     # first load; explicit `date=` in the querystring can override it, and
     # `date=` (empty) clears back to the month-scope behavior.
@@ -534,8 +472,6 @@ def transaction_list(request):
         qs = qs.filter(date=exact_date)
     elif month:
         qs = qs.filter(date__startswith=month)
-    if source_filter:
-        qs = qs.filter(source=source_filter)
     if search:        qs = qs.filter(
         Q(description__icontains=search) | Q(vendor__icontains=search) | Q(reference__icontains=search)
     )
@@ -543,25 +479,9 @@ def transaction_list(request):
     if income_source: qs = qs.filter(income_source__icontains=income_source)
     if site_filter:
         if site_filter == 'UNASSIGNED':
-            qs = qs.filter(site__isnull=True).filter(
-                Q(location_site__isnull=True) | Q(location_site='')
-            )
+            qs = qs.filter(Q(location_site__isnull=True) | Q(location_site=''))
         else:
-            try:
-                sid = int(site_filter)
-                # Match on FK, OR on legacy string equal to that site's name
-                # (case-insensitive) so rows created before FK adoption still
-                # surface under the right filter.
-                from projects.models import Site as _S
-                site_obj = _S.objects.filter(admin_id=admin_id, id=sid).first()
-                if site_obj:
-                    qs = qs.filter(
-                        Q(site_id=sid) | Q(location_site__iexact=site_obj.name)
-                    )
-                else:
-                    qs = qs.filter(site_id=sid)
-            except (ValueError, TypeError):
-                pass
+            qs = qs.filter(location_site__iexact=site_filter)
 
     total_expense = qs.aggregate(t=Sum('amount'))['t'] or 0
 
@@ -599,24 +519,10 @@ def transaction_list(request):
         for _t in transactions_list:
             _t.__dict__['expense_category'] = ''
 
-    # Source badge (Income/Expense restructure). Colors per spec:
-    # Manual=gray, Salary-Attendance=blue, Salary-Payslip=purple,
-    # Material=green, Other=default.
-    _BADGE = {
-        'manual':            ('Manual',              'src-manual'),
-        'salary_attendance': ('Salary — Attendance', 'src-sal-att'),
-        'salary_payslip':    ('Salary — Payslip',    'src-sal-pay'),
-        'material':          ('Material',            'src-material'),
-        'other':             ('Other',               'src-other'),
-    }
     for t in transactions_list:
         src = (t.income_source or '').strip().lower()
         acc = (t.payment_mode or '').strip().lower()
         t.combo_data = combo_map.get((src, acc)) if (src and acc) else None
-        src_code = getattr(t, 'source', '') or 'manual'
-        label, klass = _BADGE.get(src_code, ('Manual', 'src-manual'))
-        t.source_badge_label = label
-        t.source_badge_class = klass
 
     # ── Serialize to JSON for client-side JS rendering ──
     _mode_display = dict(Transaction.PAYMENT_MODE)
@@ -643,9 +549,6 @@ def transaction_list(request):
     # live Income totals as Credit — never duplicated.
     accounts_grouped = _group_expenses_by_account(transactions_list)
     sites_grouped    = _group_expenses_by_site(transactions_list, request.user)
-    # Attach salary breakdown per site card (post-restructure UI).
-    for g in sites_grouped:
-        g['salary_breakdown'] = _salary_breakdown_for(g.get('transactions') or [])
 
     # Site dropdown options — scoped to whichever filter is currently
     # active. Date wins if set (narrow scope); else month; else the
@@ -656,65 +559,6 @@ def transaction_list(request):
     else:
         month_for_options = month or timezone.now().strftime('%Y-%m')
         site_options = _dynamic_site_options(admin_id, month_yyyy_mm=month_for_options)
-
-    # Salary Breakdown panel (Change 1) — flat list of salary rows across
-    # the CURRENT scope (respects date/month/site filters, ignores
-    # source_filter since the dropdown intentionally hides salary sources).
-    # Grouped by date (desc) then by site name.
-    salary_qs = Transaction.objects.filter(
-        admin_id=admin_id, type='expense',
-        source__in=('salary_attendance', 'salary_payslip'),
-    ).select_related('employee', 'site', 'attendance_record')
-    if exact_date:
-        salary_qs = salary_qs.filter(date=exact_date)
-    elif month:
-        salary_qs = salary_qs.filter(date__startswith=month)
-    else:
-        salary_qs = salary_qs.filter(date__startswith=timezone.now().strftime('%Y-%m'))
-    if site_filter and site_filter != 'UNASSIGNED':
-        try:
-            salary_qs = salary_qs.filter(site_id=int(site_filter))
-        except (ValueError, TypeError):
-            pass
-    elif site_filter == 'UNASSIGNED':
-        salary_qs = salary_qs.filter(site__isnull=True)
-
-    salary_by_date = {}
-    salary_grand = 0
-    for t in salary_qs.order_by('-date', 'site__name'):
-        bucket = salary_by_date.setdefault(t.date, {
-            'date':      t.date,
-            'sites':     {},
-            'subtotal':  0,
-        })
-        skey = t.site.name if t.site_id and t.site else '(Unassigned)'
-        srow = bucket['sites'].setdefault(skey, {'site': skey, 'rows': [], 'subtotal': 0})
-        status = ''
-        if t.attendance_record_id and t.attendance_record:
-            status = t.attendance_record.status
-        elif t.source == 'salary_payslip':
-            status = 'payslip'
-        srow['rows'].append({
-            'employee':    getattr(t.employee, 'name', '') or 'Unknown',
-            'status':      status,
-            'amount':      t.amount,
-            'source':      t.source,
-            'source_label': t.source_badge_label if hasattr(t, 'source_badge_label') else (
-                'Salary — Attendance' if t.source == 'salary_attendance' else 'Salary — Payslip'
-            ),
-            'source_class': t.source_badge_class if hasattr(t, 'source_badge_class') else (
-                'src-sal-att' if t.source == 'salary_attendance' else 'src-sal-pay'
-            ),
-        })
-        srow['subtotal'] += float(t.amount or 0)
-        bucket['subtotal'] += float(t.amount or 0)
-        salary_grand += float(t.amount or 0)
-    # Flatten to a sorted list the template can iterate.
-    salary_breakdown_all = []
-    for d in sorted(salary_by_date.keys(), reverse=True):
-        b = salary_by_date[d]
-        b['sites_list'] = sorted(b['sites'].values(), key=lambda s: s['site'])
-        salary_breakdown_all.append(b)
 
     # Unique Credit From / Credit To values across this tenant's expense
     # rows — feeds the inline-edit dropdowns (datalists) in the site detail
@@ -745,12 +589,9 @@ def transaction_list(request):
             'category': cat_id, 'month': month, 'search': search,
             'account': account, 'income_source': income_source,
             'site': site_filter,
-            'source': source_filter,
             'date':   exact_date.isoformat() if exact_date else '',
         },
         'site_options':          site_options,
-        'salary_breakdown_all':  salary_breakdown_all,
-        'salary_breakdown_grand': salary_grand,
         'is_date_scoped':        bool(exact_date),
         'today_ist_iso':         timezone.localdate().isoformat(),
         'location_sites_json':  _location_sites_json(request.user),
@@ -784,20 +625,6 @@ def add_transaction(request):
         t.user     = request.user
         t.type     = 'expense'
         t.admin_id = get_admin_id(request.user)
-        # Manual add flow ALWAYS books as source='manual'. Never allow the
-        # 'salary_attendance' source through this endpoint — that's reserved
-        # for attendance/signals.py. Any other user-submitted value is
-        # coerced to 'manual' too.
-        t.source = 'manual'
-        # Mirror the picked Site's name into the legacy `location_site`
-        # CharField so the existing string-grouped card view stays
-        # consistent across old + new rows.
-        if getattr(t, 'site_id', None):
-            try:
-                if t.site and t.site.name:
-                    t.location_site = t.site.name
-            except Exception:  # noqa: BLE001
-                pass
         t.save()
         if t.location_site:
             admin_id = get_admin_id(request.user)
@@ -839,18 +666,6 @@ def edit_transaction(request, pk):
         obj.user     = request.user
         obj.type     = 'expense'
         obj.admin_id = get_admin_id(request.user)
-        # Preserve the original source — the modal never surfaces `source`
-        # so an edit should not silently reclassify a salary_attendance /
-        # salary_payslip row as manual. Fall back to 'manual' only when the
-        # row genuinely has no source yet (pre-0010 legacy data).
-        if not getattr(obj, 'source', ''):
-            obj.source = 'manual'
-        if getattr(obj, 'site_id', None):
-            try:
-                if obj.site and obj.site.name:
-                    obj.location_site = obj.site.name
-            except Exception:  # noqa: BLE001
-                pass
         obj.save()
         if obj.location_site:
             admin_id = get_admin_id(request.user)
