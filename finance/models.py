@@ -43,6 +43,16 @@ class Transaction(models.Model):
         ('other',  'Other/Misc'),
     )
 
+    # Provenance of an expense row — what created it and, by extension, how
+    # it should be labelled / grouped on the Expense page.
+    SOURCE_CHOICES = (
+        ('manual',            'Manual'),
+        ('salary_attendance', 'Salary — Attendance'),
+        ('salary_payslip',    'Salary — Payslip'),
+        ('material',          'Material'),
+        ('other',             'Other'),
+    )
+
     user         = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
     type         = models.CharField(max_length=10, choices=TYPE)
     category     = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True)
@@ -61,6 +71,31 @@ class Transaction(models.Model):
     income_source = models.CharField(max_length=200, blank=True, default='')
     attachment    = models.FileField(upload_to='receipts/', blank=True, null=True)
     branch       = models.ForeignKey('branches.Branch', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
+
+    # Site-based Expense view (Income/Expense restructure — 2026-08). The
+    # location_site CharField above stays as the legacy free-text field the
+    # existing card view groups on; the new site FK is populated alongside
+    # for new writes so grouping can migrate from string to FK gradually.
+    site         = models.ForeignKey(
+        'projects.Site', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='finance_transactions',
+    )
+    source       = models.CharField(
+        max_length=20, choices=SOURCE_CHOICES, default='manual', db_index=True,
+    )
+    # Salary-source rows point back to the Employee (and, for per-day rows
+    # driven by attendance, to the AttendanceRecord). CASCADE on attendance
+    # so deleting an attendance auto-removes its salary_attendance expense.
+    employee     = models.ForeignKey(
+        'employees.Employee', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='transaction_entries',
+    )
+    attendance_record = models.ForeignKey(
+        'attendance.AttendanceRecord', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='transaction_entries',
+    )
+    breakdown_note = models.CharField(max_length=300, blank=True, default='')
+
     admin_id     = models.CharField(max_length=20, db_index=True, default='PENDING')
     created_by   = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='transactions_created')
     modified_by  = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='transactions_modified')
@@ -80,6 +115,14 @@ class Transaction(models.Model):
                 fields=['admin_id', 'reference', 'type'],
                 condition=Q(reference__startswith='SAL-'),
                 name='unique_salary_transaction_ref',
+            ),
+            # One expense row per AttendanceRecord (per tenant). Guards the
+            # attendance→expense signal against duplicate inserts if a race
+            # slips past update_or_create's SELECT.
+            models.UniqueConstraint(
+                fields=['admin_id', 'attendance_record'],
+                condition=Q(attendance_record__isnull=False),
+                name='unique_tx_per_attendance',
             ),
         ]
 

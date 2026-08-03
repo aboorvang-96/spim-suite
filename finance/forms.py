@@ -17,7 +17,7 @@ class FlexibleModelChoiceField(forms.ModelChoiceField):
 class TransactionForm(forms.ModelForm):
     class Meta:
         model  = Transaction
-        fields = ['date', 'type', 'category', 'expense_category', 'amount', 'location_site', 'payment_by', 'vendor', 'purpose', 'payment_mode', 'income_source', 'description']
+        fields = ['date', 'type', 'category', 'expense_category', 'amount', 'location_site', 'site', 'payment_by', 'vendor', 'purpose', 'payment_mode', 'income_source', 'description']
         widgets = {
             'date':        forms.DateInput(attrs={'type': 'date'}),
             'description': forms.Textarea(attrs={'placeholder': 'Remarks', 'rows': 3}),
@@ -45,6 +45,20 @@ class TransactionForm(forms.ModelForm):
             required=False,
             empty_label='No category',
         )
+        # Optional Site FK — sourced from projects.Site scoped to this admin.
+        # Nullable in DB; the modal simply doesn't have to send it.
+        try:
+            from projects.models import Site as _Site
+            from accounts.views import get_admin_id as _get_admin_id
+            _admin = _get_admin_id(user)
+            self.fields['site'] = FlexibleModelChoiceField(
+                queryset=_Site.objects.filter(admin_id=_admin, is_active=True).order_by('name'),
+                required=False,
+                empty_label='— No site —',
+                label='Site',
+            )
+        except Exception:  # noqa: BLE001 — never break the form because of Site lookup
+            self.fields.pop('site', None)
         # payment_mode comes from the modal as free text (e.g. "Bank Account 1");
         # bypass the model's TYPE_CHOICES validation by replacing the field entirely.
         self.fields['payment_mode'] = forms.CharField(

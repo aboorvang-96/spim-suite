@@ -1367,6 +1367,16 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     count for the given (employee, payroll month). Returns (final_salary,
     paid_days) both as Decimal.
 
+    NOTE ON SINGLE SOURCE OF TRUTH: the per-status weights encoded below
+    (present=1, week_off=1, holiday=1, half_day=0.5, others=0 for base
+    salary; present=1, week_off=1, others=0 for daily basis) are ALSO
+    encoded in employees.salary_calc._WEIGHT_BASE_SALARY /
+    _WEIGHT_DAILY_BASIS, which is what the attendance→expense signal and
+    the backfill migration read. Keep the two in sync — if you change a
+    weight here, mirror it in salary_calc.py. The aggregate math here
+    stays counts-based (not a per-record loop) to preserve byte-exact
+    outputs for the existing monthly rollup.
+
     Cycle window: 26th of the previous month → 25th of `month_date`'s
     month — the SPIM 26→25 attendance cycle, matching the frontend
     attendance calendar.
@@ -2105,6 +2115,14 @@ def generate_salary_expenses(request):
         created_count = 0
         skipped_count = 0
 
+        # Payroll cycle window for the target month — used by the
+        # per-day-rows guard below so we don't double-book an employee who
+        # already has attendance-driven salary_attendance expenses in this
+        # cycle (post-2026-07-26 cut-over).
+        from accounts.cycle_utils import get_cycle_ending_in_month
+        cycle_window = get_cycle_ending_in_month(target_date)
+        cycle_start_g, cycle_end_g = cycle_window['start'], cycle_window['end']
+
         for record in salary_records:
             emp     = record.employee
             ref_key = f"SAL-{emp.pk}-{target_date.strftime('%Y-%m')}"
@@ -2115,6 +2133,26 @@ def generate_salary_expenses(request):
                 reference=ref_key,
                 type='expense',
             ).exists():
+                skipped_count += 1
+                continue
+
+            # Attendance→expense cut-over guard: if per-day rows already
+            # exist for this employee in this cycle window, skip the
+            # monthly payslip row to avoid double-booking. See
+            # employees.salary_calc.ATTENDANCE_EXPENSE_CUTOVER (2026-07-26)
+            # and attendance/signals.py.
+            if Transaction.objects.filter(
+                admin_id=admin_id,
+                employee=emp,
+                source='salary_attendance',
+                date__gte=cycle_start_g,
+                date__lte=cycle_end_g,
+            ).exists():
+                _sal_log.info(
+                    "Skipping payslip expense %s — per-day salary_attendance "
+                    "rows already exist in cycle %s..%s",
+                    ref_key, cycle_start_g, cycle_end_g,
+                )
                 skipped_count += 1
                 continue
 

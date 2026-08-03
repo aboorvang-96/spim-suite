@@ -73,6 +73,21 @@
                 {% endfor %}
             </select>
 
+            <!-- Site (Income/Expense restructure) — server-side filter, reloads with ?site= -->
+            <select id="cf-site" class="form-input h-9 w-40 text-sm shrink-0"
+                title="Filter by site"
+                onchange="(function(v){var u=new URL(location.href); if(v==='all'){u.searchParams.delete('site');}else{u.searchParams.set('site',v);} location.href=u.toString();})(this.value)">
+                <option value="all" {% if not filters.site %}selected{% endif %}>All Sites</option>
+                <option value="UNASSIGNED" {% if filters.site == 'UNASSIGNED' %}selected{% endif %}>— Unassigned —</option>
+                {% for s in site_options %}
+                <option value="{{ s.id|default_if_none:'' }}"
+                        {% if s.id and filters.site == s.id|stringformat:"s" %}selected{% endif %}
+                        {% if not s.id %}disabled{% endif %}>
+                    {{ s.name }}{% if not s.id %} (legacy){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+
             <!-- Clear -->
             <button type="button"
                 class="btn btn-secondary h-9 px-4 text-sm shrink-0 flex items-center gap-1.5"
@@ -120,6 +135,119 @@
             </svg>
             <p class="font-bold text-slate-800">No transactions found</p>
             <p class="text-sm mt-1">Try adjusting your filters or search query.</p>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Grouped by Site (Income/Expense restructure, 2026-08).
+         Server-rendered from `sites_grouped`. Applies the same filters as
+         the table above (site/month/etc. are in the querystring).
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="card p-0 mt-8 overflow-hidden">
+        <div class="p-5 border-b border-slate-100 bg-slate-50/50">
+            <h3 class="font-bold text-slate-800">Grouped by Site</h3>
+            <p class="text-xs text-slate-400 mt-0.5">
+                One section per site. Salary breakdown expands per employee.
+            </p>
+        </div>
+        <div class="p-5 space-y-5">
+            {% for g in sites_grouped %}
+            <details class="site-group" {% if forloop.first %}open{% endif %}>
+                <summary class="site-group-head">
+                    <span class="site-group-name">{{ g.site }}</span>
+                    <span class="site-group-total">Total: ₹{{ g.debit|floatformat:2 }}</span>
+                </summary>
+
+                <table class="data-table w-full text-left mt-3">
+                    <thead>
+                        <tr>
+                            <th class="w-28 text-xs text-slate-500 uppercase">Date</th>
+                            <th class="w-40 text-xs text-slate-500 uppercase">Source</th>
+                            <th class="text-xs text-slate-500 uppercase">Breakdown / Description</th>
+                            <th class="w-32 text-right text-xs text-slate-500 uppercase">Amount</th>
+                            <th class="w-24"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in g.transactions %}
+                        <tr>
+                            <td>{{ t.date|date:'d M Y' }}</td>
+                            <td><span class="src-badge {{ t.source_badge_class }}">{{ t.source_badge_label }}</span></td>
+                            <td>{{ t.breakdown_note|default:t.description|default:'—' }}</td>
+                            <td class="text-right font-semibold">₹{{ t.amount|floatformat:2 }}</td>
+                            <td class="text-right">
+                                {% if t.source == 'salary_attendance' %}
+                                <span class="text-xs text-slate-400" title="Managed by attendance">—</span>
+                                {% else %}
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                        onclick="openEditModal({{ t.pk }})">Edit</button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center text-slate-400 py-6">No expenses at this site.</td></tr>
+                        {% endfor %}
+                        <tr class="site-subtotal">
+                            <td colspan="3" class="text-right font-bold">Subtotal</td>
+                            <td class="text-right font-bold">₹{{ g.debit|floatformat:2 }}</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                {% if g.salary_breakdown.employees %}
+                <details class="salary-panel mt-3">
+                    <summary class="salary-panel-head">
+                        Salary breakdown ({{ g.salary_breakdown.employees|length }}
+                        employee{{ g.salary_breakdown.employees|length|pluralize }},
+                        ₹{{ g.salary_breakdown.grand_total|floatformat:2 }})
+                    </summary>
+                    <div class="salary-panel-body">
+                        {% for emp in g.salary_breakdown.employees %}
+                        <div class="salary-emp">
+                            <div class="salary-emp-head">
+                                <span class="salary-emp-name">{{ emp.name }}</span>
+                                <span class="salary-emp-total">₹{{ emp.total|floatformat:2 }}</span>
+                            </div>
+                            {% if emp.attendance_rows %}
+                            <table class="salary-emp-table">
+                                <tbody>
+                                    {% for r in emp.attendance_rows %}
+                                    <tr>
+                                        <td class="w-32">{{ r.date|date:'d M Y' }}</td>
+                                        <td>{{ r.status }}</td>
+                                        <td class="text-right">₹{{ r.amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% endif %}
+                            {% if emp.payslip_rows %}
+                            <table class="salary-emp-table">
+                                <tbody>
+                                    {% for r in emp.payslip_rows %}
+                                    <tr>
+                                        <td class="w-32">Cycle {{ r.cycle_label }}</td>
+                                        <td>(monthly payslip)</td>
+                                        <td class="text-right">₹{{ r.amount|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% endif %}
+            </details>
+            {% empty %}
+            <p class="text-center text-slate-400 py-8">No expenses in the current view.</p>
+            {% endfor %}
+
+            <div class="site-grand-total">
+                Grand Total: ₹{{ total_expense|floatformat:2 }}
+            </div>
         </div>
     </div>
 </div>
@@ -184,6 +312,22 @@
                 </select>
             </div>
 
+            <!-- Optional Site FK (Income/Expense restructure). Sent as `site` -->
+            <div class="form-group mb-5">
+                <label class="form-label">Site (optional)</label>
+                <select id="txf-site" name="site" class="form-select">
+                    <option value="">— No site —</option>
+                    {% for s in site_options %}
+                        {% if s.id %}
+                        <option value="{{ s.id }}">{{ s.name }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-slate-400 mt-1">
+                    Leave blank to file this expense under "Unassigned".
+                </p>
+            </div>
+
             <div class="form-group">
                 <label class="form-label">Note (optional)</label>
                 <textarea id="txf-note" class="form-textarea h-80"
@@ -202,6 +346,40 @@
     .txn-page-wrapper {
         animation: fadeIn var(--transition);
     }
+
+    /* ─── Income/Expense restructure (2026-08): source badges + site groups ─── */
+    .src-badge {
+        display: inline-block; padding: 3px 10px; border-radius: 999px;
+        font-size: .72rem; font-weight: 700; letter-spacing: .01em;
+        white-space: nowrap;
+    }
+    .src-manual    { background: #e5e7eb; color: #374151; }              /* gray  */
+    .src-sal-att   { background: #dbeafe; color: #1e40af; }              /* blue  */
+    .src-sal-pay   { background: #ede9fe; color: #6b21a8; }              /* purple*/
+    .src-material  { background: #dcfce7; color: #166534; }              /* green */
+    .src-other     { background: #f1f5f9; color: #475569; }
+
+    .site-group        { border: 1px solid var(--slate-200); border-radius: var(--radius); padding: 12px 14px; background: #fff; }
+    .site-group + .site-group { margin-top: 0; }
+    .site-group-head   { display: flex; justify-content: space-between; align-items: center;
+                         cursor: pointer; font-weight: 700; color: var(--slate-900); }
+    .site-group-name   { font-size: .95rem; }
+    .site-group-total  { font-size: .88rem; color: var(--slate-600); }
+    .site-subtotal td  { background: #fafbfc; }
+
+    .salary-panel      { border-top: 1px dashed var(--slate-200); padding-top: 8px; }
+    .salary-panel-head { cursor: pointer; font-weight: 600; color: var(--slate-700); font-size: .85rem; }
+    .salary-panel-body { padding-top: 10px; display: flex; flex-direction: column; gap: 12px; }
+    .salary-emp        { background: #f8fafc; border-radius: var(--radius-sm); padding: 10px 12px; }
+    .salary-emp-head   { display: flex; justify-content: space-between; align-items: center;
+                         margin-bottom: 6px; }
+    .salary-emp-name   { font-weight: 700; color: var(--slate-900); }
+    .salary-emp-total  { font-weight: 700; color: var(--slate-700); }
+    .salary-emp-table  { width: 100%; font-size: .82rem; }
+    .salary-emp-table td { padding: 3px 6px; color: var(--slate-600); }
+
+    .site-grand-total  { padding: 12px 14px; border-top: 2px solid var(--slate-200);
+                         font-weight: 800; font-size: 1rem; text-align: right; }
 
     .period-tab {
         padding: 8px 16px;
