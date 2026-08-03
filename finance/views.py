@@ -276,59 +276,64 @@ def _group_expenses_by_site(expenses, user):
     )
 
 
-def _dynamic_site_options(admin_id, month_yyyy_mm):
+def _dynamic_site_options(admin_id, month_yyyy_mm=None, exact_date=None):
     """Sites to surface in the Expense-page site filter dropdown.
 
-    Union of, restricted to the currently-viewed month:
+    Scope is EITHER a single date (`exact_date`, higher priority) OR a
+    month string 'YYYY-MM'. Union of matching rows from:
       * projects.Site referenced by AttendanceRecord.site_ref
       * projects.Site referenced by projects.WorkLog.site
       * projects.Site referenced by finance.Transaction.site
       * distinct non-empty Transaction.location_site strings (legacy)
 
-    Returns a list of {'id': <site_id or None>, 'name': <display>, 'kind':
-    'fk'|'legacy'} sorted by name. FK entries preferred when the same name
-    appears both as an FK and a legacy string (deduped on lowercase name).
+    Returns [{'id': <site_id or None>, 'name': <display>, 'kind':
+    'fk'|'legacy'}] sorted by name. FK entries preferred when the same
+    name appears both as an FK and a legacy string (deduped on lower name).
+    Returns [] when scope is empty (no date, no month).
     """
-    if not month_yyyy_mm:
+    if not exact_date and not month_yyyy_mm:
         return []
     from projects.models import Site
+
+    def _scope_filter(qs, date_field):
+        if exact_date is not None:
+            return qs.filter(**{date_field: exact_date})
+        return qs.filter(**{f"{date_field}__startswith": month_yyyy_mm})
+
     site_ids = set()
 
     try:
         from attendance.models import AttendanceRecord
-        site_ids.update(AttendanceRecord.objects
-                        .filter(admin_id=admin_id,
-                                date__startswith=month_yyyy_mm,
-                                site_ref__isnull=False)
-                        .values_list('site_ref_id', flat=True).distinct())
+        site_ids.update(_scope_filter(
+            AttendanceRecord.objects.filter(admin_id=admin_id,
+                                            site_ref__isnull=False),
+            'date',
+        ).values_list('site_ref_id', flat=True).distinct())
     except Exception:  # noqa: BLE001
         pass
 
     try:
         from projects.models import WorkLog
-        site_ids.update(WorkLog.objects
-                        .filter(admin_id=admin_id,
-                                date__startswith=month_yyyy_mm,
-                                site__isnull=False)
-                        .values_list('site_id', flat=True).distinct())
+        site_ids.update(_scope_filter(
+            WorkLog.objects.filter(admin_id=admin_id, site__isnull=False),
+            'date',
+        ).values_list('site_id', flat=True).distinct())
     except Exception:  # noqa: BLE001
         pass
 
-    site_ids.update(Transaction.objects
-                    .filter(admin_id=admin_id,
-                            date__startswith=month_yyyy_mm,
-                            site__isnull=False)
-                    .values_list('site_id', flat=True).distinct())
+    site_ids.update(_scope_filter(
+        Transaction.objects.filter(admin_id=admin_id, site__isnull=False),
+        'date',
+    ).values_list('site_id', flat=True).distinct())
 
     fk_sites = list(Site.objects.filter(admin_id=admin_id, id__in=site_ids)
                     .values('id', 'name'))
     seen_lower = {(s['name'] or '').strip().lower() for s in fk_sites}
 
-    legacy_names = (Transaction.objects
-                    .filter(admin_id=admin_id, date__startswith=month_yyyy_mm)
-                    .exclude(location_site__isnull=True)
-                    .exclude(location_site='')
-                    .values_list('location_site', flat=True).distinct())
+    legacy_names = _scope_filter(
+        Transaction.objects.filter(admin_id=admin_id), 'date',
+    ).exclude(location_site__isnull=True).exclude(location_site='') \
+     .values_list('location_site', flat=True).distinct()
     legacy_list = []
     for name in legacy_names:
         key = (name or '').strip().lower()
@@ -500,9 +505,37 @@ def transaction_list(request):
     account       = request.GET.get('account', '')
     income_source = request.GET.get('income_source', '')
     site_filter   = request.GET.get('site', '')  # '' | site_id | 'UNASSIGNED'
+    # Source filter — user-selectable dropdown INTENTIONALLY excludes the
+    # two salary sources (salary_attendance / salary_payslip). Salary rows
+    # are surfaced via the dedicated Salary Breakdown panel instead. If a
+    # crafted querystring sneaks a salary value through, we coerce it back
+    # to '' so the filter is a no-op.
+    _ALLOWED_SOURCE_FILTERS = {'', 'manual', 'material', 'other'}
+    source_filter = request.GET.get('source', '')
+    if source_filter not in _ALLOWED_SOURCE_FILTERS:
+        source_filter = ''
+    # Date filter — takes precedence over month. Default = today (IST) on
+    # first load; explicit `date=` in the querystring can override it, and
+    # `date=` (empty) clears back to the month-scope behavior.
+    _raw_date = request.GET.get('date', None)
+    if _raw_date is None:
+        exact_date = timezone.localdate()
+    elif _raw_date.strip() == '':
+        exact_date = None
+    else:
+        try:
+            exact_date = datetime.date.fromisoformat(_raw_date.strip())
+        except (ValueError, TypeError):
+            exact_date = None
 
     if cat_id:        qs = qs.filter(category_id=cat_id)
-    if month:         qs = qs.filter(date__startswith=month)
+    if exact_date:
+        # Date takes precedence — month field is ignored/grayed in the UI.
+        qs = qs.filter(date=exact_date)
+    elif month:
+        qs = qs.filter(date__startswith=month)
+    if source_filter:
+        qs = qs.filter(source=source_filter)
     if search:        qs = qs.filter(
         Q(description__icontains=search) | Q(vendor__icontains=search) | Q(reference__icontains=search)
     )
@@ -614,11 +647,74 @@ def transaction_list(request):
     for g in sites_grouped:
         g['salary_breakdown'] = _salary_breakdown_for(g.get('transactions') or [])
 
-    # Site dropdown options — dynamic to the currently-viewed month. Falls
-    # back to the current month when no month filter is set so the dropdown
-    # is always populated with something useful.
-    month_for_options = month or timezone.now().strftime('%Y-%m')
-    site_options = _dynamic_site_options(admin_id, month_for_options)
+    # Site dropdown options — scoped to whichever filter is currently
+    # active. Date wins if set (narrow scope); else month; else the
+    # current month as a safe default so the dropdown is never empty on
+    # first load.
+    if exact_date:
+        site_options = _dynamic_site_options(admin_id, exact_date=exact_date)
+    else:
+        month_for_options = month or timezone.now().strftime('%Y-%m')
+        site_options = _dynamic_site_options(admin_id, month_yyyy_mm=month_for_options)
+
+    # Salary Breakdown panel (Change 1) — flat list of salary rows across
+    # the CURRENT scope (respects date/month/site filters, ignores
+    # source_filter since the dropdown intentionally hides salary sources).
+    # Grouped by date (desc) then by site name.
+    salary_qs = Transaction.objects.filter(
+        admin_id=admin_id, type='expense',
+        source__in=('salary_attendance', 'salary_payslip'),
+    ).select_related('employee', 'site', 'attendance_record')
+    if exact_date:
+        salary_qs = salary_qs.filter(date=exact_date)
+    elif month:
+        salary_qs = salary_qs.filter(date__startswith=month)
+    else:
+        salary_qs = salary_qs.filter(date__startswith=timezone.now().strftime('%Y-%m'))
+    if site_filter and site_filter != 'UNASSIGNED':
+        try:
+            salary_qs = salary_qs.filter(site_id=int(site_filter))
+        except (ValueError, TypeError):
+            pass
+    elif site_filter == 'UNASSIGNED':
+        salary_qs = salary_qs.filter(site__isnull=True)
+
+    salary_by_date = {}
+    salary_grand = 0
+    for t in salary_qs.order_by('-date', 'site__name'):
+        bucket = salary_by_date.setdefault(t.date, {
+            'date':      t.date,
+            'sites':     {},
+            'subtotal':  0,
+        })
+        skey = t.site.name if t.site_id and t.site else '(Unassigned)'
+        srow = bucket['sites'].setdefault(skey, {'site': skey, 'rows': [], 'subtotal': 0})
+        status = ''
+        if t.attendance_record_id and t.attendance_record:
+            status = t.attendance_record.status
+        elif t.source == 'salary_payslip':
+            status = 'payslip'
+        srow['rows'].append({
+            'employee':    getattr(t.employee, 'name', '') or 'Unknown',
+            'status':      status,
+            'amount':      t.amount,
+            'source':      t.source,
+            'source_label': t.source_badge_label if hasattr(t, 'source_badge_label') else (
+                'Salary — Attendance' if t.source == 'salary_attendance' else 'Salary — Payslip'
+            ),
+            'source_class': t.source_badge_class if hasattr(t, 'source_badge_class') else (
+                'src-sal-att' if t.source == 'salary_attendance' else 'src-sal-pay'
+            ),
+        })
+        srow['subtotal'] += float(t.amount or 0)
+        bucket['subtotal'] += float(t.amount or 0)
+        salary_grand += float(t.amount or 0)
+    # Flatten to a sorted list the template can iterate.
+    salary_breakdown_all = []
+    for d in sorted(salary_by_date.keys(), reverse=True):
+        b = salary_by_date[d]
+        b['sites_list'] = sorted(b['sites'].values(), key=lambda s: s['site'])
+        salary_breakdown_all.append(b)
 
     # Unique Credit From / Credit To values across this tenant's expense
     # rows — feeds the inline-edit dropdowns (datalists) in the site detail
@@ -649,8 +745,14 @@ def transaction_list(request):
             'category': cat_id, 'month': month, 'search': search,
             'account': account, 'income_source': income_source,
             'site': site_filter,
+            'source': source_filter,
+            'date':   exact_date.isoformat() if exact_date else '',
         },
-        'site_options': site_options,
+        'site_options':          site_options,
+        'salary_breakdown_all':  salary_breakdown_all,
+        'salary_breakdown_grand': salary_grand,
+        'is_date_scoped':        bool(exact_date),
+        'today_ist_iso':         timezone.localdate().isoformat(),
         'location_sites_json':  _location_sites_json(request.user),
         'income_sources_json':  _shared_sources_json(request.user),
         'accounts_json':        _shared_accounts_json(request.user),

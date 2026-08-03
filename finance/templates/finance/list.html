@@ -42,6 +42,21 @@
                     aria-label="Search transactions">
             </div>
 
+            <!-- Date (Change 2 — takes precedence over Month) -->
+            <div class="relative shrink-0">
+                <input type="date" id="cf-date"
+                    class="form-input h-9 w-40 text-sm pr-8"
+                    title="Filter by date (overrides Month)"
+                    value="{{ filters.date }}"
+                    max="{{ today_ist_iso }}"
+                    onchange="reloadFilter('date', this.value)">
+                {% if filters.date %}
+                <button type="button" title="Clear date"
+                    onclick="reloadFilter('date', '')"
+                    class="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded hover:bg-slate-100 text-slate-400 text-lg leading-none">×</button>
+                {% endif %}
+            </div>
+
             <!-- Account (Payment Mode) -->
             <select id="cf-account" class="form-input h-9 w-36 text-sm shrink-0"
                 title="Filter by account" onchange="updateAccountFilter(this.value)">
@@ -52,11 +67,14 @@
                 <option value="upi">UPI/Online</option>
             </select>
 
-            <!-- Date / Month -->
+            <!-- Month (optional; disabled when a Date is set) -->
             <input type="month" id="cf-month"
-                class="form-input h-9 w-36 text-sm shrink-0"
-                title="Filter by month"
-                onchange="updateMonthFilter(this.value)">
+                class="form-input h-9 w-40 text-sm shrink-0 {% if is_date_scoped %}opacity-50 cursor-not-allowed{% endif %}"
+                title="{% if is_date_scoped %}Ignored while a Date is set — clear Date to use Month{% else %}Filter by month (optional){% endif %}"
+                value="{{ filters.month }}"
+                {% if is_date_scoped %}disabled aria-disabled="true"{% endif %}
+                placeholder="Month (optional)"
+                onchange="reloadFilter('month', this.value)">
 
             <!-- Income Source (populated by JS) -->
             <select id="cf-income-source" class="form-input h-9 w-40 text-sm shrink-0"
@@ -76,9 +94,8 @@
             <!-- Site (Income/Expense restructure) — server-side filter, reloads with ?site= -->
             <select id="cf-site" class="form-input h-9 w-40 text-sm shrink-0"
                 title="Filter by site"
-                onchange="(function(v){var u=new URL(location.href); if(v==='all'){u.searchParams.delete('site');}else{u.searchParams.set('site',v);} location.href=u.toString();})(this.value)">
+                onchange="reloadFilter('site', this.value === 'all' ? '' : this.value)">
                 <option value="all" {% if not filters.site %}selected{% endif %}>All Sites</option>
-                <option value="UNASSIGNED" {% if filters.site == 'UNASSIGNED' %}selected{% endif %}>— Unassigned —</option>
                 {% for s in site_options %}
                 <option value="{{ s.id|default_if_none:'' }}"
                         {% if s.id and filters.site == s.id|stringformat:"s" %}selected{% endif %}
@@ -86,6 +103,17 @@
                     {{ s.name }}{% if not s.id %} (legacy){% endif %}
                 </option>
                 {% endfor %}
+                <option value="UNASSIGNED" {% if filters.site == 'UNASSIGNED' %}selected{% endif %}>— Unassigned —</option>
+            </select>
+
+            <!-- Source (Change 1 — Salary sources DELIBERATELY excluded) -->
+            <select id="cf-source" class="form-input h-9 w-36 text-sm shrink-0"
+                title="Filter by source (Salary rows are shown via the Salary Breakdown panel)"
+                onchange="reloadFilter('source', this.value === 'all' ? '' : this.value)">
+                <option value="all"      {% if not filters.source %}selected{% endif %}>All Sources</option>
+                <option value="manual"   {% if filters.source == 'manual' %}selected{% endif %}>Manual</option>
+                <option value="material" {% if filters.source == 'material' %}selected{% endif %}>Material</option>
+                <option value="other"    {% if filters.source == 'other' %}selected{% endif %}>Other</option>
             </select>
 
             <!-- Clear -->
@@ -99,7 +127,85 @@
                 Clear
             </button>
 
+            <!-- Salary Breakdown (Change 1) — dedicated panel, not a filter -->
+            <button type="button" id="btn-salary-breakdown"
+                class="btn btn-primary h-9 px-4 text-sm shrink-0 flex items-center gap-1.5"
+                onclick="toggleSalaryBreakdown()"
+                title="Show all salary rows in this scope, grouped by date">
+                <span aria-hidden="true">💰</span> Salary Breakdown
+            </button>
+
         </div>
+    </div>
+
+    <!-- Salary Breakdown panel (Change 1). Hidden by default; toggled by
+         the button in the filter bar. Server pre-renders content so the
+         toggle is instant. -->
+    <div id="salary-breakdown-panel" class="card mb-6 p-4 hidden" role="region"
+         aria-label="Salary Breakdown">
+        <div class="flex items-start justify-between mb-3">
+            <div>
+                <h3 class="font-bold text-slate-800">
+                    Salary Breakdown
+                    <span class="text-slate-400 font-normal text-sm">
+                        (grand total ₹{{ salary_breakdown_grand|floatformat:2 }})
+                    </span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">
+                    All salary rows in the current scope — grouped by date, then site.
+                    Salary rows continue to appear in the main table below.
+                </p>
+            </div>
+            <button type="button" class="text-slate-400 hover:text-slate-700 text-2xl leading-none"
+                    onclick="toggleSalaryBreakdown()" title="Close">×</button>
+        </div>
+
+        {% if salary_breakdown_all %}
+        <div class="space-y-4">
+            {% for day in salary_breakdown_all %}
+            <div class="salary-day-block">
+                <div class="salary-day-head">
+                    <span class="font-semibold text-slate-800">{{ day.date|date:'D, d M Y' }}</span>
+                    <span class="font-semibold text-slate-700">Subtotal: ₹{{ day.subtotal|floatformat:2 }}</span>
+                </div>
+                {% for sblk in day.sites_list %}
+                <div class="salary-day-site">
+                    <div class="salary-day-site-head">
+                        <span class="text-sm font-semibold text-slate-600">{{ sblk.site }}</span>
+                        <span class="text-sm text-slate-500">₹{{ sblk.subtotal|floatformat:2 }}</span>
+                    </div>
+                    <table class="salary-emp-table w-full">
+                        <thead>
+                            <tr class="text-xs uppercase text-slate-400">
+                                <th class="text-left py-1">Employee</th>
+                                <th class="text-left py-1">Status</th>
+                                <th class="text-right py-1">Amount</th>
+                                <th class="text-right py-1">Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in sblk.rows %}
+                            <tr>
+                                <td>{{ r.employee }}</td>
+                                <td>{{ r.status|default:'—' }}</td>
+                                <td class="text-right">₹{{ r.amount|floatformat:2 }}</td>
+                                <td class="text-right">
+                                    <span class="src-badge {{ r.source_class }}">{{ r.source_label }}</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-center text-slate-400 py-6">
+            No salary rows in the current scope.
+        </p>
+        {% endif %}
     </div>
 
     <!-- Results Table -->
@@ -242,7 +348,18 @@
                 {% endif %}
             </details>
             {% empty %}
+            {% if is_date_scoped %}
+            <div class="text-center py-10 text-slate-500">
+                <p class="font-semibold text-slate-700">No expenses recorded for {{ filters.date }}.</p>
+                <p class="text-sm mt-1">Mark attendance or add an expense to see entries here.</p>
+                <div class="flex justify-center gap-3 mt-4">
+                    <a href="/attendance/" class="btn btn-secondary btn-sm">Go to Attendance</a>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openAddTxModal()">+ Add Expense</button>
+                </div>
+            </div>
+            {% else %}
             <p class="text-center text-slate-400 py-8">No expenses in the current view.</p>
+            {% endif %}
             {% endfor %}
 
             <div class="site-grand-total">
@@ -380,6 +497,19 @@
 
     .site-grand-total  { padding: 12px 14px; border-top: 2px solid var(--slate-200);
                          font-weight: 800; font-size: 1rem; text-align: right; }
+
+    /* Salary Breakdown standalone panel (Change 1) */
+    .salary-day-block      { border: 1px solid var(--slate-200); border-radius: var(--radius);
+                             padding: 12px 14px; background: #fff; }
+    .salary-day-head       { display: flex; justify-content: space-between; align-items: center;
+                             padding-bottom: 8px; border-bottom: 1px solid var(--slate-100);
+                             margin-bottom: 10px; }
+    .salary-day-site       { background: #f8fafc; border-radius: var(--radius-sm);
+                             padding: 10px 12px; margin-top: 8px; }
+    .salary-day-site-head  { display: flex; justify-content: space-between; align-items: center;
+                             padding-bottom: 6px; }
+    .salary-day-site .salary-emp-table th,
+    .salary-day-site .salary-emp-table td { padding: 4px 6px; }
 
     .period-tab {
         padding: 8px 16px;
@@ -565,6 +695,38 @@
         } catch (e) { console.error(e); }
     }
 
+    // ── Server-side filter reload (Change 2) ────────────────────────
+    // Reloads the page with the given key set/cleared in the querystring.
+    // When a Date is set we intentionally clear Month so the server-side
+    // scope isn't ambiguous. When Date is cleared, Month is preserved.
+    function reloadFilter(key, val) {
+        var u = new URL(location.href);
+        if (val === '' || val === null || val === undefined) {
+            u.searchParams.delete(key);
+        } else {
+            u.searchParams.set(key, val);
+        }
+        if (key === 'date' && val) {
+            u.searchParams.delete('month');
+        }
+        // Site becomes context-relative when the date changes — drop it so
+        // we don't leave a site selected that isn't active on the new date.
+        if (key === 'date') {
+            u.searchParams.delete('site');
+        }
+        location.href = u.toString();
+    }
+
+    // ── Salary Breakdown toggle (Change 1) ─────────────────────────────
+    function toggleSalaryBreakdown() {
+        var el = document.getElementById('salary-breakdown-panel');
+        if (!el) return;
+        el.classList.toggle('hidden');
+        if (!el.classList.contains('hidden')) {
+            el.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+    }
+
     // ── Filter Functions ──
     function updateAccountFilter(val) {
         State.accountFilter = val;
@@ -608,6 +770,13 @@
         if (branchSel) branchSel.value = 'all';
 
         renderTransactions();
+
+        // The server-side filters (date/site/source/month) aren't part of
+        // client-side State; wipe them via a clean reload so the grouped-
+        // by-site section + Salary panel repaint too. Preserve nothing.
+        var u = new URL(location.href);
+        ['date','site','source','month'].forEach(function(k){ u.searchParams.delete(k); });
+        if (u.href !== location.href) location.href = u.toString();
     }
 
     // ── Search ──
