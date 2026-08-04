@@ -744,6 +744,12 @@ def delete_incomes_by_sites(request):
     import logging as _logging
     _log = _logging.getLogger(__name__)
 
+    # TODO remove debug logging after delete flow verified
+    _log.info(
+        "DEBUG delete_incomes_by_sites: admin_id=%r raw_body=%r POST=%r parsed_sites=%r",
+        admin_id, request.body[:500], dict(request.POST.lists()), site_names,
+    )
+
     site_q = Q()
     for name in site_names:
         site_q |= Q(location_site__iexact=name)
@@ -754,11 +760,12 @@ def delete_incomes_by_sites(request):
     with _db_tx.atomic():
         for name in site_names:
             deleted_by_site[name] = base_qs.filter(location_site__iexact=name).count()
+        pre_delete_total = base_qs.count()  # TODO remove debug logging after delete flow verified
         deleted_count, _ = base_qs.delete()
 
     _log.info(
-        "Bulk income delete: admin_id=%s sites=%s deleted=%s per_site=%s",
-        admin_id, site_names, deleted_count, deleted_by_site,
+        "Bulk income delete: admin_id=%s sites=%s pre_count=%s deleted=%s per_site=%s",
+        admin_id, site_names, pre_delete_total, deleted_count, deleted_by_site,
     )
 
     return JsonResponse({

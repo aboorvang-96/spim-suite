@@ -1007,6 +1007,12 @@ def delete_expenses_by_sites(request):
     import logging as _logging
     _log = _logging.getLogger(__name__)
 
+    # TODO remove debug logging after delete flow verified
+    _log.info(
+        "DEBUG delete_expenses_by_sites: admin_id=%r raw_body=%r POST=%r parsed_sites=%r",
+        admin_id, request.body[:500], dict(request.POST.lists()), site_names,
+    )
+
     # Case-insensitive OR across site names, scoped to this admin + expenses.
     site_q = Q()
     for name in site_names:
@@ -1019,11 +1025,12 @@ def delete_expenses_by_sites(request):
         # Count per-site FIRST (for the response), then delete in one shot.
         for name in site_names:
             deleted_by_site[name] = base_qs.filter(location_site__iexact=name).count()
+        pre_delete_total = base_qs.count()  # TODO remove debug logging after delete flow verified
         deleted_count, _ = base_qs.delete()
 
     _log.info(
-        "Bulk expense delete: admin_id=%s sites=%s deleted=%s per_site=%s",
-        admin_id, site_names, deleted_count, deleted_by_site,
+        "Bulk expense delete: admin_id=%s sites=%s pre_count=%s deleted=%s per_site=%s",
+        admin_id, site_names, pre_delete_total, deleted_count, deleted_by_site,
     )
 
     return JsonResponse({

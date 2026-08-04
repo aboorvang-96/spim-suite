@@ -3190,6 +3190,7 @@
       try {
         var body = new URLSearchParams();
         Array.from(selectedSites).forEach(function (s) { body.append('sites', s); });
+        console.log('[bulk-delete expense] POST body:', body.toString());
         var res = await fetch("{% url 'expenses:delete_expenses_by_sites' %}", {
           method: 'POST',
           credentials: 'same-origin',
@@ -3202,6 +3203,8 @@
         });
         var data = {};
         try { data = await res.json(); } catch (e) {}
+        console.log('[bulk-delete expense] response:', res.status, data);
+        try { sessionStorage.setItem('bulk_delete_last_response', JSON.stringify({status: res.status, data: data, sent: Array.from(selectedSites)})); } catch (e) {}
         if (!res.ok || !data.success) {
           err.textContent = (data && data.error) || ('Delete failed (' + res.status + ')');
           err.style.display = 'block';
@@ -3209,6 +3212,18 @@
           btn.textContent = 'Yes, Delete Permanently';
           return;
         }
+        if (!data.deleted_count || data.deleted_count === 0) {
+          err.textContent = 'No matching expense entries were found for the selected sites. Nothing was deleted. Check server logs for the parsed site names vs. what is stored in Transaction.location_site.';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Yes, Delete Permanently';
+          return;
+        }
+        try {
+          sessionStorage.setItem('bulk_delete_toast', JSON.stringify({
+            module: 'expense', deleted: data.deleted_count, sites: Array.from(selectedSites),
+          }));
+        } catch (e) {}
         window.location.reload();
       } catch (e) {
         err.textContent = 'Network error: ' + (e && e.message ? e.message : e);
@@ -3217,6 +3232,32 @@
         btn.textContent = 'Yes, Delete Permanently';
       }
     };
+
+    // Post-reload toast + optional ?debug=1 panel.
+    document.addEventListener('DOMContentLoaded', function () {
+      try {
+        var raw = sessionStorage.getItem('bulk_delete_toast');
+        if (raw) {
+          sessionStorage.removeItem('bulk_delete_toast');
+          var t = JSON.parse(raw);
+          var toast = document.createElement('div');
+          toast.textContent = 'Deleted ' + t.deleted + ' entries across ' + (t.sites || []).length + ' site(s). Any card still visible is referenced by Projects or Attendance — those are unaffected by design.';
+          toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 12px 32px rgba(0,0,0,0.35);z-index:9999;max-width:560px;text-align:center;';
+          document.body.appendChild(toast);
+          setTimeout(function () { toast.style.opacity = '0'; toast.style.transition = 'opacity 400ms'; }, 5000);
+          setTimeout(function () { toast.remove(); }, 5600);
+        }
+      } catch (e) {}
+
+      if (new URLSearchParams(location.search).get('debug') === '1') {
+        var panel = document.createElement('pre');
+        panel.style.cssText = 'position:fixed;bottom:8px;right:8px;max-width:420px;max-height:280px;overflow:auto;background:#0f172a;color:#e2e8f0;font-size:11px;padding:10px 12px;border-radius:8px;z-index:9998;box-shadow:0 12px 32px rgba(0,0,0,0.45);';
+        var last = '(no delete response yet in this browser session)';
+        try { last = sessionStorage.getItem('bulk_delete_last_response') || last; } catch (e) {}
+        panel.textContent = '[?debug=1] last bulk-delete response:\n' + last;
+        document.body.appendChild(panel);
+      }
+    });
   })();
 </script>
 {% endblock %}
