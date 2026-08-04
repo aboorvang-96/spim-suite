@@ -1361,6 +1361,45 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
     return response
 
 
+def _attendance_day_weight(status, is_daily):
+    """Per-day pay weight for a single AttendanceRecord.status. Shared with
+    _compute_attendance_breakdown and the attendance→expense signal so
+    monthly totals and per-day auto-expense rows can never diverge."""
+    if is_daily:
+        if status in ('present', 'week_off'):
+            return Decimal('1')
+        return Decimal('0')
+    if status in ('present', 'week_off', 'holiday'):
+        return Decimal('1')
+    if status == 'half_day':
+        return Decimal('0.5')
+    return Decimal('0')
+
+
+def compute_daily_salary_for_attendance(attendance):
+    """Rupee amount payable for a single AttendanceRecord day. Uses the
+    same weight table + 26→25 cycle divisor as the monthly Salary Manager
+    helper so `sum(daily rows) == monthly total`."""
+    from accounts.cycle_utils import get_cycle_ending_in_month
+
+    emp = attendance.employee
+    is_daily = getattr(emp, 'salary_type', 'base_salary') == 'daily_basis'
+    base = Decimal(str(emp.base_salary or 0))
+    weight = _attendance_day_weight(attendance.status, is_daily)
+    if weight == 0 or base == 0:
+        return Decimal('0.00')
+
+    if is_daily:
+        return (base * weight).quantize(Decimal('0.01'))
+
+    cycle = get_cycle_ending_in_month(attendance.date)
+    cycle_days = (cycle['end'] - cycle['start']).days + 1
+    if cycle_days <= 0:
+        return Decimal('0.00')
+    daily_rate = base / Decimal(str(cycle_days))
+    return (daily_rate * weight).quantize(Decimal('0.01'))
+
+
 def _compute_attendance_breakdown(employee, month_date, basic_salary):
     """
     Compute both the attendance-prorated payable base and the paid-days
@@ -1437,31 +1476,29 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     half_days     = records_paid.filter(status='half_day').count()
     week_off_days = records_paid.filter(status='week_off').count()
 
-    if is_daily:
-        # Daily Basis paid-days = Present (1.0) + Week Off (1.0).
-        # Week Off moved to the paid bucket per the 2026-07 daily-wage spec
-        # (was previously 0). Half Day / Holiday / Sunday / Leave / Absent /
-        # No Week Off / no-entry all remain 0 — daily-wage workers earn only
-        # for full Present days and paid Week Offs. This is the deliberate
-        # business rule for this mode and differs from the Base Salary
-        # paid-day formula, which stays untouched below.
-        worked_days = Decimal(str(present_days)) + Decimal(str(week_off_days))
-        # daily_rate × worked_days — no cycle divisor, no cap.
-        final_salary = (basic_salary * worked_days).quantize(Decimal('0.01'))
-        return final_salary, worked_days
+    # Weights sourced from the shared _attendance_day_weight table so the
+    # per-day auto-expense signal (attendance/signals.py) never diverges
+    # from this monthly aggregate.
+    w_present  = _attendance_day_weight('present',  is_daily)
+    w_week_off = _attendance_day_weight('week_off', is_daily)
+    w_holiday  = _attendance_day_weight('holiday',  is_daily)
+    w_half_day = _attendance_day_weight('half_day', is_daily)
 
-    # ---- PaidDays = pure sum of per-status weights (Base Salary only) ----
     paid_days = (
-        Decimal(str(present_days))
-        + Decimal(str(week_off_days))
-        + Decimal(str(holiday_days))
-        + (Decimal(str(half_days)) * Decimal('0.5'))
+        Decimal(str(present_days))  * w_present
+        + Decimal(str(week_off_days)) * w_week_off
+        + Decimal(str(holiday_days))  * w_holiday
+        + Decimal(str(half_days))     * w_half_day
     )
 
-    # ---- Final salary ----
-    cycle_dec     = Decimal(str(cycle_days))
-    daily_salary  = basic_salary / cycle_dec
-    final_salary  = (daily_salary * paid_days).quantize(Decimal('0.01'))
+    if is_daily:
+        # Daily basis: no cycle divisor — basic_salary is a per-day rate.
+        final_salary = (basic_salary * paid_days).quantize(Decimal('0.01'))
+        return final_salary, paid_days
+
+    cycle_dec    = Decimal(str(cycle_days))
+    daily_salary = basic_salary / cycle_dec
+    final_salary = (daily_salary * paid_days).quantize(Decimal('0.01'))
     return final_salary, paid_days
 
 
@@ -1618,12 +1655,12 @@ def manage_ajax(request):
         #   1. Flip is_payslip_generated on every SalaryUpdate row for the
         #      tenant + cycle. Skips rows that are already generated so a
         #      repeat click is a no-op for that subset.
-        #   2. Delegate to the existing generate_salary_expenses flow, which
-        #      is already idempotent via the Transaction.reference dedup key
-        #      ("SAL-{employee_pk}-{YYYY-MM}"). No duplicate expense rows.
-        #   3. If every row in the cycle was already generated AND every
-        #      matching expense already exists, return an early "already
-        #      generated" message without touching anything.
+        #   2. Salary expense rows are NO LONGER written here — they are
+        #      posted per-day by attendance/signals.py against each
+        #      AttendanceRecord (marker: "[AUTO-SAL:{pk}]"). This endpoint
+        #      only locks the payslip snapshot.
+        #   3. If every row in the cycle was already generated, return an
+        #      early "already generated" message without touching anything.
         if data.get('action') == 'generate_payslips_batch':
             from accounts.cycle_utils import (
                 get_salary_cycle, get_previous_cycle, get_force_active_until,
@@ -1745,33 +1782,16 @@ def manage_ajax(request):
                         'error': str(exc),
                     })
 
-            # Delegate to the idempotent expense generator for this cycle.
-            expense_created = 0
-            expense_skipped = 0
-            try:
-                from django.test import RequestFactory
-                rf      = RequestFactory()
-                sub_req = rf.post(
-                    '/employees/generate-salary-expenses/',
-                    data=json.dumps({'month': month_name, 'year': year_str}),
-                    content_type='application/json',
-                )
-                sub_req.user = request.user
-                sub_resp = generate_salary_expenses(sub_req)
-                sub_data = json.loads(sub_resp.content.decode('utf-8'))
-                expense_created = sub_data.get('created', 0) or 0
-                expense_skipped = sub_data.get('skipped', 0) or 0
-            except Exception as exc:
-                _log.exception("Salary expense generation failed post-batch")
-                errors.append({'employee_id': None, 'employee_name': '(expenses)', 'error': str(exc)})
-
+            # Monthly salary expense generation retired — expense rows are
+            # now written per-day by attendance/signals.py against each
+            # AttendanceRecord. This batch endpoint only locks payslips.
             already_generated = (generated == 0 and reactivated == 0 and not errors)
 
             msg = (
                 f"Payslips generated for {cycle['label']}. "
                 f"{generated} newly generated"
                 + (f", {reactivated} reactivated" if reactivated else '')
-                + f". {expense_created} expense(s) created, {expense_skipped} already existed."
+                + "."
             )
             if errors:
                 sample = ', '.join(
@@ -1786,8 +1806,6 @@ def manage_ajax(request):
                 'generated': generated,
                 'reactivated': reactivated,
                 'recomputed_deltas': recomputed_deltas,
-                'expense_created': expense_created,
-                'expense_skipped': expense_skipped,
                 'cycle_label': cycle['label'],
                 'cycle_month_key': cycle['month_key'],
                 'errors': errors,

@@ -975,37 +975,10 @@
         setTimeout(() => t.classList.remove('active'), 3000);
     }
 
-    async function generateExpenseReport() {
-        const month = document.getElementById('f-month').value;
-        const year  = document.getElementById('f-year').value;
-        if (!confirm(`Generate expense entries in Expense Module for ${month} ${year}?\n\nDuplicates will be skipped automatically.`)) return;
-
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-        try {
-            const res = await fetch("{% url 'employees:generate_salary_expenses' %}", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken,
-                },
-                body: JSON.stringify({ month, year }),
-            });
-            const result = await res.json();
-            if (result.success) {
-                showToast(result.message);
-            } else {
-                showToast(result.error || 'Failed to generate expenses', 'error');
-            }
-        } catch (e) {
-            showToast('Network error', 'error');
-        }
-    }
-
-    // Top-action "Generate Payslip" button (Task 1).
-    // Single click locks all payslips for the cycle AND posts the matching
-    // expense rows. Both server-side operations are idempotent — clicking
-    // twice will not create duplicate expenses, and the second click is
-    // explicitly rejected with an "already generated" message.
+    // Top-action "Generate Payslip" button.
+    // Single click locks all payslips for the cycle. Salary expense rows
+    // are written per-day by the attendance→expense signal, not by this
+    // batch — so this button no longer creates Transaction rows.
     async function generatePayslipBatch() {
         const month = document.getElementById('f-month').value;
         const year  = document.getElementById('f-year').value;

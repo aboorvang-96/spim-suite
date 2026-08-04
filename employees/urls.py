@@ -29,8 +29,7 @@ urlpatterns = [
     path('salary/dashboard/', views.salary_dashboard, name='salary_dashboard'),
     path('salary/report/download/', views.salary_report_download, name='salary_report_download'),
     path('manage/ajax/', views.manage_ajax, name='manage_ajax'),
-    path('salary/generate-expenses/', views.generate_salary_expenses, name='generate_salary_expenses'),
-    
+
     path('<int:pk>/salary/', views.salary_management, name='process_salary'),
     path('<int:pk>/',      views.edit_employee, name='detail'),
     path('salary/dashboard/', views.salary_dashboard, name='salary_manager'),
