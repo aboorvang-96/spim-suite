@@ -18,8 +18,12 @@
         <polyline points="6 9 12 15 18 9"/>
       </svg>
     </button>
+    <!-- position:fixed (not absolute) — the parent `.action-toolbar` has
+         `overflow-x:auto` which would clip an absolutely-positioned dropdown
+         invisible. Fixed positioning escapes the scroll ancestor entirely;
+         JS pins it under the button on each open. -->
     <div id="expenseDownloadMenu" hidden
-         style="position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.12);min-width:180px;z-index:1200;overflow:hidden;">
+         style="position:fixed;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.12);min-width:180px;z-index:2000;overflow:hidden;">
       <a href="{% url 'expenses:export_pdf' %}?{{ request.GET.urlencode }}"
          style="display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px;font-weight:600;color:#334155;text-decoration:none;">
         <span>📄</span> Download PDF
@@ -42,16 +46,33 @@
   var btn = document.getElementById('expenseDownloadBtn');
   var menu = document.getElementById('expenseDownloadMenu');
   if (!btn || !menu) return;
+  function positionMenu(){
+    var r = btn.getBoundingClientRect();
+    var menuW = menu.offsetWidth || 180;
+    menu.style.top  = (r.bottom + 6) + 'px';
+    menu.style.left = Math.max(8, r.right - menuW) + 'px';
+  }
+  function closeMenu(){
+    menu.setAttribute('hidden','');
+    btn.setAttribute('aria-expanded','false');
+    window.removeEventListener('scroll', positionMenu, true);
+    window.removeEventListener('resize', positionMenu);
+  }
+  function openMenu(){
+    menu.removeAttribute('hidden');
+    btn.setAttribute('aria-expanded','true');
+    positionMenu();
+    window.addEventListener('scroll', positionMenu, true);
+    window.addEventListener('resize', positionMenu);
+  }
   btn.addEventListener('click', function(e){
+    e.preventDefault();
     e.stopPropagation();
-    var isOpen = !menu.hasAttribute('hidden');
-    if (isOpen) { menu.setAttribute('hidden',''); btn.setAttribute('aria-expanded','false'); }
-    else        { menu.removeAttribute('hidden'); btn.setAttribute('aria-expanded','true');  }
+    if (menu.hasAttribute('hidden')) { openMenu(); } else { closeMenu(); }
   });
   document.addEventListener('click', function(e){
-    if (!menu.contains(e.target) && e.target !== btn) {
-      menu.setAttribute('hidden','');
-      btn.setAttribute('aria-expanded','false');
+    if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+      closeMenu();
     }
   });
   menu.querySelectorAll('a').forEach(function(a){

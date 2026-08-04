@@ -106,7 +106,7 @@ def _site_color_index(name):
     return total % len(SITE_ACCENT_PALETTE)
 
 
-def _group_expenses_by_site(expenses, user):
+def _group_expenses_by_site(expenses, user, seed_names=None):
     """
     Site-based card view for the Expense page (Income/Expense restructure).
 
@@ -176,6 +176,29 @@ def _group_expenses_by_site(expenses, user):
 
     debit_by_month = {}
     groups = {}
+
+    # Seed with the canonical site list from Projects/Attendance/WorkLog so
+    # sites with zero transactions still render as editable zero-row cards.
+    # Projects.Site casing wins for display — matches the source-of-truth rule.
+    seeded_keys = set()
+    if seed_names:
+        for n in seed_names:
+            key = (n or '').strip().lower()
+            if not key or key in groups:
+                continue
+            seeded_keys.add(key)
+            site_disp[key] = n
+            groups[key] = {
+                'site':         n,
+                'site_key':     key,
+                'credit':       credit_map.get(key, _D('0')),
+                'debit':        _D('0'),
+                'balance':      _D('0'),
+                'count':        0,
+                'latest_date':  income_dates.get(key),
+                'transactions': [],
+            }
+
     for e in expenses:
         key, disp = _site_key_display(getattr(e, 'location_site', None))
         g = groups.get(key)
@@ -202,7 +225,9 @@ def _group_expenses_by_site(expenses, user):
             g['latest_date'] = e.date
             # Don't overwrite the canonical display with a blank — keep the
             # first non-empty real-site spelling, otherwise leave "(No Site)".
-            if key:
+            # Also never overwrite when the group came from a seed (Projects.Site
+            # casing wins over whatever ad-hoc string the expense row carries).
+            if key and key not in seeded_keys:
                 g['site'] = disp
 
     # Surface income-only sites (credit > 0, no expense yet) so the card
@@ -657,18 +682,39 @@ def transaction_list(request):
         'incomeSource': t.income_source or '',
     } for t in transactions_list])
 
+    # Compute the site-name seed list for the site cards. Rules:
+    #   * today_default_active (fresh landing, no filters) → today's active
+    #     Attendance/WorkLog sites only, plus Projects.Site master + legacy
+    #     Transaction distincts (the helper always includes those).
+    #   * Explicit site filter → just that one site.
+    #   * Any other filter → full union across Projects/Attendance/Transaction.
+    from finance.services.site_cards import get_active_site_names, has_unassigned_transactions
+    site_filter = filters.get('site') or ''
+    if site_filter and site_filter != 'UNASSIGNED':
+        seed_site_names = [site_filter]
+    else:
+        seed_site_names = get_active_site_names(
+            admin_id,
+            restrict_today=today_default_active,
+            today=timezone.localdate() if today_default_active else None,
+        )
+
     # Group the filtered transactions by Account (legacy) and Site (new
     # site-based card view, Income/Expense restructure). The site card uses
     # live Income totals as Credit — never duplicated.
     accounts_grouped = _group_expenses_by_account(transactions_list)
-    sites_grouped    = _group_expenses_by_site(transactions_list, request.user)
+    sites_grouped    = _group_expenses_by_site(transactions_list, request.user, seed_names=seed_site_names)
+
+    # Only surface the "(No Site)" / Unassigned bucket when a legacy row
+    # without a location_site actually exists — otherwise the card is empty
+    # clutter. Drop it from sites_grouped when the check comes back False.
+    has_unassigned = has_unassigned_transactions(admin_id, txn_type='expense')
+    if not has_unassigned:
+        sites_grouped = [g for g in sites_grouped if g['site_key']]
 
     # Site dropdown — full universe of sites the tenant has ever used, so
-    # the filter never looks broken. Add an "Unassigned" bucket when any
-    # Transaction row is missing location_site.
+    # the filter never looks broken.
     site_options = _all_site_options(admin_id)
-    has_unassigned = Transaction.objects.filter(admin_id=admin_id, type='expense') \
-        .filter(Q(location_site__isnull=True) | Q(location_site='')).exists()
 
     # Unique Credit From / Credit To values across this tenant's expense
     # rows — feeds the inline-edit dropdowns (datalists) in the site detail

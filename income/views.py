@@ -214,8 +214,21 @@ def income_list(request):
     # existing template code paths keep working). The NEW site-based card
     # view (Income/Expense restructure) is `sites_grouped` — one card per
     # location_site, with cross-module credit/debit/balance figures.
+    # Shared site-name seed so Income cards match Expense: sites from
+    # Projects/Attendance appear even with zero income rows. Site cards on
+    # Income don't have a today-restriction — Income is a manual entry flow
+    # and admins expect to see the full site universe.
+    from finance.services.site_cards import get_active_site_names, has_unassigned_transactions
+    seed_site_names = get_active_site_names(admin_id, restrict_today=False)
+
     accounts_grouped = _group_incomes_by_account(incomes_list)
-    sites_grouped    = _group_incomes_by_site(incomes_list, request.user)
+    sites_grouped    = _group_incomes_by_site(incomes_list, request.user, seed_names=seed_site_names)
+
+    # Drop the (No Site) bucket unless a legacy row without location_site exists.
+    if not (has_unassigned_transactions(admin_id) or any(
+        not (getattr(i, 'location_site', None) or '').strip() for i in incomes_list
+    )):
+        sites_grouped = [g for g in sites_grouped if g['site_key']]
 
     from django.utils import timezone as _tz
     return render(request, 'income/list.html', {
@@ -311,7 +324,7 @@ def _group_incomes_by_account(qs):
     )
 
 
-def _group_incomes_by_site(incomes, user):
+def _group_incomes_by_site(incomes, user, seed_names=None):
     """
     Site-based card view (Income/Expense restructure).
 
@@ -367,6 +380,28 @@ def _group_incomes_by_site(incomes, user):
 
     groups = {}
     credit_by_month = {}
+
+    # Seed with the canonical site list from Projects/Attendance so sites
+    # with zero incomes still render as editable zero-row cards. Projects.Site
+    # casing wins for display.
+    seeded_keys = set()
+    if seed_names:
+        for n in seed_names:
+            key = (n or '').strip().lower()
+            if not key or key in groups:
+                continue
+            seeded_keys.add(key)
+            groups[key] = {
+                'site':         n,
+                'site_key':     key,
+                'credit':       _D('0'),
+                'debit':        debit_map.get(key, _D('0')),
+                'balance':      _D('0'),
+                'count':        0,
+                'latest_date':  None,
+                'transactions': [],
+            }
+
     for i in incomes:
         site = (getattr(i, 'location_site', None) or '').strip()
         key  = site.lower()
@@ -392,7 +427,9 @@ def _group_incomes_by_site(incomes, user):
             cm[mkey] = cm.get(mkey, _D('0')) + (i.amount or _D('0'))
         if i.date and (g['latest_date'] is None or i.date > g['latest_date']):
             g['latest_date'] = i.date
-            g['site']        = site or '(No Site)'
+            # Preserve seeded (Projects.Site) casing over the income row's spelling.
+            if key not in seeded_keys:
+                g['site'] = site or '(No Site)'
 
     # Also surface sites that have expenses but zero income — admin still
     # needs to see those in the site card list.
