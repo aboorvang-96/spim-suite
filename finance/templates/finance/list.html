@@ -160,17 +160,43 @@
          Server-rendered from `sites_grouped`. Applies the same filters as
          the table above (site/month/etc. are in the querystring).
          ══════════════════════════════════════════════════════════════════ -->
-    <div class="card p-0 mt-8 overflow-hidden">
-        <div class="p-5 border-b border-slate-100 bg-slate-50/50">
-            <h3 class="font-bold text-slate-800">Grouped by Site</h3>
-            <p class="text-xs text-slate-400 mt-0.5">
-                One section per site. Salary breakdown expands per employee.
-            </p>
+    <div class="card p-0 mt-8 overflow-hidden" id="sites-grouped-card">
+        <div class="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
+            <div>
+                <h3 class="font-bold text-slate-800">Grouped by Site</h3>
+                <p class="text-xs text-slate-400 mt-0.5">
+                    One section per site. Salary breakdown expands per employee.
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" id="deleteModeToggle"
+                        class="btn btn-secondary btn-sm flex items-center gap-1.5 text-error"
+                        onclick="enterDeleteMode()" title="Select multiple sites to delete their expense rows">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                    Delete
+                </button>
+                <button type="button" id="deleteSelectedBtn"
+                        class="btn btn-sm hidden bg-error text-white"
+                        onclick="openBulkDeleteConfirm()" disabled>
+                    Delete Selected (<span id="deleteSelectedCount">0</span>)
+                </button>
+                <button type="button" id="cancelDeleteBtn"
+                        class="btn btn-secondary btn-sm hidden"
+                        onclick="exitDeleteMode()">
+                    Cancel
+                </button>
+            </div>
         </div>
         <div class="p-5 space-y-5">
             {% for g in sites_grouped %}
-            <details class="site-group" {% if forloop.first %}open{% endif %}>
+            <details class="site-group" data-site-name="{{ g.site }}" {% if forloop.first %}open{% endif %}>
                 <summary class="site-group-head">
+                    <label class="site-delete-check inline-flex items-center mr-2"
+                           onclick="event.stopPropagation();">
+                        <input type="checkbox" class="site-delete-checkbox"
+                               data-site-name="{{ g.site }}"
+                               onchange="onSiteCheckboxChange(this)">
+                    </label>
                     <span class="site-group-name">{{ g.site }}</span>
                     <span class="site-group-total">Total: ₹{{ g.debit|floatformat:2 }}</span>
                 </summary>
@@ -181,18 +207,25 @@
                             <th class="w-28 text-xs text-slate-500 uppercase">Date</th>
                             <th class="text-xs text-slate-500 uppercase">Description</th>
                             <th class="w-32 text-right text-xs text-slate-500 uppercase">Amount</th>
-                            <th class="w-24"></th>
+                            <th class="w-32"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for t in g.transactions %}
-                        <tr>
+                        <tr data-row-pk="{{ t.pk }}">
                             <td>{{ t.date|date:'d M Y' }}</td>
                             <td>{{ t.description|default:'—' }}</td>
                             <td class="text-right font-semibold">₹{{ t.amount|floatformat:2 }}</td>
                             <td class="text-right">
-                                <button type="button" class="btn btn-secondary btn-sm"
-                                        onclick="openEditModal({{ t.pk }})">Edit</button>
+                                <div class="inline-flex gap-1 justify-end">
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            onclick="openEditModal({{ t.pk }})">Edit</button>
+                                    <button type="button" class="btn btn-secondary btn-sm text-error row-delete-btn"
+                                            data-row-pk="{{ t.pk }}"
+                                            onclick="deleteTx({{ t.pk }})" title="Delete this entry">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         {% empty %}
@@ -682,5 +715,162 @@
 
         renderTransactions();
     });
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     Delete-mode UI: site-card checkboxes + bulk delete confirm.
+     Deletes ONLY finance.Transaction rows (type='expense'). Never
+     touches projects.Site or attendance.AttendanceRecord.
+     ══════════════════════════════════════════════════════════════════ -->
+<style>
+    .site-delete-check { display: none; }
+    #sites-grouped-card.delete-mode-active .site-delete-check {
+        display: inline-flex;
+    }
+    #sites-grouped-card.delete-mode-active .site-delete-checkbox {
+        width: 18px; height: 18px; cursor: pointer; accent-color: #dc2626;
+    }
+    #sites-grouped-card.delete-mode-active .site-group {
+        border: 2px dashed #dc2626; border-radius: 8px;
+    }
+    #sites-grouped-card.delete-mode-active .site-group.selected-for-delete {
+        background: rgba(220, 53, 69, 0.08);
+    }
+    #bulkDeleteModal.hidden { display: none; }
+    #bulkDeleteModal .modal-body ul {
+        max-height: 240px; overflow-y: auto;
+        list-style: disc; padding-left: 20px; margin: 8px 0;
+    }
+</style>
+
+<div class="modal-overlay hidden" id="bulkDeleteModal">
+    <div class="modal-container w-full max-w-md">
+        <div class="modal-header">
+            <h3 class="modal-title">Confirm delete</h3>
+            <button class="modal-close" onclick="closeBulkDeleteModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="text-sm text-slate-700 mb-2">
+                All expense entries under these sites will be permanently deleted from Expense Manager:
+            </p>
+            <ul id="bulkDeleteSitesList" class="text-sm font-semibold text-slate-800"></ul>
+            <p class="text-xs text-slate-500 mt-3">
+                Attendance records and Projects/Site definitions are not affected. If attendance is
+                marked again for a site tomorrow, its card and auto-salary expense reappear automatically.
+            </p>
+            <div id="bulkDeleteError" class="hidden text-sm text-error mt-3"></div>
+        </div>
+        <div class="modal-footer flex justify-end gap-2 p-4 border-t border-slate-100">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeBulkDeleteModal()">Cancel</button>
+            <button type="button" id="bulkDeleteConfirmBtn" class="btn btn-sm bg-error text-white"
+                    onclick="submitBulkDelete()">Yes, Delete Permanently</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const selectedSites = new Set();
+        const card = () => document.getElementById('sites-grouped-card');
+
+        window.enterDeleteMode = function () {
+            const c = card();
+            if (!c) return;
+            c.classList.add('delete-mode-active');
+            document.getElementById('deleteModeToggle').classList.add('hidden');
+            document.getElementById('deleteSelectedBtn').classList.remove('hidden');
+            document.getElementById('cancelDeleteBtn').classList.remove('hidden');
+        };
+
+        window.exitDeleteMode = function () {
+            const c = card();
+            if (!c) return;
+            c.classList.remove('delete-mode-active');
+            selectedSites.clear();
+            c.querySelectorAll('.site-delete-checkbox').forEach(cb => { cb.checked = false; });
+            c.querySelectorAll('.site-group.selected-for-delete').forEach(el => el.classList.remove('selected-for-delete'));
+            updateDeleteBtn();
+            document.getElementById('deleteModeToggle').classList.remove('hidden');
+            document.getElementById('deleteSelectedBtn').classList.add('hidden');
+            document.getElementById('cancelDeleteBtn').classList.add('hidden');
+        };
+
+        window.onSiteCheckboxChange = function (cb) {
+            const name = cb.getAttribute('data-site-name') || '';
+            const group = cb.closest('.site-group');
+            if (cb.checked) {
+                selectedSites.add(name);
+                if (group) group.classList.add('selected-for-delete');
+            } else {
+                selectedSites.delete(name);
+                if (group) group.classList.remove('selected-for-delete');
+            }
+            updateDeleteBtn();
+        };
+
+        function updateDeleteBtn() {
+            const btn = document.getElementById('deleteSelectedBtn');
+            const count = document.getElementById('deleteSelectedCount');
+            if (count) count.textContent = String(selectedSites.size);
+            if (btn) btn.disabled = selectedSites.size === 0;
+        }
+
+        window.openBulkDeleteConfirm = function () {
+            if (selectedSites.size === 0) return;
+            const ul = document.getElementById('bulkDeleteSitesList');
+            ul.innerHTML = '';
+            Array.from(selectedSites).forEach(function (s) {
+                const li = document.createElement('li');
+                li.textContent = s || '(Unassigned)';
+                ul.appendChild(li);
+            });
+            document.getElementById('bulkDeleteError').classList.add('hidden');
+            document.getElementById('bulkDeleteModal').classList.remove('hidden');
+        };
+
+        window.closeBulkDeleteModal = function () {
+            document.getElementById('bulkDeleteModal').classList.add('hidden');
+        };
+
+        window.submitBulkDelete = async function () {
+            const btn = document.getElementById('bulkDeleteConfirmBtn');
+            const err = document.getElementById('bulkDeleteError');
+            btn.disabled = true;
+            btn.textContent = 'Deleting...';
+            err.classList.add('hidden');
+            try {
+                const body = new URLSearchParams();
+                Array.from(selectedSites).forEach(function (s) { body.append('sites', s); });
+                const res = await fetch("{% url 'expenses:delete_expenses_by_sites' %}", {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: body.toString(),
+                });
+                const data = await res.json().catch(function () { return {}; });
+                if (!res.ok || !data.success) {
+                    err.textContent = (data && data.error) || ('Delete failed (' + res.status + ')');
+                    err.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Yes, Delete Permanently';
+                    return;
+                }
+                window.location.reload();
+            } catch (e) {
+                err.textContent = 'Network error: ' + (e && e.message ? e.message : e);
+                err.classList.remove('hidden');
+                btn.disabled = false;
+                btn.textContent = 'Yes, Delete Permanently';
+            }
+        };
+    })();
 </script>
 {% endblock %}

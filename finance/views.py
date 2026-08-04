@@ -978,8 +978,59 @@ def delete_transaction(request, pk):
     t = get_object_or_404(Transaction, pk=pk, admin_id=get_admin_id(request.user))
     if request.method == 'POST':
         t.delete()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True})
         messages.success(request, "Deleted.")
     return redirect('expenses:list')
+
+
+@login_required
+def delete_expenses_by_sites(request):
+    """Bulk-delete every expense Transaction whose location_site matches
+    one of the site names in `sites[]` (case-insensitive). Scope is
+    strictly the current admin tenant — never touches Projects.Site or
+    AttendanceRecord rows. POST only, atomic, returns per-site counts."""
+    from django.views.decorators.http import require_POST as _require_POST  # local import
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
+
+    admin_id = get_admin_id(request.user)
+    if not admin_id:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    site_names = request.POST.getlist('sites') or request.POST.getlist('sites[]')
+    site_names = [s.strip() for s in site_names if (s or '').strip()]
+    if not site_names:
+        return JsonResponse({'success': False, 'error': 'No sites selected'}, status=400)
+
+    from django.db import transaction as _db_tx
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    # Case-insensitive OR across site names, scoped to this admin + expenses.
+    site_q = Q()
+    for name in site_names:
+        site_q |= Q(location_site__iexact=name)
+
+    base_qs = Transaction.objects.filter(admin_id=admin_id, type='expense').filter(site_q)
+
+    deleted_by_site = {}
+    with _db_tx.atomic():
+        # Count per-site FIRST (for the response), then delete in one shot.
+        for name in site_names:
+            deleted_by_site[name] = base_qs.filter(location_site__iexact=name).count()
+        deleted_count, _ = base_qs.delete()
+
+    _log.info(
+        "Bulk expense delete: admin_id=%s sites=%s deleted=%s per_site=%s",
+        admin_id, site_names, deleted_count, deleted_by_site,
+    )
+
+    return JsonResponse({
+        'success': True,
+        'deleted_count': deleted_count,
+        'deleted_by_site': deleted_by_site,
+    })
 
 # ═══════════════════════════════════════════════════════════════════════
 # Export — PDF + Excel. Both reuse `_apply_expense_filters` so the report
