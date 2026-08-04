@@ -10,7 +10,7 @@ up immediately as an editable zero-row card in Expense + Income.
 from finance.models import Transaction
 
 
-def get_active_site_names(admin_id, restrict_today=False, today=None):
+def get_active_site_names(admin_id, restrict_today=False, today=None, module=None):
     """
     Canonical site-name strings for site cards. Union of:
       * projects.Site.name              (source of truth — casing wins)
@@ -25,6 +25,12 @@ def get_active_site_names(admin_id, restrict_today=False, today=None):
     `today` (a date). Projects.Site and Transaction distincts are always
     included — those are the "master" registries that shouldn't shrink to
     zero on a quiet day.
+
+    `module` ('expense' | 'income') applies the per-admin hide list from
+    finance.ModuleHiddenSite: any name hidden for that (admin_id, module)
+    is dropped from the result (case-insensitive). Pass None (default) to
+    return the full union. Projects.Site / AttendanceRecord rows are never
+    touched — hiding is card-list only.
     """
     canonical = {}   # lower_key -> display
 
@@ -104,6 +110,24 @@ def get_active_site_names(admin_id, restrict_today=False, today=None):
             _add(n)
     except Exception:
         pass
+
+    # Per-admin, per-module hide list. Never touches source-of-truth tables;
+    # only filters what shows up on this module's card grid.
+    if module in ('expense', 'income'):
+        try:
+            from finance.models import ModuleHiddenSite
+            hidden_lower = {
+                (n or '').strip().lower()
+                for n in ModuleHiddenSite.objects
+                    .filter(admin_id=admin_id, module=module)
+                    .values_list('site_name', flat=True)
+            }
+            if hidden_lower:
+                for k in list(canonical.keys()):
+                    if k in hidden_lower or canonical[k].strip().lower() in hidden_lower:
+                        canonical.pop(k, None)
+        except Exception:
+            pass
 
     return sorted(canonical.values(), key=lambda s: s.lower())
 

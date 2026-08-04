@@ -95,6 +95,34 @@ class Transaction(models.Model):
         super().save(*args, **kwargs)
 
 
+class ModuleHiddenSite(models.Model):
+    """Per-admin, per-module hide list for site cards. When an admin clicks
+    Delete on a site card in Expense (or Income) Manager, the site name is
+    inserted here — get_active_site_names(module=…) then excludes it from
+    that module's card grid. Projects.Site and AttendanceRecord are never
+    touched. Case-insensitive lookup at read time; stored as the admin saw
+    it on the card."""
+    MODULE_CHOICES = (
+        ('expense', 'Expense'),
+        ('income',  'Income'),
+    )
+    admin_id   = models.CharField(max_length=200, db_index=True)
+    module     = models.CharField(max_length=20, choices=MODULE_CHOICES)
+    site_name  = models.CharField(max_length=200)
+    hidden_at  = models.DateTimeField(auto_now_add=True)
+    hidden_by  = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+    )
+
+    class Meta:
+        unique_together = ('admin_id', 'module', 'site_name')
+        ordering = ['-hidden_at']
+
+    def __str__(self):
+        return f"[{self.module}] {self.site_name} (admin={self.admin_id})"
+
+
 class Source(models.Model):
     TYPE = (('credit', 'Credit Source'), ('income', 'Income Source'), ('account', 'Account'))
     admin_id   = models.CharField(max_length=20, db_index=True, default='PENDING')

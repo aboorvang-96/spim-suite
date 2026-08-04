@@ -263,13 +263,13 @@ def income_list(request):
     from finance.services.site_cards import get_active_site_names, has_unassigned_transactions
     selected_sites = [s for s in sites if s != 'UNASSIGNED']
     if selected_sites:
-        universe = get_active_site_names(admin_id, restrict_today=False)
+        universe = get_active_site_names(admin_id, restrict_today=False, module='income')
         wanted = {s.lower() for s in selected_sites}
         seed_site_names = [n for n in universe if n.lower() in wanted]
         if not seed_site_names:
             seed_site_names = selected_sites
     else:
-        seed_site_names = get_active_site_names(admin_id, restrict_today=False)
+        seed_site_names = get_active_site_names(admin_id, restrict_today=False, module='income')
 
     accounts_grouped = _group_incomes_by_account(incomes_list)
     sites_grouped    = _group_incomes_by_site(incomes_list, request.user, seed_names=seed_site_names)
@@ -763,22 +763,40 @@ def delete_incomes_by_sites(request):
 
     base_qs = Income.objects.filter(admin_id=admin_id).filter(site_q)
 
+    from finance.models import ModuleHiddenSite
+
     deleted_by_site = {}
+    hidden_site_names = []
     with _db_tx.atomic():
         for name in site_names:
             deleted_by_site[name] = base_qs.filter(location_site__iexact=name).count()
         pre_delete_total = base_qs.count()  # TODO remove debug logging after delete flow verified
         deleted_count, _ = base_qs.delete()
 
+        for name in site_names:
+            stripped = name.strip()
+            if not stripped:
+                continue
+            _, created = ModuleHiddenSite.objects.get_or_create(
+                admin_id=admin_id,
+                module='income',
+                site_name=stripped,
+                defaults={'hidden_by': request.user if request.user.is_authenticated else None},
+            )
+            hidden_site_names.append(stripped)
+
     _log.info(
-        "Bulk income delete: admin_id=%s sites=%s pre_count=%s deleted=%s per_site=%s",
-        admin_id, site_names, pre_delete_total, deleted_count, deleted_by_site,
+        "Bulk income delete: admin_id=%s sites=%s pre_count=%s deleted=%s per_site=%s hidden=%s",
+        admin_id, site_names, pre_delete_total, deleted_count, deleted_by_site, hidden_site_names,
     )
 
     return JsonResponse({
         'success': True,
+        'deleted_row_count':  deleted_count,
+        'hidden_site_count':  len(hidden_site_names),
+        'hidden_site_names':  hidden_site_names,
+        'deleted_by_site':    deleted_by_site,
         'deleted_count': deleted_count,
-        'deleted_by_site': deleted_by_site,
     })
 
 

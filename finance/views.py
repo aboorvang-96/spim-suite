@@ -786,7 +786,7 @@ def transaction_list(request):
         # Intersect case-insensitively with the canonical universe so we
         # preserve Projects.Site casing when the dropdown submitted a lower-
         # cased spelling.
-        universe = get_active_site_names(admin_id, restrict_today=False)
+        universe = get_active_site_names(admin_id, restrict_today=False, module='expense')
         wanted = {s.lower() for s in selected_sites}
         seed_site_names = [n for n in universe if n.lower() in wanted]
         # Fallback: if none of the picked names match the canonical universe
@@ -800,6 +800,7 @@ def transaction_list(request):
             admin_id,
             restrict_today=today_default_active,
             today=timezone.localdate() if today_default_active else None,
+            module='expense',
         )
 
     # Group the filtered transactions by Account (legacy) and Site (new
@@ -1027,7 +1028,10 @@ def delete_expenses_by_sites(request):
 
     base_qs = Transaction.objects.filter(admin_id=admin_id, type='expense').filter(site_q)
 
+    from finance.models import ModuleHiddenSite
+
     deleted_by_site = {}
+    hidden_site_names = []
     with _db_tx.atomic():
         # Count per-site FIRST (for the response), then delete in one shot.
         for name in site_names:
@@ -1035,15 +1039,33 @@ def delete_expenses_by_sites(request):
         pre_delete_total = base_qs.count()  # TODO remove debug logging after delete flow verified
         deleted_count, _ = base_qs.delete()
 
+        # Hide the site from Expense Manager view for this admin, whether or
+        # not any rows actually got deleted. Projects/Attendance untouched.
+        for name in site_names:
+            stripped = name.strip()
+            if not stripped:
+                continue
+            _, created = ModuleHiddenSite.objects.get_or_create(
+                admin_id=admin_id,
+                module='expense',
+                site_name=stripped,
+                defaults={'hidden_by': request.user if request.user.is_authenticated else None},
+            )
+            hidden_site_names.append(stripped)
+
     _log.info(
-        "Bulk expense delete: admin_id=%s sites=%s pre_count=%s deleted=%s per_site=%s",
-        admin_id, site_names, pre_delete_total, deleted_count, deleted_by_site,
+        "Bulk expense delete: admin_id=%s sites=%s pre_count=%s deleted=%s per_site=%s hidden=%s",
+        admin_id, site_names, pre_delete_total, deleted_count, deleted_by_site, hidden_site_names,
     )
 
     return JsonResponse({
         'success': True,
+        'deleted_row_count':  deleted_count,
+        'hidden_site_count':  len(hidden_site_names),
+        'hidden_site_names':  hidden_site_names,
+        'deleted_by_site':    deleted_by_site,
+        # Back-compat alias for older JS callers still on this key.
         'deleted_count': deleted_count,
-        'deleted_by_site': deleted_by_site,
     })
 
 

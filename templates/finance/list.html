@@ -3105,9 +3105,15 @@
       <button type="button" class="btn btn-secondary btn-sm" onclick="closeBulkDeleteModal()" aria-label="Close">×</button>
     </div>
     <div class="bd-body">
-      <p>All expense entries under these sites will be permanently deleted from Expense Manager:</p>
+      <p>The following sites will be <strong>removed from Expense Manager view</strong>:</p>
       <ul id="bulkDeleteSitesList"></ul>
-      <p class="bd-note">Attendance records and Projects/Site definitions are not affected. If attendance is marked again for a site tomorrow, its card and auto-salary expense reappear automatically.</p>
+      <p class="bd-note">
+        Any expense entries under these sites will be permanently deleted from Expense Manager.
+        <strong>Attendance records and Projects/Site definitions are NOT affected</strong> — those
+        sites still exist in the Attendance and Projects modules.
+        To restore hidden sites later, remove the matching rows from
+        <em>finance › Module hidden sites</em> in the Django admin.
+      </p>
       <div class="bd-error" id="bulkDeleteError"></div>
     </div>
     <div class="bd-foot">
@@ -3212,24 +3218,11 @@
           btn.textContent = 'Yes, Delete Permanently';
           return;
         }
-        if (!data.deleted_count || data.deleted_count === 0) {
-          var sent = Array.from(selectedSites);
-          var listHtml = sent.map(function (s) {
-            return '<li>' + (s || '(unassigned)').replace(/[&<>]/g, function (c) {
-              return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];
-            }) + '</li>';
-          }).join('');
-          err.innerHTML =
-            '<div style="font-weight:600;margin-bottom:6px;">No entries were deleted.</div>' +
-            '<div>This can happen because:</div>' +
-            '<ul style="margin:6px 0 6px 18px;padding:0;">' +
-              '<li>These sites appear on the card list because they exist in the Projects or Attendance modules, but no expense entries have been recorded under them yet.</li>' +
-              '<li>Site names may not match exactly between the card and the stored row.</li>' +
-            '</ul>' +
-            '<div style="margin-top:6px;">To remove a site from Projects or Attendance, use those modules directly — this Delete button only removes rows from Expense Manager.</div>' +
-            '<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:600;">Site names attempted</summary>' +
-            '<ul style="margin:6px 0 0 18px;padding:0;">' + listHtml + '</ul></details>' +
-            '<div style="margin-top:8px;font-size:11px;color:#64748b;">Diagnostic: open <a href="/expenses/debug-site-match/?debug=1" target="_blank" style="color:#2563eb;text-decoration:underline;">/expenses/debug-site-match/?debug=1</a> to see how card names line up with stored data.</div>';
+        // New semantics: success even with 0 row deletes — the sites are
+        // still HIDDEN via ModuleHiddenSite. Only surface an error if the
+        // hide step itself failed to record any sites.
+        if (!data.hidden_site_count || data.hidden_site_count === 0) {
+          err.textContent = 'No sites were hidden. Server returned an unexpected response — check Railway logs.';
           err.style.display = 'block';
           btn.disabled = false;
           btn.textContent = 'Yes, Delete Permanently';
@@ -3237,7 +3230,10 @@
         }
         try {
           sessionStorage.setItem('bulk_delete_toast', JSON.stringify({
-            module: 'expense', deleted: data.deleted_count, sites: Array.from(selectedSites),
+            module: 'expense',
+            deleted_rows: data.deleted_row_count || 0,
+            hidden_sites: data.hidden_site_count,
+            sites: Array.from(selectedSites),
           }));
         } catch (e) {}
         window.location.reload();
@@ -3257,7 +3253,7 @@
           sessionStorage.removeItem('bulk_delete_toast');
           var t = JSON.parse(raw);
           var toast = document.createElement('div');
-          toast.textContent = 'Deleted ' + t.deleted + ' entries across ' + (t.sites || []).length + ' site(s). Any card still visible is referenced by Projects or Attendance — those are unaffected by design.';
+          toast.textContent = 'Removed ' + (t.hidden_sites || (t.sites || []).length) + ' site(s) from Expense Manager (' + (t.deleted_rows || 0) + ' entries deleted). Projects and Attendance are unchanged.';
           toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 12px 32px rgba(0,0,0,0.35);z-index:9999;max-width:560px;text-align:center;';
           document.body.appendChild(toast);
           setTimeout(function () { toast.style.opacity = '0'; toast.style.transition = 'opacity 400ms'; }, 5000);
