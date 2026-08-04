@@ -380,24 +380,79 @@
         </div>
     </section>
 
-    <!-- FILTER BAR: Search | Multi-select (Account, Source, Category, Site) |
-         From/To date range (with Month fallback) | Apply | Clear
-         Multi-select filters submit array-style (site=A&site=B). Backend
-         reads with request.GET.getlist(). Ctrl/Cmd+click for multi-select. -->
+    <!-- FILTER BAR: Search | Account | Source | Category | Site | From | To | Month | Apply | Clear
+         Multi-selects are checkbox-dropdown widgets (see _multiselect.html).
+         Native form submit — each checked box contributes ?field=value,
+         backend reads via request.GET.getlist. No JS on submit. -->
     <style>
-      .multi-wrap { display: flex !important; flex-direction: column !important; gap: 3px !important; flex: 0 0 auto !important; }
-      .multi-wrap label { font-size: 9px !important; font-weight: 800 !important; color: #64748b !important;
-                          text-transform: uppercase !important; letter-spacing: 0.05em !important; margin: 0 !important; }
-      .multi-wrap select[multiple] { height: auto !important; padding: 4px 6px !important; min-height: 68px !important; }
-      .multi-hint { font-size: 10px !important; color: #94a3b8 !important; font-style: italic !important;
-                    margin: 4px 0 0 0 !important; flex-basis: 100% !important; }
-      .date-range-wrap { display: flex !important; align-items: center !important; gap: 4px !important; flex: 0 0 auto !important; }
-      .date-range-wrap label { font-size: 9px !important; font-weight: 800 !important; color: #64748b !important;
-                                text-transform: uppercase !important; letter-spacing: 0.05em !important; margin: 0 4px 0 0 !important; }
-      .month-disabled { opacity: 0.45 !important; cursor: not-allowed !important; }
-      .filter-error { color: #b91c1c !important; background: #fef2f2 !important; border: 1px solid #fecaca !important;
-                       padding: 6px 10px !important; border-radius: 6px !important; font-size: 11px !important;
-                       font-weight: 700 !important; flex-basis: 100% !important; margin-top: 4px !important; }
+      /* Multi-select widget — scoped with .ms- prefix. */
+      .ms-dropdown { position: relative; display: inline-block; min-width: 180px; flex: 0 0 auto; }
+      .ms-toggle {
+        width: 100%; text-align: left;
+        display: flex; align-items: center; gap: 6px;
+        height: 36px; padding: 0 10px;
+        background: #fcfdfe; border: 1.5px solid #e2e8f0; border-radius: 8px;
+        font-size: 13px; font-weight: 600; color: #334155; cursor: pointer;
+        box-sizing: border-box;
+      }
+      .ms-toggle:hover { border-color: #cbd5e1; }
+      .ms-toggle:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+      .ms-label { font-weight: 800; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+      .ms-summary {
+        flex: 1; color: #0f172a; font-weight: 700; font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .ms-summary.is-all { color: #94a3b8; font-weight: 600; }
+      .ms-caret { color: #94a3b8; font-size: 10px; margin-left: auto; }
+      .ms-panel {
+        position: fixed; /* fixed → escape any overflow:auto parents */
+        min-width: 240px; max-width: 320px;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.12);
+        z-index: 2000; padding: 8px;
+      }
+      .ms-panel[hidden] { display: none; }
+      .ms-search {
+        width: 100%; padding: 6px 10px;
+        border: 1px solid #e2e8f0; border-radius: 6px;
+        font-size: 12px; margin-bottom: 6px; box-sizing: border-box;
+      }
+      .ms-options { max-height: 240px; overflow-y: auto; }
+      .ms-option {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 8px; cursor: pointer; border-radius: 4px;
+        font-size: 12px; color: #334155; font-weight: 600;
+      }
+      .ms-option:hover { background: #f1f5f9; }
+      .ms-option input { margin: 0; cursor: pointer; }
+      .ms-empty { padding: 12px 8px; color: #94a3b8; font-size: 12px; font-style: italic; text-align: center; }
+      .ms-footer {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 8px; padding-top: 6px; border-top: 1px solid #f1f5f9;
+      }
+      .ms-clear {
+        background: none; border: none; color: #ef4444; cursor: pointer;
+        padding: 4px 8px; font-size: 12px; font-weight: 700;
+      }
+      .ms-clear:hover { text-decoration: underline; }
+      .ms-done {
+        background: #0f172a; color: #fff; border: none;
+        padding: 6px 14px; border-radius: 6px; cursor: pointer;
+        font-size: 12px; font-weight: 700;
+      }
+      .ms-done:hover { background: #1e293b; }
+
+      .date-range-wrap { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+      .date-range-wrap label {
+        font-size: 9px; font-weight: 800; color: #64748b;
+        text-transform: uppercase; letter-spacing: 0.05em; margin: 0 4px 0 0;
+      }
+      .month-disabled { opacity: 0.45; cursor: not-allowed; }
+      .filter-error {
+        color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;
+        padding: 6px 10px; border-radius: 6px; font-size: 11px;
+        font-weight: 700; flex-basis: 100%; margin-top: 4px;
+      }
     </style>
     <section class="filter-toolbar-v5">
         <form method="get" class="filter-form-v5" id="expFilterForm">
@@ -415,15 +470,19 @@
                        placeholder="Search...">
             </div>
 
-            <!-- 2. Account (multi) -->
-            <div class="multi-wrap">
-                <label>Account</label>
-                <select name="account" id="expFilterAccount" multiple size="4"
-                        class="filter-control-v5" style="width:150px;" title="Filter by account (Ctrl/Cmd+click for multi)">
-                </select>
-            </div>
+            <!-- 2. Account (checkbox dropdown) -->
+            {% include 'finance/_multiselect.html' with field_name='account' label='Account' options=account_options selected_values=selected_accounts %}
 
-            <!-- 3. Date range (From / To) -->
+            <!-- 3. Source (checkbox dropdown) -->
+            {% include 'finance/_multiselect.html' with field_name='income_source' label='Source' options=source_options selected_values=selected_income_sources %}
+
+            <!-- 4. Category (checkbox dropdown) -->
+            {% include 'finance/_multiselect.html' with field_name='category' label='Category' options=category_options selected_values=selected_categories %}
+
+            <!-- 5. Site (checkbox dropdown) -->
+            {% include 'finance/_multiselect.html' with field_name='site' label='Site' options=site_ms_options selected_values=selected_sites %}
+
+            <!-- 6. From / To date range -->
             <div class="date-range-wrap">
                 <label>From</label>
                 <input type="date" name="from_date"
@@ -437,53 +496,13 @@
                        title="To date (inclusive)">
             </div>
 
-            <!-- 4. Month (fallback when From/To empty) -->
+            <!-- 7. Month (fallback when From/To empty) -->
             <input type="month" name="month" id="expFilterMonth"
                    value="{{ filters.month|default:'' }}"
                    class="filter-control-v5{% if filters.from_date or filters.to_date %} month-disabled{% endif %}"
                    style="width:140px;"
                    {% if filters.from_date or filters.to_date %}disabled aria-disabled="true"{% endif %}
                    title="Filter by month (ignored when From/To is set)">
-
-            <!-- 5. Source (multi) -->
-            <div class="multi-wrap">
-                <label>Source</label>
-                <select name="income_source" id="expFilterIncomeSource" multiple size="4"
-                        class="filter-control-v5" style="width:150px;" title="Income source (Ctrl/Cmd+click for multi)">
-                </select>
-            </div>
-
-            <!-- 6. Category (multi) -->
-            <div class="multi-wrap">
-                <label>Category</label>
-                <select name="category" multiple size="4"
-                        class="filter-control-v5" style="width:150px;" title="Category (Ctrl/Cmd+click for multi)">
-                    {% for cat in categories %}
-                    <option value="{{ cat.pk }}"
-                        {% if cat.pk|stringformat:'s' in filters.categories %}selected{% endif %}>
-                        {{ cat.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <!-- 7. Site (multi) — full universe, never restricted to today. -->
-            <div class="multi-wrap">
-                <label>Site</label>
-                <select name="site" multiple size="4"
-                        class="filter-control-v5" style="width:170px;" title="Site (Ctrl/Cmd+click for multi)">
-                    {% for s in site_options %}
-                    <option value="{{ s.name }}"
-                        {% if s.name in filters.sites %}selected{% endif %}>
-                        {{ s.name }}
-                    </option>
-                    {% endfor %}
-                    {% if has_unassigned %}
-                    <option value="UNASSIGNED"
-                        {% if 'UNASSIGNED' in filters.sites %}selected{% endif %}>— Unassigned —</option>
-                    {% endif %}
-                </select>
-            </div>
 
             <!-- 8. Apply + 9. Clear -->
             <div style="display:flex;gap:8px;flex-shrink:0;margin-left:auto;">
@@ -499,7 +518,6 @@
                 </a>
             </div>
 
-            <p class="multi-hint">Hold Ctrl (Cmd on Mac) to pick multiple values in Account, Source, Category, or Site. Leave From/To empty to use the month picker.</p>
             {% if filters.date_range_error %}
             <div class="filter-error">{{ filters.date_range_error }}</div>
             {% endif %}
@@ -508,64 +526,131 @@
     </section>
 
     <script>
+    /* Checkbox-dropdown widget wiring — one initializer for every
+       .ms-dropdown on the page. Uses position:fixed panels so parent
+       overflow:auto containers don't clip them. */
     (function() {
-        /* Populate Expense filter dropdowns from server-synced shared data.
-           These two selects are multi-select — `selectedAccounts` and
-           `selectedSources` come through as JS arrays so any preselected
-           value survives an Apply round-trip. */
-        var selectedAccounts = {{ selected_accounts_json|safe }};
-        var selectedSources  = {{ selected_income_sources_json|safe }};
-        if (!Array.isArray(selectedAccounts)) selectedAccounts = [];
-        if (!Array.isArray(selectedSources))  selectedSources  = [];
-        var accounts       = {{ accounts_json|safe }};
-        var incomeSources  = {{ income_sources_json|safe }};
+      function positionPanel(dd, panel) {
+        var r = dd.getBoundingClientRect();
+        var vpW = document.documentElement.clientWidth;
+        panel.style.top  = (r.bottom + 4) + 'px';
+        panel.style.left = Math.max(8, Math.min(r.left, vpW - panel.offsetWidth - 8)) + 'px';
+        panel.style.minWidth = Math.max(r.width, 240) + 'px';
+      }
+      function initDropdown(dd) {
+        var toggle   = dd.querySelector('.ms-toggle');
+        var panel    = dd.querySelector('.ms-panel');
+        var summary  = dd.querySelector('.ms-summary');
+        var search   = dd.querySelector('.ms-search');
+        var options  = dd.querySelectorAll('.ms-option');
+        var checkboxes = dd.querySelectorAll('input[type=checkbox]');
+        var clearBtn = dd.querySelector('.ms-clear');
+        var doneBtn  = dd.querySelector('.ms-done');
 
-        function fillMultiSelect(selId, items, currentList) {
-            var sel = document.getElementById(selId);
-            if (!sel) return;
-            var lowerSet = {};
-            (currentList || []).forEach(function(v){ if (v) lowerSet[String(v).toLowerCase()] = true; });
-            var seen = {};
-            items.forEach(function(name) {
-                if (!name) return;
-                var opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = name;
-                if (lowerSet[String(name).toLowerCase()]) { opt.selected = true; }
-                seen[String(name).toLowerCase()] = true;
-                sel.appendChild(opt);
-            });
-            /* Preserve any saved selection value that isn't in the master list yet. */
-            (currentList || []).forEach(function(v){
-                if (!v) return;
-                if (seen[String(v).toLowerCase()]) return;
-                var opt = document.createElement('option');
-                opt.value = v;
-                opt.textContent = v;
-                opt.selected = true;
-                sel.appendChild(opt);
-            });
+        function updateSummary() {
+          var checked = dd.querySelectorAll('input[type=checkbox]:checked');
+          if (checked.length === 0) {
+            summary.textContent = 'All';
+            summary.classList.add('is-all');
+            return;
+          }
+          summary.classList.remove('is-all');
+          if (checked.length === 1) {
+            var lbl = checked[0].parentElement.querySelector('span');
+            summary.textContent = lbl ? lbl.textContent.trim() : checked[0].value;
+          } else {
+            summary.textContent = checked.length + ' selected';
+          }
+        }
+        function closePanel() {
+          panel.setAttribute('hidden', '');
+          window.removeEventListener('scroll', repos, true);
+          window.removeEventListener('resize', repos);
+        }
+        function repos() { positionPanel(dd, panel); }
+        function openPanel() {
+          document.querySelectorAll('.ms-panel:not([hidden])').forEach(function(p) {
+            if (p !== panel) p.setAttribute('hidden', '');
+          });
+          panel.removeAttribute('hidden');
+          positionPanel(dd, panel);
+          window.addEventListener('scroll', repos, true);
+          window.addEventListener('resize', repos);
+          if (search) { search.value = ''; search.dispatchEvent(new Event('input')); setTimeout(function(){ search.focus(); }, 0); }
         }
 
-        fillMultiSelect('expFilterAccount',     accounts,      selectedAccounts);
-        fillMultiSelect('expFilterIncomeSource', incomeSources, selectedSources);
+        toggle.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (panel.hasAttribute('hidden')) openPanel(); else closePanel();
+        });
 
-        /* Grey out Month picker when From/To is set (visual echo of the
-           server-side precedence rule). Toggle live as the user edits. */
-        var fromEl  = document.querySelector('input[name="from_date"]');
-        var toEl    = document.querySelector('input[name="to_date"]');
-        var monthEl = document.getElementById('expFilterMonth');
-        function syncMonth() {
-            if (!monthEl) return;
-            var hasRange = (fromEl && fromEl.value) || (toEl && toEl.value);
-            monthEl.disabled = !!hasRange;
-            monthEl.classList.toggle('month-disabled', !!hasRange);
+        if (search) {
+          search.addEventListener('input', function() {
+            var q = search.value.toLowerCase().trim();
+            options.forEach(function(opt) {
+              var text = opt.textContent.toLowerCase();
+              opt.style.display = (!q || text.indexOf(q) !== -1) ? '' : 'none';
+            });
+          });
         }
-        if (fromEl) fromEl.addEventListener('change', syncMonth);
-        if (toEl)   toEl.addEventListener('change', syncMonth);
-        syncMonth();
+
+        checkboxes.forEach(function(cb) { cb.addEventListener('change', updateSummary); });
+
+        if (clearBtn) {
+          clearBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            checkboxes.forEach(function(cb) { cb.checked = false; });
+            updateSummary();
+          });
+        }
+        if (doneBtn) {
+          doneBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            closePanel();
+          });
+        }
+
+        dd._msClose = closePanel;
+        updateSummary();
+      }
+
+      document.querySelectorAll('.ms-dropdown').forEach(initDropdown);
+
+      document.addEventListener('click', function(e) {
+        document.querySelectorAll('.ms-dropdown').forEach(function(dd) {
+          var panel = dd.querySelector('.ms-panel');
+          if (!panel || panel.hasAttribute('hidden')) return;
+          if (!dd.contains(e.target) && !panel.contains(e.target)) {
+            if (typeof dd._msClose === 'function') dd._msClose();
+            else panel.setAttribute('hidden', '');
+          }
+        });
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.ms-dropdown').forEach(function(dd) {
+            if (typeof dd._msClose === 'function') dd._msClose();
+          });
+        }
+      });
+
+      /* Grey out Month when From/To has any value. */
+      var fromEl  = document.querySelector('input[name="from_date"]');
+      var toEl    = document.querySelector('input[name="to_date"]');
+      var monthEl = document.getElementById('expFilterMonth');
+      function syncMonth() {
+        if (!monthEl) return;
+        var hasRange = (fromEl && fromEl.value) || (toEl && toEl.value);
+        monthEl.disabled = !!hasRange;
+        monthEl.classList.toggle('month-disabled', !!hasRange);
+      }
+      if (fromEl) fromEl.addEventListener('change', syncMonth);
+      if (toEl)   toEl.addEventListener('change', syncMonth);
+      syncMonth();
     })();
     </script>
+
 
     <!-- 4. EXPENSE LIST SECTION — Site-based cards (Income/Expense restructure).
          One card per location_site. Credit = total income for that site

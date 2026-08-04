@@ -1,0 +1,37 @@
+{% comment %}
+Reusable checkbox-dropdown multi-select widget. Renders as a closed button
+that opens a floating panel with searchable checkboxes. Native form submit
+carries every checked checkbox under `field_name` — the backend reads via
+request.GET.getlist(field_name), so no JS wiring on submit.
+
+Params:
+  field_name       — form field name (e.g. "site")
+  label            — button label prefix (e.g. "Site")
+  options          — iterable of {value, display} dicts
+  selected_values  — list of string values that should render pre-checked
+{% endcomment %}
+<div class="ms-dropdown" data-field="{{ field_name }}">
+  <button type="button" class="ms-toggle">
+    <span class="ms-label">{{ label }}:</span>
+    <span class="ms-summary">All</span>
+    <span class="ms-caret">▾</span>
+  </button>
+  <div class="ms-panel" hidden>
+    <input type="text" class="ms-search" placeholder="Search…">
+    <div class="ms-options">
+      {% for opt in options %}
+      <label class="ms-option">
+        <input type="checkbox" name="{{ field_name }}" value="{{ opt.value }}"
+               {% if opt.value in selected_values %}checked{% endif %}>
+        <span>{{ opt.display }}</span>
+      </label>
+      {% empty %}
+      <div class="ms-empty">No options</div>
+      {% endfor %}
+    </div>
+    <div class="ms-footer">
+      <button type="button" class="ms-clear">Clear</button>
+      <button type="button" class="ms-done">Done</button>
+    </div>
+  </div>
+</div>

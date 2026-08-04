@@ -833,6 +833,23 @@ def transaction_list(request):
         .values_list('vendor', flat=True).distinct().order_by('vendor')
     )
 
+    # Structured option lists for the checkbox-dropdown widget (Account,
+    # Source, Category, Site). Each entry is {value, display}. Site adds an
+    # optional "Unassigned" bucket when legacy null-location rows exist.
+    _cat_qs = Category.objects.filter(admin_id=admin_id, type='expense')
+    _acct_names = list(
+        Source.objects.filter(admin_id=admin_id, type='account').values_list('name', flat=True)
+    )
+    _src_names = list(
+        Source.objects.filter(admin_id=admin_id, type='income').values_list('name', flat=True)
+    )
+    account_options  = [{'value': n, 'display': n} for n in _acct_names if n]
+    source_options   = [{'value': n, 'display': n} for n in _src_names if n]
+    category_options = [{'value': str(c.pk), 'display': c.name} for c in _cat_qs]
+    site_ms_options  = [{'value': s['name'], 'display': s['name']} for s in site_options]
+    if has_unassigned:
+        site_ms_options.append({'value': 'UNASSIGNED', 'display': '— Unassigned —'})
+
     return render(request, 'finance/list.html', {
         'transactions':        transactions_list,
         'transactions_json':   transactions_json,
@@ -853,9 +870,19 @@ def transaction_list(request):
         'location_sites_json':  _location_sites_json(request.user),
         'income_sources_json':  _shared_sources_json(request.user),
         'accounts_json':        _shared_accounts_json(request.user),
-        # JSON-encoded selected values for the multi-select preselection JS.
+        # JSON-encoded selected values (legacy — no longer read by the
+        # checkbox-dropdown widget, kept in case any embedded JS still needs them).
         'selected_accounts_json':       json.dumps(filters.get('accounts') or []),
         'selected_income_sources_json': json.dumps(filters.get('income_sources') or []),
+        # Widget option lists + selected values (for _multiselect.html).
+        'account_options':         account_options,
+        'source_options':          source_options,
+        'category_options':        category_options,
+        'site_ms_options':         site_ms_options,
+        'selected_accounts':       filters.get('accounts') or [],
+        'selected_income_sources': filters.get('income_sources') or [],
+        'selected_categories':     filters.get('categories') or [],
+        'selected_sites':          filters.get('sites') or [],
         'balance_data':         balance_combos,
         # Default selection for the per-card month dropdown (Issue 4) —
         # the page renders with the current month pre-selected so each card
