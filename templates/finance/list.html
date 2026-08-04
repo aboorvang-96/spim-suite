@@ -34,6 +34,23 @@
       </a>
     </div>
   </div>
+  <button type="button" id="deleteModeToggle" class="btn btn-secondary btn-sm"
+          style="display:inline-flex;align-items:center;gap:6px;color:#dc2626;"
+          onclick="enterDeleteMode()" title="Select site cards to bulk-delete their expense rows">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+    </svg>
+    Delete
+  </button>
+  <button type="button" id="deleteSelectedBtn" class="btn btn-primary btn-sm"
+          style="display:none;background:#dc2626;border-color:#dc2626;"
+          onclick="openBulkDeleteConfirm()" disabled>
+    Delete Selected (<span id="deleteSelectedCount">0</span>)
+  </button>
+  <button type="button" id="cancelDeleteBtn" class="btn btn-secondary btn-sm"
+          style="display:none;" onclick="exitDeleteMode()">
+    Cancel
+  </button>
   <button type="button" id="openAddExpenseModal" class="btn btn-primary btn-sm">
     <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
       <path d="M12 4v16m8-8H4" />
@@ -850,6 +867,7 @@
         <div class="expense-grid-v5" id="expenseGrid">
             {% for group in sites_grouped %}
             <div class="expense-card-v5" data-site-key="{{ group.site_key }}"
+                 data-site-name="{{ group.site }}"
                  data-site-credit="{{ group.credit|stringformat:'s' }}"
                  data-expense-count="{{ group.count }}"
                  data-monthly='{{ group.monthly_json }}'
@@ -859,6 +877,12 @@
                      the month dropdown so the panel no longer needs its own
                      action row (Fix 1). -->
                 <div class="site-card-header-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px dashed #f1f5f9;">
+                    <label class="site-delete-check" style="display:none;align-items:center;margin-right:6px;">
+                        <input type="checkbox" class="site-delete-checkbox"
+                               data-site-name="{{ group.site }}"
+                               onchange="onSiteCheckboxChange(this)"
+                               style="width:18px;height:18px;accent-color:#dc2626;cursor:pointer;">
+                    </label>
                     <h3 class="site-card-title">{{ group.site }}</h3>
                     <div class="site-card-header-actions" style="display:inline-flex;gap:8px;align-items:center;flex:0 0 auto;">
                         <button type="button" class="btn-action-v5 edit site-card-view-btn" data-view-site="{{ group.site_key }}"
@@ -3037,6 +3061,162 @@
         }).catch(() => {});
       }
     });
+  })();
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     Site-card bulk delete UI. Deletes ONLY finance.Transaction rows
+     (type='expense'); never touches projects.Site or attendance.
+     ══════════════════════════════════════════════════════════════════ -->
+<style>
+  body.expense-delete-mode .expense-card-v5 { border:2px dashed #dc2626 !important; border-radius:12px; }
+  body.expense-delete-mode .expense-card-v5.selected-for-delete { background:rgba(220,38,38,0.06); }
+  body.expense-delete-mode .site-delete-check { display:inline-flex !important; }
+  #bulkDeleteExpenseModal.hidden { display:none; }
+  #bulkDeleteExpenseModal {
+    position:fixed;inset:0;background:rgba(15,23,42,0.55);
+    display:flex;align-items:center;justify-content:center;z-index:9000;padding:16px;
+  }
+  #bulkDeleteExpenseModal .bd-box {
+    background:#fff;border-radius:12px;max-width:440px;width:100%;
+    box-shadow:0 24px 60px rgba(0,0,0,0.35);overflow:hidden;
+  }
+  #bulkDeleteExpenseModal .bd-head {
+    padding:14px 18px;border-bottom:1px solid #e2e8f0;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  #bulkDeleteExpenseModal .bd-head h3 { margin:0;font-size:15px;font-weight:700;color:#0f172a; }
+  #bulkDeleteExpenseModal .bd-body { padding:16px 18px;font-size:13px;color:#334155; }
+  #bulkDeleteExpenseModal .bd-body ul {
+    max-height:220px;overflow-y:auto;margin:8px 0 0;padding-left:20px;
+    font-weight:600;color:#0f172a;
+  }
+  #bulkDeleteExpenseModal .bd-note { font-size:11px;color:#64748b;margin-top:10px; }
+  #bulkDeleteExpenseModal .bd-error { font-size:12px;color:#dc2626;margin-top:10px;display:none; }
+  #bulkDeleteExpenseModal .bd-foot {
+    padding:12px 18px;border-top:1px solid #e2e8f0;display:flex;justify-content:flex-end;gap:8px;
+  }
+</style>
+
+<div id="bulkDeleteExpenseModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="bulkDeleteExpenseTitle">
+  <div class="bd-box">
+    <div class="bd-head">
+      <h3 id="bulkDeleteExpenseTitle">Confirm delete</h3>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeBulkDeleteModal()" aria-label="Close">×</button>
+    </div>
+    <div class="bd-body">
+      <p>All expense entries under these sites will be permanently deleted from Expense Manager:</p>
+      <ul id="bulkDeleteSitesList"></ul>
+      <p class="bd-note">Attendance records and Projects/Site definitions are not affected. If attendance is marked again for a site tomorrow, its card and auto-salary expense reappear automatically.</p>
+      <div class="bd-error" id="bulkDeleteError"></div>
+    </div>
+    <div class="bd-foot">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeBulkDeleteModal()">Cancel</button>
+      <button type="button" id="bulkDeleteConfirmBtn" class="btn btn-primary btn-sm"
+              style="background:#dc2626;border-color:#dc2626;" onclick="submitBulkDelete()">
+        Yes, Delete Permanently
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var selectedSites = new Set();
+
+    window.enterDeleteMode = function () {
+      document.body.classList.add('expense-delete-mode');
+      document.getElementById('deleteModeToggle').style.display = 'none';
+      document.getElementById('deleteSelectedBtn').style.display = 'inline-flex';
+      document.getElementById('cancelDeleteBtn').style.display = 'inline-flex';
+    };
+
+    window.exitDeleteMode = function () {
+      document.body.classList.remove('expense-delete-mode');
+      selectedSites.clear();
+      document.querySelectorAll('.site-delete-checkbox').forEach(function (cb) { cb.checked = false; });
+      document.querySelectorAll('.expense-card-v5.selected-for-delete').forEach(function (el) {
+        el.classList.remove('selected-for-delete');
+      });
+      updateDeleteBtn();
+      document.getElementById('deleteModeToggle').style.display = 'inline-flex';
+      document.getElementById('deleteSelectedBtn').style.display = 'none';
+      document.getElementById('cancelDeleteBtn').style.display = 'none';
+    };
+
+    window.onSiteCheckboxChange = function (cb) {
+      var name = cb.getAttribute('data-site-name') || '';
+      var card = cb.closest('.expense-card-v5');
+      if (cb.checked) {
+        selectedSites.add(name);
+        if (card) card.classList.add('selected-for-delete');
+      } else {
+        selectedSites.delete(name);
+        if (card) card.classList.remove('selected-for-delete');
+      }
+      updateDeleteBtn();
+    };
+
+    function updateDeleteBtn() {
+      var btn = document.getElementById('deleteSelectedBtn');
+      var count = document.getElementById('deleteSelectedCount');
+      if (count) count.textContent = String(selectedSites.size);
+      if (btn) btn.disabled = selectedSites.size === 0;
+    }
+
+    window.openBulkDeleteConfirm = function () {
+      if (selectedSites.size === 0) return;
+      var ul = document.getElementById('bulkDeleteSitesList');
+      ul.innerHTML = '';
+      Array.from(selectedSites).forEach(function (s) {
+        var li = document.createElement('li');
+        li.textContent = s || '(Unassigned)';
+        ul.appendChild(li);
+      });
+      document.getElementById('bulkDeleteError').style.display = 'none';
+      document.getElementById('bulkDeleteExpenseModal').classList.remove('hidden');
+    };
+
+    window.closeBulkDeleteModal = function () {
+      document.getElementById('bulkDeleteExpenseModal').classList.add('hidden');
+    };
+
+    window.submitBulkDelete = async function () {
+      var btn = document.getElementById('bulkDeleteConfirmBtn');
+      var err = document.getElementById('bulkDeleteError');
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+      err.style.display = 'none';
+      try {
+        var body = new URLSearchParams();
+        Array.from(selectedSites).forEach(function (s) { body.append('sites', s); });
+        var res = await fetch("{% url 'expenses:delete_expenses_by_sites' %}", {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: body.toString(),
+        });
+        var data = {};
+        try { data = await res.json(); } catch (e) {}
+        if (!res.ok || !data.success) {
+          err.textContent = (data && data.error) || ('Delete failed (' + res.status + ')');
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Yes, Delete Permanently';
+          return;
+        }
+        window.location.reload();
+      } catch (e) {
+        err.textContent = 'Network error: ' + (e && e.message ? e.message : e);
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Yes, Delete Permanently';
+      }
+    };
   })();
 </script>
 {% endblock %}
