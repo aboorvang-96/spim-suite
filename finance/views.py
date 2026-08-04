@@ -1014,9 +1014,16 @@ def delete_expenses_by_sites(request):
     )
 
     # Case-insensitive OR across site names, scoped to this admin + expenses.
+    # FIX 2 (belt-and-suspenders): also match against the internal-whitespace
+    # collapsed form so "Foo  Bar" from a card matches a "Foo Bar" row.
+    import re as _re
     site_q = Q()
     for name in site_names:
-        site_q |= Q(location_site__iexact=name)
+        stripped = name.strip()
+        collapsed = _re.sub(r'\s+', ' ', stripped)
+        site_q |= Q(location_site__iexact=stripped)
+        if collapsed != stripped:
+            site_q |= Q(location_site__iexact=collapsed)
 
     base_qs = Transaction.objects.filter(admin_id=admin_id, type='expense').filter(site_q)
 
@@ -1038,6 +1045,68 @@ def delete_expenses_by_sites(request):
         'deleted_count': deleted_count,
         'deleted_by_site': deleted_by_site,
     })
+
+
+@login_required
+def debug_site_match(request):
+    """Diagnostic-only endpoint. For each card-list site name reports how
+    many Transaction rows this admin actually owns under that name (exact,
+    iexact, icontains) plus up to 3 similar samples from the raw distinct
+    location_site set. Gated by ?debug=1 AND admin-scope so it can be
+    reached in production without polluting the URL surface.
+
+    TODO remove after delete-flow verified.
+    """
+    if request.GET.get('debug') != '1':
+        return JsonResponse({'error': 'not enabled'}, status=404)
+
+    admin_id = get_admin_id(request.user)
+    if not admin_id:
+        return JsonResponse({'error': 'no admin scope'}, status=403)
+
+    from finance.services.site_cards import get_active_site_names
+    card_names = get_active_site_names(admin_id, restrict_today=False)
+
+    raw_qs = Transaction.objects.filter(admin_id=admin_id, type='expense')
+    distinct_stored = sorted(
+        set(
+            (v or '') for v in raw_qs.values_list('location_site', flat=True).distinct()
+        ),
+        key=lambda s: s.lower(),
+    )
+    stored_lower_prefix = [(s, s.strip().lower()[:5]) for s in distinct_stored]
+
+    per_card = []
+    for name in card_names:
+        stripped = (name or '').strip()
+        prefix = stripped.lower()[:5]
+        exact_ct    = raw_qs.filter(location_site=name).count()
+        iexact_ct   = raw_qs.filter(location_site__iexact=stripped).count()
+        icontain_ct = raw_qs.filter(location_site__icontains=stripped).count() if stripped else 0
+        similar = [s for (s, p) in stored_lower_prefix if p and prefix and p == prefix][:3]
+        per_card.append({
+            'card_data_site_name': name,
+            'stripped_for_match':  stripped,
+            'exact_count':         exact_ct,
+            'iexact_count':        iexact_ct,
+            'icontains_count':     icontain_ct,
+            'similar_stored_samples': similar,
+        })
+
+    # Sanity — first 3 raw rows: are admin_id + type as expected?
+    top_rows = list(raw_qs.order_by('-created_at').values(
+        'id', 'admin_id', 'type', 'location_site', 'amount', 'date',
+    )[:3])
+
+    return JsonResponse({
+        'admin_id_in_scope':       admin_id,
+        'total_transaction_rows':  Transaction.objects.filter(admin_id=admin_id).count(),
+        'total_expense_rows':      raw_qs.count(),
+        'distinct_location_sites_stored': distinct_stored,
+        'card_names_from_union':   card_names,
+        'per_card_match_counts':   per_card,
+        'top_3_expense_rows':      top_rows,
+    }, json_dumps_params={'indent': 2})
 
 # ═══════════════════════════════════════════════════════════════════════
 # Export — PDF + Excel. Both reuse `_apply_expense_filters` so the report

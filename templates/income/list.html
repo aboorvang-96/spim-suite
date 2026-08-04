@@ -1638,7 +1638,23 @@
           return;
         }
         if (!data.deleted_count || data.deleted_count === 0) {
-          err.textContent = 'No matching income entries were found for the selected sites. Nothing was deleted. Check server logs for the parsed site names vs. what is stored in Income.location_site.';
+          var sent = Array.from(selectedSites);
+          var listHtml = sent.map(function (s) {
+            return '<li>' + (s || '(unassigned)').replace(/[&<>]/g, function (c) {
+              return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];
+            }) + '</li>';
+          }).join('');
+          err.innerHTML =
+            '<div style="font-weight:600;margin-bottom:6px;">No entries were deleted.</div>' +
+            '<div>This can happen because:</div>' +
+            '<ul style="margin:6px 0 6px 18px;padding:0;">' +
+              '<li>These sites appear on the card list because they exist in the Projects or Attendance modules, but no income entries have been recorded under them yet.</li>' +
+              '<li>Site names may not match exactly between the card and the stored row.</li>' +
+            '</ul>' +
+            '<div style="margin-top:6px;">To remove a site from Projects or Attendance, use those modules directly — this Delete button only removes rows from Income Manager.</div>' +
+            '<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:600;">Site names attempted</summary>' +
+            '<ul style="margin:6px 0 0 18px;padding:0;">' + listHtml + '</ul></details>' +
+            '<div style="margin-top:8px;font-size:11px;color:#64748b;">Diagnostic: open <a href="/income/debug-site-match/?debug=1" target="_blank" style="color:#2563eb;text-decoration:underline;">/income/debug-site-match/?debug=1</a> to see how card names line up with stored data.</div>';
           err.style.display = 'block';
           btn.disabled = false;
           btn.textContent = 'Yes, Delete Permanently';

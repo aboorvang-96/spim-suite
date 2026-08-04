@@ -7,6 +7,7 @@ urlpatterns = [
     path('<int:pk>/edit/',              views.edit_transaction,   name='edit'),
     path('<int:pk>/delete/',            views.delete_transaction, name='delete'),
     path('bulk-delete-by-sites/',       views.delete_expenses_by_sites, name='delete_expenses_by_sites'),
+    path('debug-site-match/',           views.debug_site_match, name='debug_site_match'),
     path('export/pdf/',                 views.export_expenses_pdf,   name='export_pdf'),
     path('export/excel/',               views.export_expenses_excel, name='export_excel'),
     path('categories/',                 views.category_list,      name='categories'),
