@@ -315,7 +315,7 @@ def seed():
             if curr_date.weekday() == 6: # Sunday
                 status = 'leave'
             else:
-                # Weekdays: Present (86%), Half Day (6%), Leave (5%), Absent (3%)
+                # Weekdays: Present (86%), Half Day (6%), Leave (5%), No Week Off (3%)
                 r = random.random()
                 if r < 0.86:
                     status = 'present'
@@ -324,7 +324,7 @@ def seed():
                 elif r < 0.97:
                     status = 'leave'
                 else:
-                    status = 'absent'
+                    status = 'no_week_off'
             
             creator = creator_pool[total_att_records % len(creator_pool)]
             AttendanceRecord.objects.create(
@@ -346,7 +346,7 @@ def seed():
             if curr_date.weekday() == 6: # Sunday
                 status = 'leave'
             else:
-                # Weekdays: Present (90%), Half Day (4%), Leave (4%), Absent (2%)
+                # Weekdays: Present (90%), Half Day (4%), Leave (4%), No Week Off (2%)
                 r = random.random()
                 if r < 0.90:
                     status = 'present'
@@ -355,7 +355,7 @@ def seed():
                 elif r < 0.98:
                     status = 'leave'
                 else:
-                    status = 'absent'
+                    status = 'no_week_off'
             
             creator = creator_pool[total_att_records % len(creator_pool)]
             AttendanceRecord.objects.create(

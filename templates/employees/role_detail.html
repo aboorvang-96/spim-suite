@@ -256,7 +256,7 @@
         <div style="font-size: 14px; line-height: 1.6; color: #555;">
             {% if role.salary_type == 'monthly' %}
                 <strong>Monthly Salary:</strong> Base salary of ₹{{ role.base_salary|floatformat:2 }} is paid for the full month. 
-                Attendance deductions are applied for absent days (full day = 1 day deduction, half day = 0.5 day deduction).
+                Attendance deductions are applied for no-week-off days (full day = 1 day deduction, half day = 0.5 day deduction).
             {% else %}
                 <strong>Daily Wage:</strong> Base salary of ₹{{ role.base_salary|floatformat:2 }} is paid per day worked.
                 Only days marked as "Present" or "Half Day" are paid. Half days pay 50% of the daily rate.

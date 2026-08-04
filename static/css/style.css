@@ -703,9 +703,9 @@ body {
 .stat-icon-warning { background: var(--warning-soft); }
 
 /* Attendance Status Badges */
-.bg-present { background: var(--success-soft); color: #166534; }
-.bg-absent  { background: var(--danger-soft);  color: #991b1b; }
-.bg-leave   { background: var(--warning-soft); color: #92400e; }
+.bg-present   { background: var(--success-soft); color: #166534; }
+.bg-noweekoff { background: var(--danger-soft);  color: #991b1b; }
+.bg-leave     { background: var(--warning-soft); color: #92400e; }
 .bg-halfday { background: var(--info-soft);    color: #1e40af; }
 .bg-holiday { background: var(--slate-100);    color: var(--slate-600); }
 

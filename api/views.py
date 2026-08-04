@@ -326,15 +326,21 @@ def mobile_profile(request):
         date__gte=_cycle['start'],
         date__lte=_cycle['end'],
     )
+    # `absent` status has been retired and merged into `no_week_off`
+    # (migration 0009). The `absent` key here is DEPRECATED — kept only
+    # so older APKs continue to render this tile after the migration.
+    # Remove once the SPIM Lite rollout is complete.
+    _nwo_count = cycle_qs.filter(status='no_week_off').count()
     attendance_summary = {
         # `month` kept as the payroll month_key ('YYYY-MM') so the response
         # shape stays byte-identical for existing APK builds; only the
         # aggregated counts change from calendar-month to cycle-window.
-        'month':    _cycle['month_key'],
-        'present':  cycle_qs.filter(status='present').count(),
-        'half_day': cycle_qs.filter(status='half_day').count(),
-        'absent':   cycle_qs.filter(status='absent').count(),
-        'leave':    cycle_qs.filter(status='leave').count(),
+        'month':       _cycle['month_key'],
+        'present':     cycle_qs.filter(status='present').count(),
+        'half_day':    cycle_qs.filter(status='half_day').count(),
+        'no_week_off': _nwo_count,
+        'absent':      _nwo_count,  # DEPRECATED: dual-emit for legacy APKs
+        'leave':       cycle_qs.filter(status='leave').count(),
     }
 
     return JsonResponse({
@@ -393,7 +399,8 @@ def mobile_attendance(request):
     """
     GET  -> own attendance records (optional ?month=YYYY-MM filter).
     POST -> create own attendance for a single date (locked once created).
-            Body: { "date": "YYYY-MM-DD" (optional, defaults today), "status": "present|absent|half_day|leave" }
+            Body: { "date": "YYYY-MM-DD" (optional, defaults today), "status": "present|no_week_off|half_day|leave" }
+            (Legacy 'absent' from older APKs is coerced to 'no_week_off' — see coercion block below.)
 
     Locking rules (Suite ⇄ Lite sync hardening):
       * If a record already exists with source='admin', the employee cannot
@@ -428,6 +435,18 @@ def mobile_attendance(request):
         working_site_val = (data.get('working_site') or '').strip()
         if not site_val:
             site_val = (emp.site or '').strip()
+
+        # Inbound compat shim: retired 'absent' → 'no_week_off' (migration
+        # 0009). Older APKs in the field still POST 'absent'; coerce here
+        # so the validator below doesn't 400 them. Logged so we can track
+        # APK-rollout adoption and remove the shim later.
+        if status_val == 'absent':
+            _log.warning(
+                "mobile_attendance coerced legacy status='absent' to "
+                "'no_week_off' emp=%s date=%s",
+                emp.pk, date_str,
+            )
+            status_val = 'no_week_off'
 
         valid_status = {s for s, _ in AttendanceRecord.STATUS_CHOICES}
         if status_val not in valid_status:
@@ -1412,14 +1431,14 @@ def _mobile_salary_impl(request):
         sal is not None, getattr(sal, 'pk', None), emp.base_salary,
     )
 
-    # Attendance counts inside the cycle window (drives present/absent days).
+    # Attendance counts inside the cycle window (drives present/no-week-off days).
     att_qs = AttendanceRecord.objects.filter(
         employee=emp,
         date__gte=cycle_start,
         date__lte=cycle_end,
     )
-    present_days = att_qs.filter(status='present').count()
-    absent_days  = att_qs.filter(status='absent').count()
+    present_days     = att_qs.filter(status='present').count()
+    no_week_off_days = att_qs.filter(status='no_week_off').count()
 
     # Live net salary — same helper the Suite Salary dashboard uses, so SPIM
     # Lite sees the current attendance-prorated payable base instead of a
@@ -1431,9 +1450,9 @@ def _mobile_salary_impl(request):
     from employees.views import _compute_attendance_breakdown
     _log.info(
         '[MOBILE_SALARY_STEP2] emp_pk=%s pre_compute base_salary_type=%s '
-        'value=%r present_days=%s absent_days=%s',
+        'value=%r present_days=%s no_week_off_days=%s',
         emp.pk, type(emp.base_salary).__name__, emp.base_salary,
-        present_days, absent_days,
+        present_days, no_week_off_days,
     )
     net_salary_amount, paid_days_dec = _compute_attendance_breakdown(
         emp, cycle_end.replace(day=1), float(emp.base_salary),
@@ -1527,7 +1546,10 @@ def _mobile_salary_impl(request):
             'net_salary':          net_salary,
             'paid_days':           paid_days,
             'present_days':        present_days,
-            'absent_days':         absent_days,
+            'no_week_off_days':    no_week_off_days,
+            # DEPRECATED: legacy alias for older APKs. Same value as
+            # no_week_off_days. Remove once the SPIM Lite rollout completes.
+            'absent_days':         no_week_off_days,
             'cycle_start':         str(cycle_start),
             'cycle_end':           str(cycle_end),
             'attendance_earnings': attendance_earnings,
@@ -1556,7 +1578,8 @@ def mobile_dashboard(request):
     Fields:
       * employee identity (name, designation, department)
       * today_attendance_status  -> AttendanceRecord.status for today, or None
-      * current_month_present_days / current_month_absent_days
+      * current_month_present_days / current_month_no_week_off_days
+        (also current_month_absent_days, DEPRECATED alias for older APKs)
       * latest_net_salary  -> most recent SalaryUpdate.net_pay (or '0.00')
       * company.name / company.logo_url  -> dashboard.CompanySettings
     """
@@ -1579,14 +1602,16 @@ def mobile_dashboard(request):
     cycle_end   = _cycle['end']
 
     # Cycle attendance counts, capped at today so future-dated rows (auto
-    # Sunday holidays etc.) do not inflate the present/absent figures.
+    # Sunday holidays etc.) do not inflate the present/no-week-off figures.
     cycle_qs = AttendanceRecord.objects.filter(
         employee=emp,
         date__gte=cycle_start,
         date__lte=cycle_end,
     ).filter(date__lte=today)
-    present_days = cycle_qs.filter(status='present').count()
-    absent_days  = cycle_qs.filter(status__in=['absent', 'leave', 'no_week_off']).count()
+    present_days     = cycle_qs.filter(status='present').count()
+    # Unpaid days: leave + no_week_off (the retired 'absent' status was
+    # merged into 'no_week_off' by migration 0009).
+    no_week_off_days = cycle_qs.filter(status__in=['leave', 'no_week_off']).count()
 
     # Live net salary — same helper the Suite Salary dashboard uses, so the
     # SPIM Lite home tab no longer surfaces a stale SalaryUpdate.net_pay.
@@ -1619,10 +1644,14 @@ def mobile_dashboard(request):
             'name':                       emp.name,
             'designation':                emp.designation,
             'department':                 emp.department,
-            'today_attendance_status':    today_status,
-            'current_month_present_days': present_days,
-            'current_month_absent_days':  absent_days,
-            'latest_net_salary':          latest_net_salary,
+            'today_attendance_status':       today_status,
+            'current_month_present_days':    present_days,
+            'current_month_no_week_off_days': no_week_off_days,
+            # DEPRECATED: legacy alias for older APKs. Same value as
+            # current_month_no_week_off_days. Remove once the SPIM Lite
+            # rollout completes.
+            'current_month_absent_days':     no_week_off_days,
+            'latest_net_salary':             latest_net_salary,
             'company': {
                 'name':     company_name,
                 'logo_url': company_logo,
@@ -1925,8 +1954,8 @@ def mobile_hr_salary(request):
         date__gte=cycle_start,
         date__lte=cycle_end,
     )
-    present_days = att_qs.filter(status='present').count()
-    absent_days = att_qs.filter(status='absent').count()
+    present_days     = att_qs.filter(status='present').count()
+    no_week_off_days = att_qs.filter(status='no_week_off').count()
 
     # Reuse the exact same helper mobile_salary uses.
     from employees.views import _compute_attendance_breakdown
@@ -1958,11 +1987,14 @@ def mobile_hr_salary(request):
             'allowances':   allowances,
             'deductions':   deductions,
             'net_salary':   net_salary,
-            'paid_days':    paid_days,
-            'present_days': present_days,
-            'absent_days':  absent_days,
-            'cycle_start':  str(cycle_start),
-            'cycle_end':    str(cycle_end),
+            'paid_days':        paid_days,
+            'present_days':     present_days,
+            'no_week_off_days': no_week_off_days,
+            # DEPRECATED: legacy alias for older APKs. Same value as
+            # no_week_off_days. Remove once the SPIM Lite rollout completes.
+            'absent_days':      no_week_off_days,
+            'cycle_start':      str(cycle_start),
+            'cycle_end':        str(cycle_end),
         },
     })
 
@@ -2472,7 +2504,6 @@ def mobile_hr_expense_detail(request, pk):
 
 _ATTENDANCE_REPORT_SUMMARY_LABELS = (
     'Present',
-    'Absent',
     'Half Day',
     'Leave',
     'Holiday',
@@ -2609,7 +2640,6 @@ _REGISTER_STATUS_CODE = {
     # Keys match display_status() output; values match REGISTER_STATUS_CODE
     # in attendance/templates/attendance/index.html.
     'Present':      'P',
-    'Absent':       'A',
     'Half Day':     'HD',
     'Leave':        'L',
     'Holiday':      'H',
@@ -3350,7 +3380,7 @@ def mobile_hr_expense_report(request):
 #   * Employee queryset filter  — same admin_id-scoped roster mobile_hr_employees uses
 #   * AttendanceRecord queryset — same admin_id-scoped filter shape mobile_hr_attendance uses
 #   * Raw status literals       — mapped by the existing STATUS_DISPLAY table
-#                                 ('present' → Present, 'absent' → Absent)
+#                                 ('present' → Present, 'no_week_off' → No Week Off)
 #
 # The Suite schema has no "Late" concept (see _ATTENDANCE_REPORT_SUMMARY_LABELS
 # — Late is not among the recognised display labels). The endpoint therefore
@@ -3370,10 +3400,9 @@ def mobile_hr_dashboard_today(request):
 
     total_employees = Employee.objects.filter(admin_id=hr_admin_id).count()
 
-    # Group today's attendance rows by raw DB status. The two labels the
-    # dashboard needs ('present', 'absent') pass through display_status()
-    # unchanged, so aggregating on the raw column is equivalent and lets
-    # the database do the counting.
+    # Group today's attendance rows by raw DB status. Labels pass through
+    # display_status() unchanged, so aggregating on the raw column is
+    # equivalent and lets the database do the counting.
     status_counts = dict(
         AttendanceRecord.objects
         .filter(admin_id=hr_admin_id, date=today)
@@ -3381,12 +3410,17 @@ def mobile_hr_dashboard_today(request):
         .annotate(n=Count('id'))
     )
 
+    # 'absent' status was retired and merged into 'no_week_off' (migration
+    # 0009). 'absent' is retained as a DEPRECATED alias so older APKs keep
+    # rendering this tile — remove once the SPIM Lite rollout completes.
+    nwo_count = int(status_counts.get('no_week_off', 0))
     return JsonResponse({
         'success':         True,
         'date':            today.isoformat(),
         'total_employees': total_employees,
         'present':         int(status_counts.get('present', 0)),
-        'absent':          int(status_counts.get('absent', 0)),
+        'no_week_off':     nwo_count,
+        'absent':          nwo_count,  # DEPRECATED: dual-emit for legacy APKs
         # Suite has no "Late" attendance status — return null so the mobile
         # client renders "—" without inventing a rule server-side.
         'late':            None,

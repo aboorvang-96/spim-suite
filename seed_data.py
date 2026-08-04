@@ -315,7 +315,7 @@ def seed():
                 status = 'leave'
                 remark = 'Sunday weekly off'
             else:
-                # Weekdays: Present (88%), Half Day (5%), Leave (4%), Absent (3%)
+                # Weekdays: Present (88%), Half Day (5%), Leave (4%), No Week Off (3%)
                 r = random.random()
                 if r < 0.88:
                     status = 'present'
@@ -327,8 +327,8 @@ def seed():
                     status = 'leave'
                     remark = 'Prior permission leave'
                 else:
-                    status = 'absent'
-                    remark = 'Absent without notice'
+                    status = 'no_week_off'
+                    remark = 'No week off'
             
             creator = org1_creators[total_rec_count % len(org1_creators)]
             AttendanceRecord.objects.get_or_create(

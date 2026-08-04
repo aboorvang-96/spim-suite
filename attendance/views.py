@@ -13,14 +13,22 @@ from .services import apply_worklog_sideeffect, cleanup_worklog_on_delete
 from .utils import display_status
 import datetime
 import json
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 # Map every casing / spacing variant the client might POST to the model
 # enum. Extended for the payroll rules — holiday / week_off / no_week_off
 # are distinct; 'half day' preserved for back-compat.
+#
+# 'absent' is retained here (mapped to 'no_week_off') strictly as an
+# inbound-compat shim for older SPIM Lite APKs still POSTing the retired
+# status. The web UI never emits 'absent'; the mapping is a coercion so
+# a stale client cannot 400 on us. Remove once the APK rollout is complete.
 _STATUS_MAP = {
     'present':      'present',
-    'absent':       'absent',
+    'absent':       'no_week_off',
     'half day':     'half_day',
     'half_day':     'half_day',
     'half-day':     'half_day',
@@ -167,6 +175,14 @@ def save_attendance(request):
             continue
         raw_status = (record.get('status') or 'Present').lower()
         model_status = _STATUS_MAP.get(raw_status, 'present')
+        # Inbound compat shim: legacy 'absent' → 'no_week_off'. Logged so we
+        # can track APK-rollout adoption and remove the mapping later.
+        if raw_status == 'absent':
+            _log.warning(
+                "attendance.save_attendance coerced legacy status='absent' "
+                "to 'no_week_off' emp_id=%s date=%s admin_id=%s",
+                emp_id, record.get('date'), admin_id,
+            )
 
         # Optional per-record fields. Only persisted when supplied so an
         # admin bulk save that omits them doesn't clobber a value set

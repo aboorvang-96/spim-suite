@@ -142,7 +142,7 @@
     border-radius: 10px; font-size: 0.68rem; font-weight: 700;
 }
 .sb-present   { background: #d1fae5; color: #065f46; }
-.sb-absent    { background: #fee2e2; color: #7f1d1d; }
+.sb-noweekoff { background: #fee2e2; color: #7f1d1d; }
 .sb-leave     { background: #fef3c7; color: #78350f; }
 .sb-halfday   { background: #dbeafe; color: #0c2d6b; }
 .sb-holiday   { background: #e9d5ff; color: #581c87; }
@@ -510,7 +510,7 @@
                         <tr>
                             <th>Date</th>
                             <th>Present</th>
-                            <th>Absent</th>
+                            <th>No Week Off</th>
                             <th>Leave</th>
                             <th>Holiday</th>
                             <th>Weekly Off</th>
@@ -731,10 +731,10 @@ function getCsrfToken() {
 
 /* ─── Map DB status back to UI display strings ─── */
 var DB_STATUS_DISPLAY = {
-    'present':  'Present',
-    'absent':   'Absent',
-    'half_day': 'Half Day',
-    'leave':    'Leave'
+    'present':     'Present',
+    'no_week_off': 'No Week Off',
+    'half_day':    'Half Day',
+    'leave':       'Leave'
 };
 
 /* ─── Sync a list of records to the backend.
@@ -2285,7 +2285,7 @@ function ensureServerDataFetched(fromDate, toDate, cb) {
 }
 
 /* ═══════════════════════════════════════════════
-   SUMMARY (Task 6) — Daily table: Date | Present | Absent | Leave | Holiday | Half Day
+   SUMMARY (Task 6) — Daily table: Date | Present | No Week Off | Leave | Holiday | Half Day
 ═══════════════════════════════════════════════ */
 function generateSummary() {
     var from = document.getElementById('sumFromDate').value;
@@ -2345,7 +2345,7 @@ function _renderSummary() {
 
     const byDate = {};
     records.forEach(r => {
-        if (!byDate[r.date]) byDate[r.date] = { Present:0, Absent:0, Leave:0, Holiday:0, Sunday:0, 'Weekly Off':0, 'Half Day':0 };
+        if (!byDate[r.date]) byDate[r.date] = { Present:0, 'No Week Off':0, Leave:0, Holiday:0, Sunday:0, 'Weekly Off':0, 'Half Day':0 };
         const s = r.status || 'Present';
         // The backend (attendance/views.py::load_attendance) already
         // labels auto-marked Sundays as 'Sunday' and admin-selected
@@ -2366,7 +2366,7 @@ function _renderSummary() {
         tr.innerHTML = `
             <td><span class="sum-date-link" onclick="openDateDetail('${d}')">${fmt}</span></td>
             <td><span class="sb sb-present">${v.Present||0}</span></td>
-            <td><span class="sb sb-absent">${v.Absent||0}</span></td>
+            <td><span class="sb sb-noweekoff">${v['No Week Off']||0}</span></td>
             <td><span class="sb sb-leave">${v.Leave||0}</span></td>
             <td><span class="sb sb-holiday">${v.Holiday||0}</span></td>
             <td><span class="sb sb-weeklyoff">${v['Weekly Off']||0}</span></td>
@@ -2448,7 +2448,6 @@ function dailyEarning(status, baseSalary, cycleDays, salaryType) {
     if (status === 'Weekly Off') return pd;
     if (status === 'Leave')      return 0;
     if (status === 'No Week Off') return 0;
-    if (status === 'Absent')     return 0;
     return 0;
 }
 
@@ -2694,13 +2693,13 @@ function openDateDetail(dateStr) {
         return;
     }
 
-    const groups = { Present: [], 'Half Day': [], Leave: [], Holiday: [], Sunday: [], 'Weekly Off': [], Other: [] };
+    const groups = { Present: [], 'Half Day': [], Leave: [], Holiday: [], Sunday: [], 'Weekly Off': [], 'No Week Off': [], Other: [] };
     records.forEach(r => {
         const g = groups[r.status] !== undefined ? r.status : 'Other';
         groups[g].push(r);
     });
 
-    const slugMap = { Present:'present', 'Half Day':'halfday', Leave:'leave', Holiday:'holiday', Sunday:'sunday', 'Weekly Off':'weeklyoff', Other:'absent' };
+    const slugMap = { Present:'present', 'Half Day':'halfday', Leave:'leave', Holiday:'holiday', Sunday:'sunday', 'Weekly Off':'weeklyoff', 'No Week Off':'noweekoff', Other:'noweekoff' };
 
     let html = '';
     Object.entries(groups).forEach(([grp, rows]) => {
@@ -2823,7 +2822,6 @@ function exportDrawerExcel() {
 ═══════════════════════════════════════════════ */
 const REGISTER_STATUS_CODE = {
     'Present':     'P',
-    'Absent':      'A',
     'Half Day':    'HD',
     'Leave':       'L',
     'Holiday':     'H',

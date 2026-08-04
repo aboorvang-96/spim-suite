@@ -1516,7 +1516,6 @@ def _compute_attendance_earnings(employee, month_date, basic_salary):
       - half_day    → 0.5
       - leave       → 0.0
       - no_week_off → 0.0
-      - absent      → 0.0
 
     PaidDays    = Present + WeekOff + Holiday + 0.5·HalfDay
     DailySalary = MonthlySalary / CycleDays

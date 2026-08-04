@@ -82,7 +82,6 @@ def ensure_sunday_holidays(
 
 STATUS_DISPLAY = {
     'present':      'Present',
-    'absent':       'Absent',
     'half_day':     'Half Day',
     'leave':        'Leave',
     'holiday':      'Holiday',

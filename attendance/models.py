@@ -6,7 +6,6 @@ from accounts.date_utils import validate_not_future
 class AttendanceRecord(models.Model):
     STATUS_CHOICES = [
         ('present', 'Present'),
-        ('absent', 'Absent'),
         ('half_day', 'Half Day'),
         ('leave', 'Leave'),
         ('holiday', 'Holiday'),

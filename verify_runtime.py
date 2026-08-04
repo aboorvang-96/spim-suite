@@ -356,8 +356,8 @@ def run_test():
         presents = may_records.filter(status='present').count()
         half_days = may_records.filter(status='half_day').count()
         leaves = may_records.filter(status='leave').count()
-        absents = may_records.filter(status='absent').count()
-        print(f"John Doe attendance breakdown: present={presents}, half_day={half_days}, leave={leaves}, absent={absents}")
+        no_week_offs = may_records.filter(status='no_week_off').count()
+        print(f"John Doe attendance breakdown: present={presents}, half_day={half_days}, leave={leaves}, no_week_off={no_week_offs}")
         
         effective_days = presents + (half_days * 0.5)
         total_days = 31 # May has 31 days

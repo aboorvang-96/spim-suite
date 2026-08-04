@@ -879,8 +879,8 @@
 
         if (isDaily) {
             // Daily Basis: pay ONLY for full Present days. Half Day /
-            // Holiday / Weekly Off / Sunday / Leave / Absent / No Week
-            // Off all contribute 0 — mirrors the server-side rule in
+            // Holiday / Weekly Off / Sunday / Leave / No Week Off all
+            // contribute 0 — mirrors the server-side rule in
             // employees/views.py::_compute_attendance_breakdown.
             let worked = 0;
             records.forEach(r => {

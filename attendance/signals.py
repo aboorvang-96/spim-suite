@@ -79,7 +79,7 @@ def sync_expense_from_attendance(sender, instance, **kwargs):
         amount = compute_daily_salary_for_attendance(instance)
         site = _resolve_site(instance)
 
-        # Unpaid day (absent/leave/etc.) or no site → delete any prior row.
+        # Unpaid day (leave / no_week_off / etc.) or no site → delete any prior row.
         if amount <= 0 or not site:
             deleted, _ = existing_qs.delete()
             if amount > 0 and not site:
