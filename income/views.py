@@ -146,26 +146,68 @@ def income_list(request):
     else:
         incomes = Income.objects.filter(user=request.user).select_related('category')
         
-    # Filters
-    category_id   = request.GET.get('category', '')
-    date_from     = request.GET.get('date_from', '')
-    date_to       = request.GET.get('date_to', '')
-    search        = request.GET.get('search', '')
-    amount_min    = request.GET.get('amount_min', '')
-    amount_max    = request.GET.get('amount_max', '')
-    month         = request.GET.get('month', '')
-    account       = request.GET.get('account', '')
-    income_source = request.GET.get('income_source', '')
+    # Filters — parity with Expense Manager. Multi-value site/category/
+    # account/income_source read via getlist so ?site=A&site=B applies
+    # OR-within-field. from_date / to_date range takes precedence over
+    # month (mutually exclusive) and over date_from/date_to (legacy names
+    # kept for back-compat).
+    from finance.views import _clean_multi, _parse_iso_date
+    cat_ids        = _clean_multi(request, 'category')
+    accounts       = _clean_multi(request, 'account')
+    income_sources = _clean_multi(request, 'income_source')
+    sites          = _clean_multi(request, 'site')
 
-    if category_id:   incomes = incomes.filter(category_id=category_id)
-    if date_from:     incomes = incomes.filter(date__gte=date_from)
-    if date_to:       incomes = incomes.filter(date__lte=date_to)
-    if search:        incomes = incomes.filter(Q(title__icontains=search) | Q(source__icontains=search) | Q(description__icontains=search))
-    if amount_min:    incomes = incomes.filter(amount__gte=amount_min)
-    if amount_max:    incomes = incomes.filter(amount__lte=amount_max)
-    if month:         incomes = incomes.filter(date__startswith=month)
-    if account:       incomes = incomes.filter(payment_mode__icontains=account)
-    if income_source: incomes = incomes.filter(payment_by__icontains=income_source)
+    month      = (request.GET.get('month') or '').strip()
+    search     = (request.GET.get('search') or '').strip()
+    amount_min = (request.GET.get('amount_min') or '').strip()
+    amount_max = (request.GET.get('amount_max') or '').strip()
+    from_date  = _parse_iso_date(request.GET.get('from_date') or request.GET.get('date_from'))
+    to_date    = _parse_iso_date(request.GET.get('to_date')   or request.GET.get('date_to'))
+
+    if from_date or to_date:
+        month = ''
+
+    date_range_error = ''
+    if from_date and to_date and to_date < from_date:
+        date_range_error = 'To date is before From date — date range ignored.'
+        from_date = None
+        to_date = None
+
+    if cat_ids:
+        incomes = incomes.filter(category_id__in=cat_ids)
+
+    if from_date or to_date:
+        if from_date: incomes = incomes.filter(date__gte=from_date)
+        if to_date:   incomes = incomes.filter(date__lte=to_date)
+    elif month:
+        incomes = incomes.filter(date__startswith=month)
+
+    if search:     incomes = incomes.filter(
+        Q(title__icontains=search) | Q(source__icontains=search) | Q(description__icontains=search)
+    )
+    if amount_min: incomes = incomes.filter(amount__gte=amount_min)
+    if amount_max: incomes = incomes.filter(amount__lte=amount_max)
+
+    if accounts:
+        aq = Q()
+        for a in accounts:
+            aq |= Q(payment_mode__iexact=a)
+        incomes = incomes.filter(aq)
+
+    if income_sources:
+        sq = Q()
+        for s in income_sources:
+            sq |= Q(payment_by__iexact=s)
+        incomes = incomes.filter(sq)
+
+    if sites:
+        sq = Q()
+        for s in sites:
+            if s == 'UNASSIGNED':
+                sq |= Q(location_site__isnull=True) | Q(location_site='')
+            else:
+                sq |= Q(location_site__iexact=s)
+        incomes = incomes.filter(sq)
 
     from categories.models import IncomeCategory
     categories = IncomeCategory.objects.filter(created_by__admin_id=get_admin_id(request.user))
@@ -219,7 +261,15 @@ def income_list(request):
     # Income don't have a today-restriction — Income is a manual entry flow
     # and admins expect to see the full site universe.
     from finance.services.site_cards import get_active_site_names, has_unassigned_transactions
-    seed_site_names = get_active_site_names(admin_id, restrict_today=False)
+    selected_sites = [s for s in sites if s != 'UNASSIGNED']
+    if selected_sites:
+        universe = get_active_site_names(admin_id, restrict_today=False)
+        wanted = {s.lower() for s in selected_sites}
+        seed_site_names = [n for n in universe if n.lower() in wanted]
+        if not seed_site_names:
+            seed_site_names = selected_sites
+    else:
+        seed_site_names = get_active_site_names(admin_id, restrict_today=False)
 
     accounts_grouped = _group_incomes_by_account(incomes_list)
     sites_grouped    = _group_incomes_by_site(incomes_list, request.user, seed_names=seed_site_names)
@@ -242,9 +292,27 @@ def income_list(request):
         'average':          average,
         'total_balance':    sum(c['balance'] for c in balance_combos),
         'filters': {
-            'category': category_id, 'date_from': date_from, 'date_to': date_to,
-            'search': search, 'amount_min': amount_min, 'amount_max': amount_max,
-            'month': month, 'account': account, 'income_source': income_source,
+            # Multi-value.
+            'categories':     cat_ids,
+            'accounts':       accounts,
+            'income_sources': income_sources,
+            'sites':          sites,
+            # Scalars.
+            'search':      search,
+            'amount_min':  amount_min,
+            'amount_max':  amount_max,
+            'month':       month,
+            'from_date':   from_date.isoformat() if from_date else '',
+            'to_date':     to_date.isoformat() if to_date else '',
+            'date_range_error': date_range_error,
+            # Legacy scalar aliases — templates in the wild may still read
+            # filters.category / filters.account / filters.income_source /
+            # filters.date_from / filters.date_to. First selected value if any.
+            'category':      cat_ids[0] if cat_ids else '',
+            'account':       accounts[0] if accounts else '',
+            'income_source': income_sources[0] if income_sources else '',
+            'date_from':     from_date.isoformat() if from_date else '',
+            'date_to':       to_date.isoformat() if to_date else '',
         },
         'is_admin':            is_admin,
         'location_sites_json': _location_sites_json(request.user),

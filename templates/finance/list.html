@@ -380,11 +380,29 @@
         </div>
     </section>
 
-    <!-- FILTER BAR: Search | Account | Month | Income Source | Category | Apply | Clear -->
+    <!-- FILTER BAR: Search | Multi-select (Account, Source, Category, Site) |
+         From/To date range (with Month fallback) | Apply | Clear
+         Multi-select filters submit array-style (site=A&site=B). Backend
+         reads with request.GET.getlist(). Ctrl/Cmd+click for multi-select. -->
+    <style>
+      .multi-wrap { display: flex !important; flex-direction: column !important; gap: 3px !important; flex: 0 0 auto !important; }
+      .multi-wrap label { font-size: 9px !important; font-weight: 800 !important; color: #64748b !important;
+                          text-transform: uppercase !important; letter-spacing: 0.05em !important; margin: 0 !important; }
+      .multi-wrap select[multiple] { height: auto !important; padding: 4px 6px !important; min-height: 68px !important; }
+      .multi-hint { font-size: 10px !important; color: #94a3b8 !important; font-style: italic !important;
+                    margin: 4px 0 0 0 !important; flex-basis: 100% !important; }
+      .date-range-wrap { display: flex !important; align-items: center !important; gap: 4px !important; flex: 0 0 auto !important; }
+      .date-range-wrap label { font-size: 9px !important; font-weight: 800 !important; color: #64748b !important;
+                                text-transform: uppercase !important; letter-spacing: 0.05em !important; margin: 0 4px 0 0 !important; }
+      .month-disabled { opacity: 0.45 !important; cursor: not-allowed !important; }
+      .filter-error { color: #b91c1c !important; background: #fef2f2 !important; border: 1px solid #fecaca !important;
+                       padding: 6px 10px !important; border-radius: 6px !important; font-size: 11px !important;
+                       font-weight: 700 !important; flex-basis: 100% !important; margin-top: 4px !important; }
+    </style>
     <section class="filter-toolbar-v5">
         <form method="get" class="filter-form-v5" id="expFilterForm">
 
-            <!-- 1. Search (fixed width — does not flex-grow) -->
+            <!-- 1. Search -->
             <div style="position:relative;flex:0 0 180px;">
                 <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none;"
                      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -397,52 +415,77 @@
                        placeholder="Search...">
             </div>
 
-            <!-- 2. Account (JS-populated select, synced from shared accounts) -->
-            <select name="account" id="expFilterAccount"
-                    class="filter-control-v5" style="width:140px;" title="Filter by account">
-                <option value="">All Accounts</option>
-            </select>
+            <!-- 2. Account (multi) -->
+            <div class="multi-wrap">
+                <label>Account</label>
+                <select name="account" id="expFilterAccount" multiple size="4"
+                        class="filter-control-v5" style="width:150px;" title="Filter by account (Ctrl/Cmd+click for multi)">
+                </select>
+            </div>
 
-            <!-- 3. Date / Month -->
-            <input type="month" name="month"
+            <!-- 3. Date range (From / To) -->
+            <div class="date-range-wrap">
+                <label>From</label>
+                <input type="date" name="from_date"
+                       value="{{ filters.from_date|default:'' }}"
+                       class="filter-control-v5" style="width:135px;"
+                       title="From date (inclusive)">
+                <label style="margin-left:4px;">To</label>
+                <input type="date" name="to_date"
+                       value="{{ filters.to_date|default:'' }}"
+                       class="filter-control-v5" style="width:135px;"
+                       title="To date (inclusive)">
+            </div>
+
+            <!-- 4. Month (fallback when From/To empty) -->
+            <input type="month" name="month" id="expFilterMonth"
                    value="{{ filters.month|default:'' }}"
-                   class="filter-control-v5"
-                   style="width:148px;"
-                   title="Filter by month">
+                   class="filter-control-v5{% if filters.from_date or filters.to_date %} month-disabled{% endif %}"
+                   style="width:140px;"
+                   {% if filters.from_date or filters.to_date %}disabled aria-disabled="true"{% endif %}
+                   title="Filter by month (ignored when From/To is set)">
 
-            <!-- 4. Income Source (JS-populated select, synced from shared sources) -->
-            <select name="income_source" id="expFilterIncomeSource"
-                    class="filter-control-v5" style="width:148px;" title="Filter by income source">
-                <option value="">All Sources</option>
-            </select>
+            <!-- 5. Source (multi) -->
+            <div class="multi-wrap">
+                <label>Source</label>
+                <select name="income_source" id="expFilterIncomeSource" multiple size="4"
+                        class="filter-control-v5" style="width:150px;" title="Income source (Ctrl/Cmd+click for multi)">
+                </select>
+            </div>
 
-            <!-- 5. Category -->
-            <select name="category" class="filter-control-v5" style="width:140px;" title="Category">
-                <option value="">All Categories</option>
-                {% for cat in categories %}
-                <option value="{{ cat.pk }}"
-                    {% if filters.category == cat.pk|stringformat:'s' %}selected{% endif %}>
-                    {{ cat.name }}
-                </option>
-                {% endfor %}
-            </select>
+            <!-- 6. Category (multi) -->
+            <div class="multi-wrap">
+                <label>Category</label>
+                <select name="category" multiple size="4"
+                        class="filter-control-v5" style="width:150px;" title="Category (Ctrl/Cmd+click for multi)">
+                    {% for cat in categories %}
+                    <option value="{{ cat.pk }}"
+                        {% if cat.pk|stringformat:'s' in filters.categories %}selected{% endif %}>
+                        {{ cat.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
 
-            <!-- 6. Site — full universe (never restricted to today). -->
-            <select name="site" class="filter-control-v5" style="width:160px;" title="Filter by site">
-                <option value="">All Sites</option>
-                {% for s in site_options %}
-                <option value="{{ s.name }}"
-                    {% if filters.site|lower == s.name|lower %}selected{% endif %}>
-                    {{ s.name }}
-                </option>
-                {% endfor %}
-                {% if has_unassigned %}
-                <option value="UNASSIGNED"
-                    {% if filters.site == 'UNASSIGNED' %}selected{% endif %}>— Unassigned —</option>
-                {% endif %}
-            </select>
+            <!-- 7. Site (multi) — full universe, never restricted to today. -->
+            <div class="multi-wrap">
+                <label>Site</label>
+                <select name="site" multiple size="4"
+                        class="filter-control-v5" style="width:170px;" title="Site (Ctrl/Cmd+click for multi)">
+                    {% for s in site_options %}
+                    <option value="{{ s.name }}"
+                        {% if s.name in filters.sites %}selected{% endif %}>
+                        {{ s.name }}
+                    </option>
+                    {% endfor %}
+                    {% if has_unassigned %}
+                    <option value="UNASSIGNED"
+                        {% if 'UNASSIGNED' in filters.sites %}selected{% endif %}>— Unassigned —</option>
+                    {% endif %}
+                </select>
+            </div>
 
-            <!-- 7. Apply + 8. Clear -->
+            <!-- 8. Apply + 9. Clear -->
             <div style="display:flex;gap:8px;flex-shrink:0;margin-left:auto;">
                 <button type="submit" class="btn-v5 btn-primary-v5">Apply</button>
                 <a href="{% url 'expenses:list' %}"
@@ -456,41 +499,71 @@
                 </a>
             </div>
 
+            <p class="multi-hint">Hold Ctrl (Cmd on Mac) to pick multiple values in Account, Source, Category, or Site. Leave From/To empty to use the month picker.</p>
+            {% if filters.date_range_error %}
+            <div class="filter-error">{{ filters.date_range_error }}</div>
+            {% endif %}
+
         </form>
     </section>
 
     <script>
     (function() {
-        /* Populate Expense filter dropdowns from server-synced shared data */
-        var curAccount     = '{{ filters.account|default:""|escapejs }}';
-        var curSrc         = '{{ filters.income_source|default:""|escapejs }}';
+        /* Populate Expense filter dropdowns from server-synced shared data.
+           These two selects are multi-select — `selectedAccounts` and
+           `selectedSources` come through as JS arrays so any preselected
+           value survives an Apply round-trip. */
+        var selectedAccounts = {{ selected_accounts_json|safe }};
+        var selectedSources  = {{ selected_income_sources_json|safe }};
+        if (!Array.isArray(selectedAccounts)) selectedAccounts = [];
+        if (!Array.isArray(selectedSources))  selectedSources  = [];
         var accounts       = {{ accounts_json|safe }};
         var incomeSources  = {{ income_sources_json|safe }};
 
-        function fillSelect(selId, items, current) {
+        function fillMultiSelect(selId, items, currentList) {
             var sel = document.getElementById(selId);
             if (!sel) return;
-            var seen = false;
+            var lowerSet = {};
+            (currentList || []).forEach(function(v){ if (v) lowerSet[String(v).toLowerCase()] = true; });
+            var seen = {};
             items.forEach(function(name) {
                 if (!name) return;
                 var opt = document.createElement('option');
                 opt.value = name;
                 opt.textContent = name;
-                if (name === current) { opt.selected = true; seen = true; }
+                if (lowerSet[String(name).toLowerCase()]) { opt.selected = true; }
+                seen[String(name).toLowerCase()] = true;
                 sel.appendChild(opt);
             });
-            /* If the saved filter value isn't in the list, still show it selected */
-            if (current && !seen) {
+            /* Preserve any saved selection value that isn't in the master list yet. */
+            (currentList || []).forEach(function(v){
+                if (!v) return;
+                if (seen[String(v).toLowerCase()]) return;
                 var opt = document.createElement('option');
-                opt.value = current;
-                opt.textContent = current;
+                opt.value = v;
+                opt.textContent = v;
                 opt.selected = true;
                 sel.appendChild(opt);
-            }
+            });
         }
 
-        fillSelect('expFilterAccount',     accounts,      curAccount);
-        fillSelect('expFilterIncomeSource', incomeSources, curSrc);
+        fillMultiSelect('expFilterAccount',     accounts,      selectedAccounts);
+        fillMultiSelect('expFilterIncomeSource', incomeSources, selectedSources);
+
+        /* Grey out Month picker when From/To is set (visual echo of the
+           server-side precedence rule). Toggle live as the user edits. */
+        var fromEl  = document.querySelector('input[name="from_date"]');
+        var toEl    = document.querySelector('input[name="to_date"]');
+        var monthEl = document.getElementById('expFilterMonth');
+        function syncMonth() {
+            if (!monthEl) return;
+            var hasRange = (fromEl && fromEl.value) || (toEl && toEl.value);
+            monthEl.disabled = !!hasRange;
+            monthEl.classList.toggle('month-disabled', !!hasRange);
+        }
+        if (fromEl) fromEl.addEventListener('change', syncMonth);
+        if (toEl)   toEl.addEventListener('change', syncMonth);
+        syncMonth();
     })();
     </script>
 

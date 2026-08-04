@@ -465,7 +465,47 @@ def _expense_to_dict(t):
         'delete_url': f'/expenses/{t.pk}/delete/',
     }
 
-FILTER_PARAM_KEYS = ('date', 'month', 'site', 'income_source', 'category', 'search', 'account')
+FILTER_PARAM_KEYS = (
+    'date', 'month', 'from_date', 'to_date',
+    'site', 'income_source', 'category', 'search', 'account',
+)
+
+
+def _clean_multi(request, key):
+    """Read a multi-value querystring param. Accepts ?key=X&key=Y (native
+    <select multiple>) and also ?key=X,Y (comma-separated). Empty entries
+    stripped. Returns a list of non-empty strings."""
+    raw = request.GET.getlist(key)
+    out = []
+    for item in raw:
+        if item is None:
+            continue
+        for part in str(item).split(','):
+            p = part.strip()
+            if p:
+                out.append(p)
+    # Dedup preserving order (case-insensitive for string-name filters).
+    seen = set()
+    dedup = []
+    for x in out:
+        k = x.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        dedup.append(x)
+    return dedup
+
+
+def _parse_iso_date(raw):
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        return datetime.date.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
 
 
 def _apply_expense_filters(request, admin_id):
@@ -473,6 +513,13 @@ def _apply_expense_filters(request, admin_id):
     Parse the Expense page's querystring filters and apply them to a
     Transaction queryset. Returns (qs, filters, has_explicit_filter,
     exact_date, month, today_default_active).
+
+    Multi-value filters (site / category / account / income_source): read
+    with getlist so ?site=A&site=B applies OR-within-field. AND across
+    fields (chained .filter calls).
+
+    Date precedence: from_date/to_date range takes precedence over the
+    month picker. If either is set, month is ignored.
 
     Rule: if the user has set ANY filter param, honour it verbatim. If not
     (fresh landing on /expenses/), narrow to today's active sites — a soft
@@ -484,25 +531,34 @@ def _apply_expense_filters(request, admin_id):
         .select_related('category', 'branch')
     )
 
-    cat_id        = request.GET.get('category', '')
-    month         = request.GET.get('month', '')
-    search        = request.GET.get('search', '')
-    account       = request.GET.get('account', '')
-    income_source = request.GET.get('income_source', '')
-    site_filter   = request.GET.get('site', '')  # '' | site_name | 'UNASSIGNED'
+    cat_ids        = _clean_multi(request, 'category')
+    accounts       = _clean_multi(request, 'account')
+    income_sources = _clean_multi(request, 'income_source')
+    sites          = _clean_multi(request, 'site')
 
-    has_explicit_filter = any(
-        (request.GET.get(k) or '').strip() for k in FILTER_PARAM_KEYS
-    )
+    month     = (request.GET.get('month') or '').strip()
+    search    = (request.GET.get('search') or '').strip()
+    from_date = _parse_iso_date(request.GET.get('from_date'))
+    to_date   = _parse_iso_date(request.GET.get('to_date'))
 
-    _raw_date = request.GET.get('date', None)
-    if _raw_date is None or _raw_date.strip() == '':
-        exact_date = None
-    else:
-        try:
-            exact_date = datetime.date.fromisoformat(_raw_date.strip())
-        except (ValueError, TypeError):
-            exact_date = None
+    # from/to takes precedence over month.
+    if from_date or to_date:
+        month = ''
+
+    # Invalid range (to < from) — ignore both and surface an error via filters.
+    date_range_error = ''
+    if from_date and to_date and to_date < from_date:
+        date_range_error = 'To date is before From date — date range ignored.'
+        from_date = None
+        to_date = None
+
+    has_explicit_filter = any((
+        cat_ids, accounts, income_sources, sites,
+        month, search, from_date, to_date,
+        (request.GET.get('date') or '').strip(),
+    ))
+
+    exact_date = _parse_iso_date(request.GET.get('date'))
 
     today_default_active = False
     if not has_explicit_filter:
@@ -520,30 +576,65 @@ def _apply_expense_filters(request, admin_id):
             qs = qs.filter(site_q)
             today_default_active = True
 
-    if cat_id:        qs = qs.filter(category_id=cat_id)
+    if cat_ids:
+        qs = qs.filter(category_id__in=cat_ids)
+
     if exact_date:
         qs = qs.filter(date=exact_date)
+    elif from_date or to_date:
+        if from_date:
+            qs = qs.filter(date__gte=from_date)
+        if to_date:
+            qs = qs.filter(date__lte=to_date)
     elif month:
         qs = qs.filter(date__startswith=month)
-    if search:        qs = qs.filter(
-        Q(description__icontains=search) | Q(vendor__icontains=search) | Q(reference__icontains=search)
-    )
-    if account:       qs = qs.filter(payment_mode__icontains=account)
-    if income_source: qs = qs.filter(income_source__icontains=income_source)
-    if site_filter:
-        if site_filter == 'UNASSIGNED':
-            qs = qs.filter(Q(location_site__isnull=True) | Q(location_site=''))
-        else:
-            qs = qs.filter(location_site__iexact=site_filter)
+
+    if search:
+        qs = qs.filter(
+            Q(description__icontains=search) | Q(vendor__icontains=search) | Q(reference__icontains=search)
+        )
+
+    if accounts:
+        aq = Q()
+        for a in accounts:
+            aq |= Q(payment_mode__iexact=a)
+        qs = qs.filter(aq)
+
+    if income_sources:
+        sq = Q()
+        for s in income_sources:
+            sq |= Q(income_source__iexact=s)
+        qs = qs.filter(sq)
+
+    if sites:
+        sq = Q()
+        for s in sites:
+            if s == 'UNASSIGNED':
+                sq |= Q(location_site__isnull=True) | Q(location_site='')
+            else:
+                sq |= Q(location_site__iexact=s)
+        qs = qs.filter(sq)
 
     filters = {
-        'category':      cat_id,
+        # Multi-value lists — template iterates these for `selected` state.
+        'categories':    cat_ids,
+        'accounts':      accounts,
+        'income_sources': income_sources,
+        'sites':         sites,
+        # Scalars.
         'month':         month,
         'search':        search,
-        'account':       account,
-        'income_source': income_source,
-        'site':          site_filter,
+        'from_date':     from_date.isoformat() if from_date else '',
+        'to_date':       to_date.isoformat() if to_date else '',
         'date':          exact_date.isoformat() if exact_date else '',
+        'date_range_error': date_range_error,
+        # Back-compat scalar aliases — legacy template bits still read these
+        # (e.g. the Grouped-by-Site "no expenses for {{ filters.date }}"
+        # empty-state copy). First selected value if present, else ''.
+        'category':      cat_ids[0] if cat_ids else '',
+        'account':       accounts[0] if accounts else '',
+        'income_source': income_sources[0] if income_sources else '',
+        'site':          sites[0] if sites else '',
     }
     return qs, filters, has_explicit_filter, exact_date, month, today_default_active
 
@@ -689,9 +780,21 @@ def transaction_list(request):
     #   * Explicit site filter → just that one site.
     #   * Any other filter → full union across Projects/Attendance/Transaction.
     from finance.services.site_cards import get_active_site_names, has_unassigned_transactions
-    site_filter = filters.get('site') or ''
-    if site_filter and site_filter != 'UNASSIGNED':
-        seed_site_names = [site_filter]
+    selected_sites = [s for s in filters.get('sites') or [] if s != 'UNASSIGNED']
+    if selected_sites:
+        # User picked specific sites — cards must be restricted to that set.
+        # Intersect case-insensitively with the canonical universe so we
+        # preserve Projects.Site casing when the dropdown submitted a lower-
+        # cased spelling.
+        universe = get_active_site_names(admin_id, restrict_today=False)
+        wanted = {s.lower() for s in selected_sites}
+        seed_site_names = [n for n in universe if n.lower() in wanted]
+        # Fallback: if none of the picked names match the canonical universe
+        # (e.g. legacy row with a spelling that never made it into Projects),
+        # honour the user's raw selection so their filter never silently
+        # collapses to zero cards.
+        if not seed_site_names:
+            seed_site_names = selected_sites
     else:
         seed_site_names = get_active_site_names(
             admin_id,
@@ -750,6 +853,9 @@ def transaction_list(request):
         'location_sites_json':  _location_sites_json(request.user),
         'income_sources_json':  _shared_sources_json(request.user),
         'accounts_json':        _shared_accounts_json(request.user),
+        # JSON-encoded selected values for the multi-select preselection JS.
+        'selected_accounts_json':       json.dumps(filters.get('accounts') or []),
+        'selected_income_sources_json': json.dumps(filters.get('income_sources') or []),
         'balance_data':         balance_combos,
         # Default selection for the per-card month dropdown (Issue 4) —
         # the page renders with the current month pre-selected so each card
@@ -865,13 +971,17 @@ EXPORT_CATEGORY_LABELS = {
 
 
 def _filter_summary(filters):
+    def _join(v):
+        return ', '.join(v) if isinstance(v, (list, tuple)) else str(v)
     parts = []
     if filters.get('month'):         parts.append(f"Month={filters['month']}")
     if filters.get('date'):          parts.append(f"Date={filters['date']}")
-    if filters.get('site'):          parts.append(f"Site={filters['site']}")
-    if filters.get('income_source'): parts.append(f"Source={filters['income_source']}")
-    if filters.get('account'):       parts.append(f"Account={filters['account']}")
-    if filters.get('category'):      parts.append(f"Category={filters['category']}")
+    if filters.get('from_date') or filters.get('to_date'):
+        parts.append(f"Range={filters.get('from_date') or '…'}→{filters.get('to_date') or '…'}")
+    if filters.get('sites'):         parts.append(f"Site={_join(filters['sites'])}")
+    if filters.get('income_sources'): parts.append(f"Source={_join(filters['income_sources'])}")
+    if filters.get('accounts'):      parts.append(f"Account={_join(filters['accounts'])}")
+    if filters.get('categories'):    parts.append(f"Category={_join(filters['categories'])}")
     if filters.get('search'):        parts.append(f"Search={filters['search']}")
     return ' | '.join(parts) if parts else 'None'
 
@@ -891,6 +1001,28 @@ def _row_category_amounts(t):
 
 @login_required
 def export_expenses_pdf(request):
+    from django.http import HttpResponse
+    try:
+        return _render_expenses_pdf(request)
+    except Exception as exc:
+        # Surface the traceback in the browser instead of a raw 500 —
+        # Railway prod is where this gets tested, and grabbing the
+        # traceback out of the platform logs is friction. plain/text
+        # response keeps the browser from trying to render HTML.
+        import traceback
+        tb = traceback.format_exc()
+        body = (
+            'Expense PDF export failed.\n\n'
+            f'Exception: {type(exc).__name__}: {exc}\n\n'
+            'Traceback (most recent call last):\n'
+            f'{tb}\n'
+        )
+        resp = HttpResponse(body, content_type='text/plain; charset=utf-8', status=500)
+        resp['X-Export-Error'] = '1'
+        return resp
+
+
+def _render_expenses_pdf(request):
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -899,6 +1031,7 @@ def export_expenses_pdf(request):
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
     )
     from django.http import HttpResponse
+    from django.utils.html import escape as _esc
     from io import BytesIO
     from decimal import Decimal as _D
 
@@ -938,8 +1071,8 @@ def export_expenses_pdf(request):
         request.user.get_full_name() or request.user.username or request.user.email or 'Admin'
     )
     story.append(Paragraph('SPIM Suite — Expense Report', h1))
-    story.append(Paragraph(f'Generated {ts} · {admin_name}', small))
-    story.append(Paragraph(f'<b>Filters:</b> {_filter_summary(filters)}', label))
+    story.append(Paragraph(_esc(f'Generated {ts} · {admin_name}'), small))
+    story.append(Paragraph(f'<b>Filters:</b> {_esc(_filter_summary(filters))}', label))
     story.append(Spacer(1, 6))
 
     header_cells = ['Date', 'Credit', 'From', 'To'] + \
@@ -948,7 +1081,7 @@ def export_expenses_pdf(request):
     for g in sites_grouped:
         story.append(Spacer(1, 6))
         story.append(Paragraph(
-            f"<b>{g['site']}</b> &nbsp;·&nbsp; "
+            f"<b>{_esc(g['site'])}</b> &nbsp;·&nbsp; "
             f"Credit ₹{float(g['credit']):,.2f} &nbsp;·&nbsp; "
             f"Debit ₹{float(g['debit']):,.2f} &nbsp;·&nbsp; "
             f"Balance ₹{float(g['balance']):,.2f}",
