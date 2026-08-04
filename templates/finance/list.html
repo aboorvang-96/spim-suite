@@ -5,12 +5,61 @@
 {% block page_sub %}Track and manage business expenses{% endblock %}
 
 {% block header_actions %}
-<button type="button" id="openAddExpenseModal" class="btn btn-primary btn-sm">
-  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-    <path d="M12 4v16m8-8H4" />
-  </svg>
-  Add Expense
-</button>
+<div style="display:inline-flex;gap:8px;align-items:center;">
+  <div class="expense-download-menu" style="position:relative;">
+    <button type="button" id="expenseDownloadBtn" class="btn btn-secondary btn-sm"
+            style="display:inline-flex;align-items:center;gap:6px;"
+            aria-haspopup="menu" aria-expanded="false">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 11l5 5 5-5M12 4v12"/>
+      </svg>
+      Download
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </button>
+    <div id="expenseDownloadMenu" hidden
+         style="position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.12);min-width:180px;z-index:1200;overflow:hidden;">
+      <a href="{% url 'expenses:export_pdf' %}?{{ request.GET.urlencode }}"
+         style="display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px;font-weight:600;color:#334155;text-decoration:none;">
+        <span>📄</span> Download PDF
+      </a>
+      <a href="{% url 'expenses:export_excel' %}?{{ request.GET.urlencode }}"
+         style="display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px;font-weight:600;color:#334155;text-decoration:none;border-top:1px solid #f1f5f9;">
+        <span>📊</span> Download Excel
+      </a>
+    </div>
+  </div>
+  <button type="button" id="openAddExpenseModal" class="btn btn-primary btn-sm">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+      <path d="M12 4v16m8-8H4" />
+    </svg>
+    Add Expense
+  </button>
+</div>
+<script>
+(function(){
+  var btn = document.getElementById('expenseDownloadBtn');
+  var menu = document.getElementById('expenseDownloadMenu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var isOpen = !menu.hasAttribute('hidden');
+    if (isOpen) { menu.setAttribute('hidden',''); btn.setAttribute('aria-expanded','false'); }
+    else        { menu.removeAttribute('hidden'); btn.setAttribute('aria-expanded','true');  }
+  });
+  document.addEventListener('click', function(e){
+    if (!menu.contains(e.target) && e.target !== btn) {
+      menu.setAttribute('hidden','');
+      btn.setAttribute('aria-expanded','false');
+    }
+  });
+  menu.querySelectorAll('a').forEach(function(a){
+    a.addEventListener('mouseenter', function(){ a.style.background='#f8fafc'; });
+    a.addEventListener('mouseleave', function(){ a.style.background=''; });
+  });
+})();
+</script>
 {% endblock %}
 
 {% block content %}
@@ -357,7 +406,22 @@
                 {% endfor %}
             </select>
 
-            <!-- 6. Apply + 7. Clear -->
+            <!-- 6. Site — full universe (never restricted to today). -->
+            <select name="site" class="filter-control-v5" style="width:160px;" title="Filter by site">
+                <option value="">All Sites</option>
+                {% for s in site_options %}
+                <option value="{{ s.name }}"
+                    {% if filters.site|lower == s.name|lower %}selected{% endif %}>
+                    {{ s.name }}
+                </option>
+                {% endfor %}
+                {% if has_unassigned %}
+                <option value="UNASSIGNED"
+                    {% if filters.site == 'UNASSIGNED' %}selected{% endif %}>— Unassigned —</option>
+                {% endif %}
+            </select>
+
+            <!-- 7. Apply + 8. Clear -->
             <div style="display:flex;gap:8px;flex-shrink:0;margin-left:auto;">
                 <button type="submit" class="btn-v5 btn-primary-v5">Apply</button>
                 <a href="{% url 'expenses:list' %}"
@@ -595,6 +659,14 @@
       .site-row-input.from-input,
       .site-row-input.to-input { text-align: left !important; color: #334155 !important; }
     </style>
+    {% if today_default_active %}
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      Showing sites active today. Use filters or the site dropdown to see all sites.
+    </div>
+    {% endif %}
     <section class="expense-list-v5">
         <div class="expense-grid-v5" id="expenseGrid">
             {% for group in sites_grouped %}

@@ -440,25 +440,38 @@ def _expense_to_dict(t):
         'delete_url': f'/expenses/{t.pk}/delete/',
     }
 
-@login_required
-def transaction_list(request):
-    admin_id = get_admin_id(request.user)
-    qs = Transaction.objects.filter(admin_id=admin_id, type='expense').select_related('category', 'branch')
+FILTER_PARAM_KEYS = ('date', 'month', 'site', 'income_source', 'category', 'search', 'account')
 
-    # ── Server-side filter params (applied on initial load / URL navigation) ──
+
+def _apply_expense_filters(request, admin_id):
+    """
+    Parse the Expense page's querystring filters and apply them to a
+    Transaction queryset. Returns (qs, filters, has_explicit_filter,
+    exact_date, month, today_default_active).
+
+    Rule: if the user has set ANY filter param, honour it verbatim. If not
+    (fresh landing on /expenses/), narrow to today's active sites — a soft
+    default the moment any filter is touched.
+    """
+    qs = (
+        Transaction.objects
+        .filter(admin_id=admin_id, type='expense')
+        .select_related('category', 'branch')
+    )
+
     cat_id        = request.GET.get('category', '')
     month         = request.GET.get('month', '')
     search        = request.GET.get('search', '')
     account       = request.GET.get('account', '')
     income_source = request.GET.get('income_source', '')
     site_filter   = request.GET.get('site', '')  # '' | site_name | 'UNASSIGNED'
-    # Date filter — takes precedence over month. Default = today (IST) on
-    # first load; explicit `date=` in the querystring can override it, and
-    # `date=` (empty) clears back to the month-scope behavior.
+
+    has_explicit_filter = any(
+        (request.GET.get(k) or '').strip() for k in FILTER_PARAM_KEYS
+    )
+
     _raw_date = request.GET.get('date', None)
-    if _raw_date is None:
-        exact_date = timezone.localdate()
-    elif _raw_date.strip() == '':
+    if _raw_date is None or _raw_date.strip() == '':
         exact_date = None
     else:
         try:
@@ -466,9 +479,24 @@ def transaction_list(request):
         except (ValueError, TypeError):
             exact_date = None
 
+    today_default_active = False
+    if not has_explicit_filter:
+        # Soft default — narrow the Expense landing view to sites that are
+        # active in Attendance / WorkLog / Transaction today (IST). Anything
+        # the user changes drops this restriction immediately.
+        today = timezone.localdate()
+        today_names = [
+            s['name'] for s in _dynamic_site_options(admin_id, exact_date=today)
+        ]
+        if today_names:
+            site_q = Q()
+            for n in today_names:
+                site_q |= Q(location_site__iexact=n)
+            qs = qs.filter(site_q)
+            today_default_active = True
+
     if cat_id:        qs = qs.filter(category_id=cat_id)
     if exact_date:
-        # Date takes precedence — month field is ignored/grayed in the UI.
         qs = qs.filter(date=exact_date)
     elif month:
         qs = qs.filter(date__startswith=month)
@@ -482,6 +510,91 @@ def transaction_list(request):
             qs = qs.filter(Q(location_site__isnull=True) | Q(location_site=''))
         else:
             qs = qs.filter(location_site__iexact=site_filter)
+
+    filters = {
+        'category':      cat_id,
+        'month':         month,
+        'search':        search,
+        'account':       account,
+        'income_source': income_source,
+        'site':          site_filter,
+        'date':          exact_date.isoformat() if exact_date else '',
+    }
+    return qs, filters, has_explicit_filter, exact_date, month, today_default_active
+
+
+def _all_site_options(admin_id):
+    """Full universe of location_site names ever used by this tenant.
+
+    Union of:
+      * distinct Transaction.location_site (any type)
+      * attendance.AttendanceRecord.site  and  .site_ref__name
+      * projects.WorkLog.site__name
+      * projects.Site.name  (master list)
+    Returned as [{'name': <display>}] deduped case-insensitively, sorted A→Z.
+    """
+    names = set()
+
+    for n in (
+        Transaction.objects.filter(admin_id=admin_id)
+        .exclude(location_site__isnull=True).exclude(location_site='')
+        .values_list('location_site', flat=True).distinct()
+    ):
+        if n:
+            names.add(n.strip())
+
+    try:
+        from attendance.models import AttendanceRecord
+        att_qs = AttendanceRecord.objects.filter(admin_id=admin_id)
+        for n in att_qs.exclude(site__isnull=True).exclude(site='') \
+                       .values_list('site', flat=True).distinct():
+            if n:
+                names.add(n.strip())
+        for n in att_qs.filter(site_ref__isnull=False) \
+                       .values_list('site_ref__name', flat=True).distinct():
+            if n:
+                names.add(n.strip())
+    except Exception:
+        pass
+
+    try:
+        from projects.models import WorkLog
+        for n in (
+            WorkLog.objects.filter(admin_id=admin_id, site__isnull=False)
+            .values_list('site__name', flat=True).distinct()
+        ):
+            if n:
+                names.add(n.strip())
+    except Exception:
+        pass
+
+    try:
+        from projects.models import Site as _ProjSite
+        for n in (
+            _ProjSite.objects.filter(admin_id=admin_id)
+            .values_list('name', flat=True)
+        ):
+            if n:
+                names.add(n.strip())
+    except Exception:
+        pass
+
+    dedup = {}
+    for n in names:
+        key = n.lower()
+        if key and key not in dedup:
+            dedup[key] = n
+    return sorted(
+        ({'name': v} for v in dedup.values()),
+        key=lambda o: o['name'].lower(),
+    )
+
+
+@login_required
+def transaction_list(request):
+    admin_id = get_admin_id(request.user)
+    qs, filters, has_explicit_filter, exact_date, month, today_default_active = \
+        _apply_expense_filters(request, admin_id)
 
     total_expense = qs.aggregate(t=Sum('amount'))['t'] or 0
 
@@ -550,15 +663,12 @@ def transaction_list(request):
     accounts_grouped = _group_expenses_by_account(transactions_list)
     sites_grouped    = _group_expenses_by_site(transactions_list, request.user)
 
-    # Site dropdown options — scoped to whichever filter is currently
-    # active. Date wins if set (narrow scope); else month; else the
-    # current month as a safe default so the dropdown is never empty on
-    # first load.
-    if exact_date:
-        site_options = _dynamic_site_options(admin_id, exact_date=exact_date)
-    else:
-        month_for_options = month or timezone.now().strftime('%Y-%m')
-        site_options = _dynamic_site_options(admin_id, month_yyyy_mm=month_for_options)
+    # Site dropdown — full universe of sites the tenant has ever used, so
+    # the filter never looks broken. Add an "Unassigned" bucket when any
+    # Transaction row is missing location_site.
+    site_options = _all_site_options(admin_id)
+    has_unassigned = Transaction.objects.filter(admin_id=admin_id, type='expense') \
+        .filter(Q(location_site__isnull=True) | Q(location_site='')).exists()
 
     # Unique Credit From / Credit To values across this tenant's expense
     # rows — feeds the inline-edit dropdowns (datalists) in the site detail
@@ -585,13 +695,10 @@ def transaction_list(request):
         'this_month_expense':  this_month_expense,
         'expense_count':       expense_count,
         'categories':          Category.objects.filter(admin_id=admin_id, type='expense'),
-        'filters': {
-            'category': cat_id, 'month': month, 'search': search,
-            'account': account, 'income_source': income_source,
-            'site': site_filter,
-            'date':   exact_date.isoformat() if exact_date else '',
-        },
+        'filters':               filters,
         'site_options':          site_options,
+        'has_unassigned':        has_unassigned,
+        'today_default_active':  today_default_active,
         'is_date_scoped':        bool(exact_date),
         'today_ist_iso':         timezone.localdate().isoformat(),
         'location_sites_json':  _location_sites_json(request.user),
@@ -694,6 +801,248 @@ def delete_transaction(request, pk):
         t.delete()
         messages.success(request, "Deleted.")
     return redirect('expenses:list')
+
+# ═══════════════════════════════════════════════════════════════════════
+# Export — PDF + Excel. Both reuse `_apply_expense_filters` so the report
+# reflects the exact filter state the user has on screen (querystring is
+# forwarded from the Download links).
+# ═══════════════════════════════════════════════════════════════════════
+EXPORT_CATEGORIES = ['food', 'room', 'diesel', 'travel', 'ticket', 'other']
+EXPORT_CATEGORY_LABELS = {
+    'food':   'Food',
+    'room':   'Room',
+    'diesel': 'Diesel',
+    'travel': 'Travel',
+    'ticket': 'Ticket',
+    'other':  'Misc/Others',
+}
+
+
+def _filter_summary(filters):
+    parts = []
+    if filters.get('month'):         parts.append(f"Month={filters['month']}")
+    if filters.get('date'):          parts.append(f"Date={filters['date']}")
+    if filters.get('site'):          parts.append(f"Site={filters['site']}")
+    if filters.get('income_source'): parts.append(f"Source={filters['income_source']}")
+    if filters.get('account'):       parts.append(f"Account={filters['account']}")
+    if filters.get('category'):      parts.append(f"Category={filters['category']}")
+    if filters.get('search'):        parts.append(f"Search={filters['search']}")
+    return ' | '.join(parts) if parts else 'None'
+
+
+def _row_category_amounts(t):
+    """Return dict {food, room, diesel, travel, ticket, other} — amount in
+    the row's expense_category slot, 0 elsewhere. Diesel absorbs 'fuel';
+    an unset category falls into 'other' so nothing goes missing."""
+    cat = (getattr(t, 'expense_category', '') or '').strip().lower()
+    if cat == 'fuel':
+        cat = 'diesel'
+    if cat not in EXPORT_CATEGORIES:
+        cat = 'other'
+    amt = float(t.amount or 0)
+    return {c: (amt if c == cat else 0.0) for c in EXPORT_CATEGORIES}
+
+
+@login_required
+def export_expenses_pdf(request):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    )
+    from django.http import HttpResponse
+    from io import BytesIO
+    from decimal import Decimal as _D
+
+    admin_id = get_admin_id(request.user)
+    qs, filters, _has, _ed, _mo, _td = _apply_expense_filters(request, admin_id)
+    try:
+        rows = list(qs.order_by('location_site', 'date'))
+    except Exception:
+        rows = list(qs.defer('expense_category').order_by('location_site', 'date'))
+        for _t in rows:
+            _t.__dict__.setdefault('expense_category', '')
+
+    sites_grouped = _group_expenses_by_site(rows, request.user)
+
+    try:
+        from income.models import Income as _Income
+        total_income = _Income.objects.filter(admin_id=admin_id).aggregate(t=Sum('amount'))['t'] or 0
+    except Exception:
+        total_income = 0
+    total_expense = sum((float(t.amount or 0) for t in rows), 0.0)
+    net_balance = float(total_income) - total_expense
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=10 * mm, rightMargin=10 * mm,
+        topMargin=10 * mm, bottomMargin=10 * mm,
+    )
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle('H1', parent=styles['Heading1'], fontSize=14, spaceAfter=4)
+    small = ParagraphStyle('small', parent=styles['Normal'], fontSize=8, textColor=colors.grey)
+    label = ParagraphStyle('label', parent=styles['Normal'], fontSize=9)
+
+    story = []
+    ts = timezone.localtime().strftime('%d %b %Y, %H:%M IST')
+    admin_name = (
+        request.user.get_full_name() or request.user.username or request.user.email or 'Admin'
+    )
+    story.append(Paragraph('SPIM Suite — Expense Report', h1))
+    story.append(Paragraph(f'Generated {ts} · {admin_name}', small))
+    story.append(Paragraph(f'<b>Filters:</b> {_filter_summary(filters)}', label))
+    story.append(Spacer(1, 6))
+
+    header_cells = ['Date', 'Credit', 'From', 'To'] + \
+        [EXPORT_CATEGORY_LABELS[c] for c in EXPORT_CATEGORIES] + ['Remarks']
+
+    for g in sites_grouped:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            f"<b>{g['site']}</b> &nbsp;·&nbsp; "
+            f"Credit ₹{float(g['credit']):,.2f} &nbsp;·&nbsp; "
+            f"Debit ₹{float(g['debit']):,.2f} &nbsp;·&nbsp; "
+            f"Balance ₹{float(g['balance']):,.2f}",
+            label,
+        ))
+        data = [header_cells]
+        for t in g['transactions']:
+            cats = _row_category_amounts(t)
+            data.append([
+                t.date.strftime('%d %b %Y') if t.date else '',
+                f"{float(g['credit']):,.2f}" if g['credit'] else '',
+                (t.payment_by or '')[:24],
+                (t.vendor or '')[:24],
+                *(f"{cats[c]:,.2f}" if cats[c] else '' for c in EXPORT_CATEGORIES),
+                (t.description or '')[:60],
+            ])
+        tbl = Table(data, repeatRows=1, colWidths=[
+            22 * mm, 20 * mm, 26 * mm, 26 * mm,
+            18 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 22 * mm,
+            50 * mm,
+        ])
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f1f5f9')),
+            ('TEXTCOLOR',  (0, 0), (-1, 0), colors.HexColor('#334155')),
+            ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, 0), (-1, -1), 8),
+            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#cbd5e1')),
+            ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN',      (4, 1), (9, -1), 'RIGHT'),
+            ('ALIGN',      (1, 1), (1, -1), 'RIGHT'),
+        ]))
+        story.append(tbl)
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(
+        f"<b>Grand Total</b> &nbsp;·&nbsp; Income ₹{float(total_income):,.2f} &nbsp;·&nbsp; "
+        f"Expense ₹{total_expense:,.2f} &nbsp;·&nbsp; Net ₹{net_balance:,.2f}",
+        label,
+    ))
+    if not sites_grouped:
+        story.append(Paragraph('<i>No transactions match the current filter.</i>', label))
+
+    doc.build(story)
+    fname = 'spim_expenses_' + timezone.localtime().strftime('%Y-%m-%d_%H%M%S') + '.pdf'
+    resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@login_required
+def export_expenses_excel(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from django.http import HttpResponse
+    from io import BytesIO
+
+    admin_id = get_admin_id(request.user)
+    qs, filters, _has, _ed, _mo, _td = _apply_expense_filters(request, admin_id)
+    try:
+        rows = list(qs.order_by('location_site', 'date'))
+    except Exception:
+        rows = list(qs.defer('expense_category').order_by('location_site', 'date'))
+        for _t in rows:
+            _t.__dict__.setdefault('expense_category', '')
+
+    try:
+        from income.models import Income as _Income
+        total_income = float(_Income.objects.filter(admin_id=admin_id).aggregate(t=Sum('amount'))['t'] or 0)
+    except Exception:
+        total_income = 0.0
+    total_expense = sum((float(t.amount or 0) for t in rows), 0.0)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Expenses'
+
+    ts = timezone.localtime().strftime('%d %b %Y, %H:%M IST')
+    ws.cell(row=1, column=1, value=f'SPIM Suite — Expense Report  (Generated {ts})').font = Font(bold=True, size=13)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=12)
+    ws.cell(row=2, column=1, value=f'Filters: {_filter_summary(filters)}').font = Font(italic=True, color='64748B')
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=12)
+
+    headers = ['Site', 'Date', 'Credit', 'From', 'To'] + \
+        [EXPORT_CATEGORY_LABELS[c] for c in EXPORT_CATEGORIES] + ['Remarks']
+    header_fill = PatternFill('solid', fgColor='F1F5F9')
+    for i, h in enumerate(headers, start=1):
+        c = ws.cell(row=4, column=i, value=h)
+        c.font = Font(bold=True, color='334155')
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal='center', vertical='center')
+
+    r = 5
+    rows_by_site = {}
+    for t in rows:
+        rows_by_site.setdefault((t.location_site or '(No Site)'), []).append(t)
+    for site in sorted(rows_by_site.keys(), key=lambda s: s.lower()):
+        for t in sorted(rows_by_site[site], key=lambda x: (x.date or datetime.date.min)):
+            cats = _row_category_amounts(t)
+            ws.cell(row=r, column=1,  value=site)
+            ws.cell(row=r, column=2,  value=t.date.strftime('%Y-%m-%d') if t.date else '')
+            ws.cell(row=r, column=3,  value='')
+            ws.cell(row=r, column=4,  value=t.payment_by or '')
+            ws.cell(row=r, column=5,  value=t.vendor or '')
+            for i, k in enumerate(EXPORT_CATEGORIES):
+                cell = ws.cell(row=r, column=6 + i, value=(cats[k] or None))
+                if cats[k]:
+                    cell.number_format = '#,##0.00'
+            ws.cell(row=r, column=12, value=t.description or '')
+            r += 1
+
+    ws.freeze_panes = 'A5'
+    for i in range(1, 13):
+        col = get_column_letter(i)
+        max_len = 10
+        for row_cells in ws[col]:
+            v = row_cells.value
+            if v is None:
+                continue
+            max_len = max(max_len, min(40, len(str(v)) + 2))
+        ws.column_dimensions[col].width = max_len
+
+    summary_row = r + 1
+    ws.cell(row=summary_row,     column=1, value='Total Income').font  = Font(bold=True)
+    ws.cell(row=summary_row,     column=2, value=total_income).number_format = '#,##0.00'
+    ws.cell(row=summary_row + 1, column=1, value='Total Expense').font = Font(bold=True)
+    ws.cell(row=summary_row + 1, column=2, value=total_expense).number_format = '#,##0.00'
+    ws.cell(row=summary_row + 2, column=1, value='Net Balance').font   = Font(bold=True)
+    ws.cell(row=summary_row + 2, column=2, value=total_income - total_expense).number_format = '#,##0.00'
+
+    buf = BytesIO()
+    wb.save(buf)
+    fname = 'spim_expenses_' + timezone.localtime().strftime('%Y-%m-%d_%H%M%S') + '.xlsx'
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
 
 @login_required
 def category_list(request):
