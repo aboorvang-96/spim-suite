@@ -32,17 +32,8 @@
                        max="{{ date_max|date:'Y-m-d' }}">
             </div>
             <div class="ms-field">
-                <label>Source Site</label>
+                <label>Site</label>
                 <select class="ms-select" id="h_site">
-                    <option value="">— None —</option>
-                    {% for s in sites %}
-                    <option value="{{ s.id }}">{{ s.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="ms-field">
-                <label>Destination Site</label>
-                <select class="ms-select" id="h_dest_site">
                     <option value="">— None —</option>
                     {% for s in sites %}
                     <option value="{{ s.id }}">{{ s.name }}</option>
@@ -91,8 +82,7 @@
         <table class="data-table" style="min-width:1000px;">
             <thead><tr>
                 <th style="width:120px;">Date</th>
-                <th>From Site</th>
-                <th>To Site</th>
+                <th>Site</th>
                 <th>Material</th>
                 <th>Serial No</th>
                 <th>From</th>
@@ -104,8 +94,7 @@
                 {% for mv in history %}
                 <tr>
                     <td>{{ mv.movement_date|date:'d M Y' }}</td>
-                    <td>{% if mv.source_site %}{{ mv.source_site.name }}{% else %}—{% endif %}</td>
-                    <td>{% if mv.destination_site %}{{ mv.destination_site.name }}{% else %}—{% endif %}</td>
+                    <td>{% if mv.site %}{{ mv.site.name }}{% else %}—{% endif %}</td>
                     <td>{{ mv.stock_item.material_type.brand.name }} · {{ mv.stock_item.material_type.name }}</td>
                     <td>{{ mv.stock_item.serial_no }}</td>
                     <td>{{ mv.from_person|default:'— stock —' }}</td>
@@ -116,7 +105,7 @@
                     {% endif %}
                 </tr>
                 {% empty %}
-                <tr><td colspan="{% if is_admin %}9{% else %}8{% endif %}" class="ms-empty">No movements this month.</td></tr>
+                <tr><td colspan="{% if is_admin %}8{% else %}7{% endif %}" class="ms-empty">No movements this month.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -145,11 +134,10 @@ document.getElementById('h_month').addEventListener('change', function () {
     // material_type_id -> {id, brand_id, label}
     const MTYPE_BY_ID = new Map(MTYPES.map(m => [String(m.id), m]));
 
-    const hSite    = document.getElementById('h_site');
-    const hDestSite= document.getElementById('h_dest_site');
-    const hDate    = document.getElementById('h_date');
-    const hFrom    = document.getElementById('h_from');
-    const hTo      = document.getElementById('h_to');
+    const hSite   = document.getElementById('h_site');
+    const hDate   = document.getElementById('h_date');
+    const hFrom   = document.getElementById('h_from');
+    const hTo     = document.getElementById('h_to');
     const tbody   = document.getElementById('batch_rows');
     const btnAdd  = document.getElementById('btn_add_row');
     const btnSave = document.getElementById('btn_save_all');
@@ -468,12 +456,11 @@ document.getElementById('h_month').addEventListener('change', function () {
 
         btnSave.disabled = true;
         const r = await MS.post("{% url 'material_stock:movement_batch_add' %}", {
-            movement_date:        hDate.value,
-            source_site_id:       hSite.value ? parseInt(hSite.value, 10) : null,
-            destination_site_id:  hDestSite.value ? parseInt(hDestSite.value, 10) : null,
-            from_person:          hFrom.value.trim(),
-            to_person:            hTo.value.trim(),
-            rows:                 rows,
+            movement_date: hDate.value,
+            site_id:       hSite.value ? parseInt(hSite.value, 10) : null,
+            from_person:   hFrom.value.trim(),
+            to_person:     hTo.value.trim(),
+            rows:          rows,
         });
         btnSave.disabled = false;
 

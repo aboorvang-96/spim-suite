@@ -147,16 +147,25 @@ def _brands_payload(admin_id):
 # PAGE 1 — Stock  (default landing page)
 # ===========================================================================
 
-def _stock_report_rows(admin_id, params, today):
+_REPORT_FILTER_KEYS = (
+    'serial', 'site_id', 'equipment_id', 'material_type_id',
+    'in_from', 'in_to', 'out_from', 'out_to',
+    'from_person', 'to_person',
+    'has_in', 'has_out',
+)
+
+
+def _stock_report_rows(admin_id, params):
     """
     Shared summary-row builder used by index() and the PDF/Excel exports.
-    Groups by (material_type + purchase_date). Site is NOT a grouping key:
-    the column shows the site name only when every item in the group shares
-    one site, otherwise it shows an em-dash.
+    Groups by (equipment + material_type) ONLY. Purchase date is no longer
+    a grouping key. The Site column shows the site name only when every
+    item in the group shares one site; otherwise it's an em-dash.
 
-    `params` is a plain dict of GET-style filters:
-        serial, site_id, equipment_id, material_type_id,
-        pdate_from, pdate_to, has_in ('1'), has_out ('1')
+    Movement filters (in_from/in_to/out_from/out_to/from_person/to_person)
+    restrict WHICH StockMovement rows are counted into the Stock In / Stock
+    Out totals. Item rows still appear with zero counts unless
+    has_in / has_out is toggled.
     """
     items_qs = (StockItem.objects.filter(admin_id=admin_id)
                 .select_related('material_type', 'material_type__brand', 'site'))
@@ -179,35 +188,60 @@ def _stock_report_rows(admin_id, params, today):
             items_qs = items_qs.filter(material_type_id=int(params['material_type_id']))
     except (ValueError, TypeError):
         pass
-    pd_from = _to_date(params.get('pdate_from'))
-    if pd_from:
-        items_qs = items_qs.filter(purchase_date__gte=pd_from)
-    pd_to = _to_date(params.get('pdate_to'))
-    if pd_to:
-        items_qs = items_qs.filter(purchase_date__lte=pd_to)
 
     items = list(items_qs)
+    if not items:
+        item_ids = []
+    else:
+        item_ids = [it.id for it in items]
 
-    # Movement in/out counts per stock item (single query, unfiltered — we
-    # want the item's real balance regardless of the row-level filters).
-    mv_rows = (StockMovement.objects.filter(admin_id=admin_id)
-               .values('stock_item_id')
+    # Movement classification: a row counts as OUT iff to_person is set
+    # (non-null, non-empty); otherwise IN (return-to-stock or initial-in).
+    IS_OUT = Q(to_person__isnull=False) & ~Q(to_person='')
+    IS_IN  = Q(to_person__isnull=True) | Q(to_person='')
+
+    from_person = (params.get('from_person') or '').strip()
+    to_person   = (params.get('to_person') or '').strip()
+    in_from  = _to_date(params.get('in_from'))
+    in_to    = _to_date(params.get('in_to'))
+    out_from = _to_date(params.get('out_from'))
+    out_to   = _to_date(params.get('out_to'))
+
+    # Base movement queryset limited to our item set + tenant.
+    base_mv = StockMovement.objects.filter(admin_id=admin_id, stock_item_id__in=item_ids)
+    if from_person:
+        base_mv = base_mv.filter(from_person__icontains=from_person)
+    if to_person:
+        base_mv = base_mv.filter(to_person__icontains=to_person)
+
+    # IN-side: apply IN date range if set.
+    in_filter = IS_IN
+    if in_from:
+        in_filter &= Q(movement_date__gte=in_from)
+    if in_to:
+        in_filter &= Q(movement_date__lte=in_to)
+    # OUT-side: apply OUT date range if set.
+    out_filter = IS_OUT
+    if out_from:
+        out_filter &= Q(movement_date__gte=out_from)
+    if out_to:
+        out_filter &= Q(movement_date__lte=out_to)
+
+    mv_rows = (base_mv.values('stock_item_id')
                .annotate(
-                   outs=Count('id', filter=Q(to_person__isnull=False) & ~Q(to_person='')),
-                   ins=Count('id',  filter=Q(to_person__isnull=True) | Q(to_person='')),
+                   ins  = Count('id', filter=in_filter),
+                   outs = Count('id', filter=out_filter),
                ))
     mv_map = {r['stock_item_id']: (r['ins'], r['outs']) for r in mv_rows}
 
     groups = {}
     for it in items:
-        key = (it.material_type_id, it.purchase_date)
+        key = it.material_type_id
         g = groups.get(key)
         if g is None:
             g = groups[key] = {
                 'material_type_id': it.material_type_id,
                 'material_label':   f"{it.material_type.brand.name} · {it.material_type.name}",
-                'purchase_date':    it.purchase_date,
-                'is_new':           it.purchase_date == today,
                 'quantity':         0,
                 'stock_in':         0,
                 'stock_out':        0,
@@ -223,18 +257,14 @@ def _stock_report_rows(admin_id, params, today):
             g['_site_name'] = it.site.name
 
     for g in groups.values():
-        # Single-site group iff exactly one non-null site is present.
         sids = {s for s in g['_site_ids'] if s is not None}
         g['site_label'] = g['_site_name'] if len(sids) == 1 else ''
         g['balance'] = g['quantity'] + g['stock_in'] - g['stock_out']
         del g['_site_ids']
         del g['_site_name']
 
-    group_list = sorted(groups.values(),
-                        key=lambda g: (g['material_label'],
-                                       g['purchase_date'] or date_cls.min))
+    group_list = sorted(groups.values(), key=lambda g: g['material_label'])
 
-    # Post-aggregation filters (need summed values).
     if params.get('has_in') in ('1', 'true', 'on'):
         group_list = [g for g in group_list if g['stock_in'] > 0]
     if params.get('has_out') in ('1', 'true', 'on'):
@@ -250,17 +280,8 @@ def index(request):
     admin_id = get_admin_id(request.user)
     today    = timezone.localdate()
 
-    filters = {
-        'serial':           request.GET.get('serial', ''),
-        'site_id':          request.GET.get('site_id', ''),
-        'equipment_id':     request.GET.get('equipment_id', ''),
-        'material_type_id': request.GET.get('material_type_id', ''),
-        'pdate_from':       request.GET.get('pdate_from', ''),
-        'pdate_to':         request.GET.get('pdate_to', ''),
-        'has_in':           request.GET.get('has_in', ''),
-        'has_out':          request.GET.get('has_out', ''),
-    }
-    group_list = _stock_report_rows(admin_id, filters, today)
+    filters = {k: request.GET.get(k, '') for k in _REPORT_FILTER_KEYS}
+    group_list = _stock_report_rows(admin_id, filters)
 
     # Filter-bar dropdown data.
     equipments = list(Brand.objects.filter(admin_id=admin_id, is_active=True)
@@ -298,10 +319,8 @@ def stock_report_export(request):
     """
     admin_id = get_admin_id(request.user)
     today    = timezone.localdate()
-    filters = {k: request.GET.get(k, '') for k in
-               ('serial', 'site_id', 'equipment_id', 'material_type_id',
-                'pdate_from', 'pdate_to', 'has_in', 'has_out')}
-    rows = _stock_report_rows(admin_id, filters, today)
+    filters = {k: request.GET.get(k, '') for k in _REPORT_FILTER_KEYS}
+    rows = _stock_report_rows(admin_id, filters)
     fmt  = (request.GET.get('format') or 'pdf').lower()
 
     if fmt == 'xlsx':
@@ -322,7 +341,7 @@ def stock_report_export(request):
         ws.cell(row=2, column=1, value=f'Generated: {today.strftime("%Y-%m-%d")}  •  Rows: {len(rows)}'
                 ).font = Font(italic=True, color='64748B')
 
-        headers = ['SL No', 'Purchase Date', 'Equipment', 'Material Type',
+        headers = ['SL', 'Item (Equipment · Material Type)',
                    'Site', 'Quantity', 'Stock In', 'Stock Out', 'Balance']
         for ci, h in enumerate(headers, start=1):
             c = ws.cell(row=4, column=ci, value=h)
@@ -331,25 +350,20 @@ def stock_report_export(request):
             c.alignment = Alignment(vertical='center')
 
         for ri, g in enumerate(rows, start=5):
-            # material_label = "Brand · Material" — split for display.
-            brand_part, _, mt_part = g['material_label'].partition(' · ')
             ws.cell(row=ri, column=1, value=g['sl'])
-            ws.cell(row=ri, column=2,
-                    value=g['purchase_date'].strftime('%d %b %Y') if g['purchase_date'] else '')
-            ws.cell(row=ri, column=3, value=brand_part)
-            ws.cell(row=ri, column=4, value=mt_part or g['material_label'])
-            ws.cell(row=ri, column=5, value=g['site_label'] or '—')
-            ws.cell(row=ri, column=6, value=g['quantity']).alignment = Alignment(horizontal='center')
-            ws.cell(row=ri, column=7, value=g['stock_in']).alignment = Alignment(horizontal='center')
-            ws.cell(row=ri, column=8, value=g['stock_out']).alignment = Alignment(horizontal='center')
-            ws.cell(row=ri, column=9, value=g['balance']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=2, value=g['material_label'])
+            ws.cell(row=ri, column=3, value=g['site_label'] or '—')
+            ws.cell(row=ri, column=4, value=g['quantity']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=5, value=g['stock_in']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=6, value=g['stock_out']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=7, value=g['balance']).alignment = Alignment(horizontal='center')
 
         last_row = max(4, 4 + len(rows))
         for rr in range(4, last_row + 1):
             for cc in range(1, len(headers) + 1):
                 ws.cell(row=rr, column=cc).border = border
 
-        widths = [7, 14, 20, 22, 20, 10, 10, 11, 10]
+        widths = [7, 42, 22, 11, 11, 11, 11]
         for i, w in enumerate(widths, start=1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -400,24 +414,20 @@ def stock_report_export(request):
             Spacer(1, 4),
         ]
 
-        headers = ['SL', 'Purchase Date', 'Equipment', 'Material Type',
+        headers = ['SL', 'Item (Equipment · Material Type)',
                    'Site', 'Qty', 'Stock In', 'Stock Out', 'Balance']
         data = [headers]
         for g in rows:
-            brand_part, _, mt_part = g['material_label'].partition(' · ')
             data.append([
                 str(g['sl']),
-                g['purchase_date'].strftime('%d %b %Y') if g['purchase_date'] else '',
-                _wrap(brand_part),
-                _wrap(mt_part or g['material_label']),
+                _wrap(g['material_label']),
                 _wrap(g['site_label'] or '—'),
                 str(g['quantity']),
                 str(g['stock_in']),
                 str(g['stock_out']),
                 str(g['balance']),
             ])
-        col_widths = [1.0*cm, 2.6*cm, 4.5*cm, 5.5*cm, 4.5*cm,
-                      1.4*cm, 1.9*cm, 1.9*cm, 1.9*cm]
+        col_widths = [1.0*cm, 10.5*cm, 5.5*cm, 1.9*cm, 2.4*cm, 2.4*cm, 2.4*cm]
         t = Table(data, colWidths=col_widths, repeatRows=1)
         t.setStyle(TableStyle([
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -425,8 +435,8 @@ def stock_report_export(request):
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
             ('GRID',       (0, 0), (-1, -1), 0.3, colors.HexColor('#CBD5E1')),
             ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN',      (0, 0), (1, -1), 'CENTER'),
-            ('ALIGN',      (5, 0), (-1, -1), 'CENTER'),
+            ('ALIGN',      (0, 0), (0, -1), 'CENTER'),
+            ('ALIGN',      (3, 0), (-1, -1), 'CENTER'),
             ('FONTSIZE',   (0, 1), (-1, -1), 8),
         ]))
         story.append(t)
@@ -531,7 +541,7 @@ def movements(request):
                .filter(admin_id=admin_id,
                        movement_date__gte=month_start,
                        movement_date__lt=next_start)
-               .select_related('source_site', 'destination_site',
+               .select_related('site',
                                'stock_item', 'stock_item__material_type',
                                'stock_item__material_type__brand'))
 
@@ -869,14 +879,10 @@ def movement_batch_add(request):
     except ValidationError as e:
         return _err('; '.join(e.messages))
 
-    # Source + destination sites are both optional. If provided, they must
-    # belong to this tenant.
-    source_site = _get_tenant_site(admin_id, data.get('source_site_id'))
-    if data.get('source_site_id') and source_site is None:
-        return _err('Invalid source site for this account.')
-    dest_site = _get_tenant_site(admin_id, data.get('destination_site_id'))
-    if data.get('destination_site_id') and dest_site is None:
-        return _err('Invalid destination site for this account.')
+    # Site is optional. If provided, must belong to this tenant.
+    site = _get_tenant_site(admin_id, data.get('site_id'))
+    if data.get('site_id') and site is None:
+        return _err('Invalid site for this account.')
 
     from_person = _clean(data.get('from_person'), 150) or None
     to_person   = _clean(data.get('to_person'), 150) or None
@@ -917,22 +923,16 @@ def movement_batch_add(request):
 
                     mv = StockMovement.objects.create(
                         admin_id=admin_id, stock_item=item, movement_date=mdate,
-                        source_site=source_site, destination_site=dest_site,
+                        site=site,
                         from_person=from_person, to_person=to_person,
                         remarks=row['remarks'],
                         created_by=request.user if request.user.is_authenticated else None,
                     )
 
-                    # Live pointer on the item. The item's own StockItem.site
-                    # (home site) is NOT modified — sites recorded on the
-                    # movement are ledger-only.
+                    # Live pointer on the item. StockItem.site (home site)
+                    # is NOT modified — the movement's site is ledger-only.
                     item.current_holder_name = to_person
-                    # Prefer destination for the live "current site" pointer;
-                    # fall back to source, else clear.
-                    item.current_site_name = (
-                        dest_site.name if dest_site
-                        else (source_site.name if source_site else None)
-                    )
+                    item.current_site_name = site.name if site else None
                     item.status = StockItem.ISSUED if to_person else StockItem.AVAILABLE
                     item.save(update_fields=['current_holder_name', 'current_site_name',
                                              'status', 'updated_at'])
@@ -976,8 +976,7 @@ def movement_delete(request, pk):
 
         if prior:
             item.current_holder_name = prior.to_person or None
-            prior_site = prior.destination_site or prior.source_site
-            item.current_site_name   = prior_site.name if prior_site else None
+            item.current_site_name   = prior.site.name if prior.site_id else None
             item.status = StockItem.ISSUED if prior.to_person else StockItem.AVAILABLE
         else:
             # First-ever movement → back to unissued stock.

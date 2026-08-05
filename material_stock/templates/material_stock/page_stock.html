@@ -46,14 +46,33 @@
                     <option value="">— Any material —</option>
                 </select>
             </div>
+
             <div class="ms-field">
-                <label>Purchase Date From</label>
-                <input class="ms-input" type="date" name="pdate_from" value="{{ filters.pdate_from }}" max="{{ today_ist_iso }}">
+                <label>Stock In Date From</label>
+                <input class="ms-input" type="date" name="in_from" value="{{ filters.in_from }}" max="{{ today_ist_iso }}">
             </div>
             <div class="ms-field">
-                <label>Purchase Date To</label>
-                <input class="ms-input" type="date" name="pdate_to" value="{{ filters.pdate_to }}" max="{{ today_ist_iso }}">
+                <label>Stock In Date To</label>
+                <input class="ms-input" type="date" name="in_to" value="{{ filters.in_to }}" max="{{ today_ist_iso }}">
             </div>
+            <div class="ms-field">
+                <label>Stock Out Date From</label>
+                <input class="ms-input" type="date" name="out_from" value="{{ filters.out_from }}" max="{{ today_ist_iso }}">
+            </div>
+            <div class="ms-field">
+                <label>Stock Out Date To</label>
+                <input class="ms-input" type="date" name="out_to" value="{{ filters.out_to }}" max="{{ today_ist_iso }}">
+            </div>
+
+            <div class="ms-field">
+                <label>From Person</label>
+                <input class="ms-input" type="text" name="from_person" value="{{ filters.from_person }}" placeholder="contains…">
+            </div>
+            <div class="ms-field">
+                <label>To Person</label>
+                <input class="ms-input" type="text" name="to_person" value="{{ filters.to_person }}" placeholder="contains…">
+            </div>
+
             <div class="ms-field" style="align-self:end;">
                 <label style="display:flex; align-items:center; gap:6px; font-weight:600;">
                     <input type="checkbox" name="has_in" value="1" {% if filters.has_in %}checked{% endif %}> Has Stock In
@@ -73,15 +92,14 @@
 <div class="ms-panel">
     <div class="ms-panel-head">
         <h3 class="ms-panel-title">Stock Summary</h3>
-        <p class="ms-panel-note">Grouped by material type &amp; purchase date</p>
+        <p class="ms-panel-note">Grouped by equipment &amp; material type</p>
     </div>
     <div class="ms-scroll">
-        <table class="data-table" style="min-width:820px;">
+        <table class="data-table" style="min-width:760px;">
             <thead>
                 <tr>
-                    <th style="width:56px;">SL.no</th>
-                    <th style="width:170px;">Purchase Date</th>
-                    <th>Item (Material)</th>
+                    <th style="width:56px;">SL</th>
+                    <th>Item (Equipment · Material Type)</th>
                     <th style="width:160px;">Site</th>
                     <th style="width:90px;">Quantity</th>
                     <th style="width:90px;">Stock In</th>
@@ -93,11 +111,6 @@
                 {% for g in groups %}
                 <tr>
                     <td>{{ g.sl }}</td>
-                    <td>
-                        {{ g.purchase_date|date:'d M Y' }}
-                        {% if g.is_new %}<span class="badge badge-new">New</span>
-                        {% else %}<span class="badge badge-old">Old</span>{% endif %}
-                    </td>
                     <td>{{ g.material_label }}</td>
                     <td>{{ g.site_label|default:'—' }}</td>
                     <td>{{ g.quantity }}</td>
@@ -106,7 +119,7 @@
                     <td><strong>{{ g.balance }}</strong></td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="ms-empty">No stock matches these filters.</td></tr>
+                <tr><td colspan="7" class="ms-empty">No stock matches these filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

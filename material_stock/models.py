@@ -293,17 +293,11 @@ class StockMovement(models.Model):
     admin_id      = models.CharField(max_length=20, db_index=True, default='PENDING')
     stock_item    = models.ForeignKey(StockItem, on_delete=models.PROTECT, related_name='movements')
     movement_date = models.DateField()
-    # Where the stock is moving FROM. Nullable — a movement can record a
-    # destination-only transfer (fresh stock into a site) with no source.
-    source_site   = models.ForeignKey(
-        'projects.Site', on_delete=models.PROTECT,
-        null=True, blank=True, related_name='stock_movements_from',
-    )
-    # Where the stock is moving TO. Nullable and SET_NULL so deleting a site
-    # doesn't kill historical movement records.
-    destination_site = models.ForeignKey(
+    # Site the movement is recorded against. Optional; SET_NULL so deleting
+    # a Site doesn't kill historical movement records.
+    site = models.ForeignKey(
         'projects.Site', on_delete=models.SET_NULL,
-        null=True, blank=True, related_name='stock_movements_to',
+        null=True, blank=True, related_name='stock_movements',
     )
     from_person   = models.CharField(max_length=150, null=True, blank=True)  # null if from stock
     to_person     = models.CharField(max_length=150, null=True, blank=True)  # null if returning to stock
@@ -319,8 +313,8 @@ class StockMovement(models.Model):
         db_table = 'ms_stock_movement'
         ordering = ['-movement_date', '-created_at']
         indexes = [
-            models.Index(fields=['admin_id', 'source_site', 'movement_date'],
-                         name='ms_mv_admin_src_date_idx'),
+            models.Index(fields=['admin_id', 'site', 'movement_date'],
+                         name='ms_mv_admin_site_date_idx'),
         ]
         verbose_name        = 'Stock Movement'
         verbose_name_plural = 'Stock Movements'
