@@ -48,20 +48,12 @@
             </div>
 
             <div class="ms-field">
-                <label>Stock In Date From</label>
-                <input class="ms-input" type="date" name="in_from" value="{{ filters.in_from }}" max="{{ today_ist_iso }}">
+                <label>Stock In Date</label>
+                <input class="ms-input" type="date" name="in_date" value="{{ filters.in_date }}" max="{{ today_ist_iso }}">
             </div>
             <div class="ms-field">
-                <label>Stock In Date To</label>
-                <input class="ms-input" type="date" name="in_to" value="{{ filters.in_to }}" max="{{ today_ist_iso }}">
-            </div>
-            <div class="ms-field">
-                <label>Stock Out Date From</label>
-                <input class="ms-input" type="date" name="out_from" value="{{ filters.out_from }}" max="{{ today_ist_iso }}">
-            </div>
-            <div class="ms-field">
-                <label>Stock Out Date To</label>
-                <input class="ms-input" type="date" name="out_to" value="{{ filters.out_to }}" max="{{ today_ist_iso }}">
+                <label>Stock Out Date</label>
+                <input class="ms-input" type="date" name="out_date" value="{{ filters.out_date }}" max="{{ today_ist_iso }}">
             </div>
 
             <div class="ms-field">
@@ -95,16 +87,18 @@
         <p class="ms-panel-note">Grouped by equipment &amp; material type</p>
     </div>
     <div class="ms-scroll">
-        <table class="data-table" style="min-width:760px;">
+        <table class="data-table" style="min-width:960px;">
             <thead>
                 <tr>
                     <th style="width:56px;">SL</th>
                     <th>Item (Equipment · Material Type)</th>
-                    <th style="width:160px;">Site</th>
-                    <th style="width:90px;">Quantity</th>
-                    <th style="width:90px;">Stock In</th>
-                    <th style="width:90px;">Stock Out</th>
-                    <th style="width:100px;">Balance</th>
+                    <th style="width:140px;">Site</th>
+                    <th style="width:80px;">Quantity</th>
+                    <th style="width:80px;">Stock In</th>
+                    <th style="width:120px;">Stock In Date</th>
+                    <th style="width:80px;">Stock Out</th>
+                    <th style="width:120px;">Stock Out Date</th>
+                    <th style="width:90px;">Balance</th>
                 </tr>
             </thead>
             <tbody>
@@ -115,11 +109,13 @@
                     <td>{{ g.site_label|default:'—' }}</td>
                     <td>{{ g.quantity }}</td>
                     <td>{{ g.stock_in }}</td>
+                    <td>{% if g.stock_in and g.last_in_date %}{{ g.last_in_date|date:'d-m-Y' }}{% else %}—{% endif %}</td>
                     <td>{{ g.stock_out }}</td>
+                    <td>{% if g.stock_out and g.last_out_date %}{{ g.last_out_date|date:'d-m-Y' }}{% else %}—{% endif %}</td>
                     <td><strong>{{ g.balance }}</strong></td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="7" class="ms-empty">No stock matches these filters.</td></tr>
+                <tr><td colspan="9" class="ms-empty">No stock matches these filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
