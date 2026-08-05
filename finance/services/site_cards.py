@@ -12,107 +12,28 @@ from finance.models import Transaction
 
 def get_active_site_names(admin_id, restrict_today=False, today=None, module=None):
     """
-    Canonical site-name strings for site cards. Union of:
+    Canonical site-name strings for site cards. Delegates to
+    projects.utils.sites_for_admin which unions:
       * projects.Site.name              (source of truth — casing wins)
       * attendance.AttendanceRecord.site   (CharField back-compat)
       * attendance.AttendanceRecord.site_ref__name (FK)
-      * projects.WorkLog.site__name
-      * finance.Transaction.location_site distinct (legacy fallback)
 
-    Deduped case-insensitively. Sorted A→Z.
+    Does NOT include legacy Transaction.location_site or Income.location_site
+    distincts — those are considered orphans.
 
-    `restrict_today=True` scopes the attendance/worklog contribution to
-    `today` (a date). Projects.Site and Transaction distincts are always
-    included — those are the "master" registries that shouldn't shrink to
-    zero on a quiet day.
+    `restrict_today=True` scopes the attendance contribution to `today`
+    (a date). Projects.Site is always included.
 
     `module` ('expense' | 'income') applies the per-admin hide list from
     finance.ModuleHiddenSite: any name hidden for that (admin_id, module)
     is dropped from the result (case-insensitive). Pass None (default) to
-    return the full union. Projects.Site / AttendanceRecord rows are never
-    touched — hiding is card-list only.
+    return the full union.
     """
-    canonical = {}   # lower_key -> display
+    from projects.utils import sites_for_admin
 
-    def _add(name):
-        if not name:
-            return
-        n = name.strip()
-        if not n:
-            return
-        k = n.lower()
-        if k not in canonical:
-            canonical[k] = n
+    restrict_date = today if restrict_today and today is not None else None
+    names = sites_for_admin(admin_id, restrict_attendance_to=restrict_date)
 
-    # Projects.Site FIRST — canonical casing wins for any later match.
-    try:
-        from projects.models import Site as ProjSite
-        for n in (
-            ProjSite.objects
-            .filter(admin_id=admin_id)
-            .values_list('name', flat=True)
-        ):
-            _add(n)
-    except Exception:
-        pass
-
-    # Attendance — respects today-restriction when caller asked for it.
-    try:
-        from attendance.models import AttendanceRecord
-        att = AttendanceRecord.objects.filter(admin_id=admin_id)
-        if restrict_today and today is not None:
-            att = att.filter(date=today)
-        for n in (
-            att.exclude(site__isnull=True).exclude(site='')
-               .values_list('site', flat=True).distinct()
-        ):
-            _add(n)
-        for n in (
-            att.filter(site_ref__isnull=False)
-               .values_list('site_ref__name', flat=True).distinct()
-        ):
-            _add(n)
-    except Exception:
-        pass
-
-    # WorkLog — same today-restriction rule.
-    try:
-        from projects.models import WorkLog
-        wl = WorkLog.objects.filter(admin_id=admin_id, site__isnull=False)
-        if restrict_today and today is not None:
-            wl = wl.filter(date=today)
-        for n in wl.values_list('site__name', flat=True).distinct():
-            _add(n)
-    except Exception:
-        pass
-
-    # Legacy transactions — always included so manual-entry sites don't
-    # disappear when Projects/Attendance haven't been populated yet.
-    try:
-        for n in (
-            Transaction.objects
-            .filter(admin_id=admin_id)
-            .exclude(location_site__isnull=True).exclude(location_site='')
-            .values_list('location_site', flat=True).distinct()
-        ):
-            _add(n)
-    except Exception:
-        pass
-
-    try:
-        from income.models import Income
-        for n in (
-            Income.objects
-            .filter(admin_id=admin_id)
-            .exclude(location_site__isnull=True).exclude(location_site='')
-            .values_list('location_site', flat=True).distinct()
-        ):
-            _add(n)
-    except Exception:
-        pass
-
-    # Per-admin, per-module hide list. Never touches source-of-truth tables;
-    # only filters what shows up on this module's card grid.
     if module in ('expense', 'income'):
         try:
             from finance.models import ModuleHiddenSite
@@ -123,13 +44,11 @@ def get_active_site_names(admin_id, restrict_today=False, today=None, module=Non
                     .values_list('site_name', flat=True)
             }
             if hidden_lower:
-                for k in list(canonical.keys()):
-                    if k in hidden_lower or canonical[k].strip().lower() in hidden_lower:
-                        canonical.pop(k, None)
+                names = [n for n in names if n.strip().lower() not in hidden_lower]
         except Exception:
             pass
 
-    return sorted(canonical.values(), key=lambda s: s.lower())
+    return names
 
 
 def has_unassigned_transactions(admin_id, txn_type=None):

@@ -640,70 +640,15 @@ def _apply_expense_filters(request, admin_id):
 
 
 def _all_site_options(admin_id):
-    """Full universe of location_site names ever used by this tenant.
+    """Canonical site names for the Expense filter dropdown.
 
-    Union of:
-      * distinct Transaction.location_site (any type)
-      * attendance.AttendanceRecord.site  and  .site_ref__name
-      * projects.WorkLog.site__name
-      * projects.Site.name  (master list)
-    Returned as [{'name': <display>}] deduped case-insensitively, sorted A→Z.
+    Drawn from projects.Site ∪ Attendance-used sites via
+    projects.utils.sites_for_admin — legacy Transaction.location_site
+    orphans are deliberately excluded. Returned as [{'name': <display>}]
+    sorted A→Z (already deduped case-insensitively by the helper).
     """
-    names = set()
-
-    for n in (
-        Transaction.objects.filter(admin_id=admin_id)
-        .exclude(location_site__isnull=True).exclude(location_site='')
-        .values_list('location_site', flat=True).distinct()
-    ):
-        if n:
-            names.add(n.strip())
-
-    try:
-        from attendance.models import AttendanceRecord
-        att_qs = AttendanceRecord.objects.filter(admin_id=admin_id)
-        for n in att_qs.exclude(site__isnull=True).exclude(site='') \
-                       .values_list('site', flat=True).distinct():
-            if n:
-                names.add(n.strip())
-        for n in att_qs.filter(site_ref__isnull=False) \
-                       .values_list('site_ref__name', flat=True).distinct():
-            if n:
-                names.add(n.strip())
-    except Exception:
-        pass
-
-    try:
-        from projects.models import WorkLog
-        for n in (
-            WorkLog.objects.filter(admin_id=admin_id, site__isnull=False)
-            .values_list('site__name', flat=True).distinct()
-        ):
-            if n:
-                names.add(n.strip())
-    except Exception:
-        pass
-
-    try:
-        from projects.models import Site as _ProjSite
-        for n in (
-            _ProjSite.objects.filter(admin_id=admin_id)
-            .values_list('name', flat=True)
-        ):
-            if n:
-                names.add(n.strip())
-    except Exception:
-        pass
-
-    dedup = {}
-    for n in names:
-        key = n.lower()
-        if key and key not in dedup:
-            dedup[key] = n
-    return sorted(
-        ({'name': v} for v in dedup.values()),
-        key=lambda o: o['name'].lower(),
-    )
+    from projects.utils import sites_for_admin
+    return [{'name': n} for n in sites_for_admin(admin_id)]
 
 
 @login_required
