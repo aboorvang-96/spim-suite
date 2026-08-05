@@ -358,17 +358,19 @@
         <div class="summary-card-v5">
             <div class="card-header">
                 <svg class="text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                <span>This Month</span>
+                <span>This Cycle</span>
             </div>
-            <p class="card-value">₹{{ this_month_expense|floatformat:2 }}</p>
-        </div>
-
-        <div class="summary-card-v5">
-            <div class="card-header">
-                <svg class="text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                <span>Active Items</span>
+            <div style="font-size:11px;font-weight:800;color:#64748b;letter-spacing:0.03em;margin-bottom:6px;">{{ cycle_label }}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div>
+                    <div style="font-size:9px;font-weight:900;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Non-salary</div>
+                    <div style="font-size:15px;font-weight:900;color:#ef4444;">₹{{ total_non_salary_expense|floatformat:2 }}</div>
+                </div>
+                <div>
+                    <div style="font-size:9px;font-weight:900;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Salary</div>
+                    <div style="font-size:15px;font-weight:900;color:#f59e0b;">₹{{ total_salary_expense|floatformat:2 }}</div>
+                </div>
             </div>
-            <p class="card-value">{{ expense_count }}</p>
         </div>
 
         <!-- BALANCE SUMMARY CARD — Issue 2: values are pulled from the same
@@ -473,6 +475,27 @@
     </style>
     <section class="filter-toolbar-v5">
         <form method="get" class="filter-form-v5" id="expFilterForm">
+
+            <!-- 0. Cycle picker — page-wide scope. Auto-submits on change so
+                 users don't have to hit Apply for the common case. -->
+            <select name="cycle" id="expFilterCycle"
+                    class="filter-control-v5" style="width:210px;"
+                    onchange="this.form.submit()"
+                    title="Salary cycle window (26th → 25th)">
+                {% for c in available_cycles %}
+                <option value="{{ c.key }}"{% if c.key == active_cycle_key %} selected{% endif %}>{{ c.label }}</option>
+                {% endfor %}
+            </select>
+
+            <!-- Salary Expenses toggle — client-side only, opens the side
+                 panel. State persists via localStorage. -->
+            <button type="button" id="toggleSalaryPanel" class="btn-v5"
+                    style="height:36px;padding:0 14px;font-size:12px;font-weight:800;background:#fff7ed;color:#c2410c;border:1.5px solid #fdba74;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 1v8m0 0v1"/>
+                </svg>
+                <span id="toggleSalaryPanelLabel">Salary Expenses</span>
+            </button>
 
             <!-- 1. Search -->
             <div style="position:relative;flex:0 0 180px;">
@@ -860,9 +883,74 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
-      Showing sites with attendance in the current or previous salary cycle, plus active projects. Use filters to narrow further.
+      Showing expenses for cycle {{ cycle_label }}. Use the cycle dropdown to change.
     </div>
     {% endif %}
+    <!-- Salary-panel container. When #toggleSalaryPanel is active, this
+         gets class `.salary-panel-open` which flips CSS below to a 60/40
+         two-column layout. Salary panel data is server-rendered so the
+         toggle is pure hide/show — no round-trip. -->
+    <style>
+      .expenses-container { display: block; }
+      .salary-panel {
+        display: none; background: #fff; border: 1px solid #e2e8f0;
+        border-radius: 12px; padding: 14px 16px; margin-top: 14px;
+        box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+      }
+      .salary-panel h3 {
+        margin: 0 0 4px 0; font-size: 15px; font-weight: 900;
+        color: #0f172a; letter-spacing: -0.02em;
+      }
+      .salary-panel .cycle-note {
+        margin: 0 0 10px 0; font-size: 11px; font-weight: 700;
+        color: #64748b; letter-spacing: 0.03em;
+      }
+      .salary-panel table.salary-table {
+        width: 100%; border-collapse: collapse; font-size: 12px;
+      }
+      .salary-panel table.salary-table th {
+        text-align: left; font-size: 9px; font-weight: 900; color: #94a3b8;
+        text-transform: uppercase; letter-spacing: 0.06em;
+        padding: 6px 8px; border-bottom: 1px solid #e2e8f0;
+      }
+      .salary-panel table.salary-table td {
+        padding: 8px; border-bottom: 1px solid #f1f5f9; color: #334155;
+      }
+      .salary-panel .salary-site-row { cursor: pointer; font-weight: 700; }
+      .salary-panel .salary-site-row:hover { background: #f8fafc; }
+      .salary-panel .salary-site-row td:nth-child(2) {
+        text-align: right; font-weight: 900; color: #ef4444;
+      }
+      .salary-panel .salary-dates-row td { background: #fafbfc; padding: 0; }
+      .salary-panel table.salary-inner {
+        width: 100%; border-collapse: collapse; font-size: 11px;
+      }
+      .salary-panel table.salary-inner th {
+        font-size: 8px; padding: 4px 10px; background: transparent;
+        color: #94a3b8; border-bottom: 1px dashed #e2e8f0;
+      }
+      .salary-panel table.salary-inner td {
+        padding: 4px 10px; border-bottom: 1px dashed #f1f5f9;
+      }
+      .salary-panel table.salary-inner td:nth-child(2) {
+        text-align: right; font-weight: 800; color: #ef4444;
+      }
+      .salary-panel .salary-empty {
+        padding: 20px; text-align: center; color: #94a3b8; font-size: 12px;
+      }
+      /* Two-column layout when toggled ON. Mobile still stacks. */
+      @media (min-width: 900px) {
+        .salary-panel-open .expenses-container {
+          display: grid !important;
+          grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+          gap: 16px; align-items: start;
+        }
+        .salary-panel-open .salary-panel { display: block; margin-top: 0; }
+      }
+      .salary-panel-open .salary-panel { display: block; }
+    </style>
+    <div class="expenses-container">
+    <div class="expenses-main">
     <section class="expense-list-v5">
         <div class="expense-grid-v5" id="expenseGrid">
             {% for group in sites_grouped %}
@@ -887,8 +975,8 @@
                     <div class="site-card-header-actions" style="display:inline-flex;gap:8px;align-items:center;flex:0 0 auto;">
                         <button type="button" class="btn-action-v5 edit site-card-view-btn" data-view-site="{{ group.site_key }}"
                                 style="height:28px;padding:0 10px;font-size:10px;">View</button>
-                        <select class="card-month-picker" title="View totals for a specific month">
-                            <option value="all">All Months</option>
+                        <select class="card-month-picker" title="View totals for a specific salary cycle">
+                            <option value="all">All Cycles</option>
                             {% for m in group.month_options %}
                             <option value="{{ m.key }}"{% if m.key == current_month %} selected{% endif %}>{{ m.label }}</option>
                             {% endfor %}
@@ -1031,6 +1119,81 @@
             </div>
         </div>
     </section>
+    </div><!-- /.expenses-main -->
+
+    <aside class="salary-panel" id="salaryPanel">
+        <h3>Salary Expenses</h3>
+        <p class="cycle-note">Cycle: {{ cycle_label }}</p>
+        {% if salary_panel %}
+        <table class="salary-table">
+            <thead>
+                <tr><th>Site</th><th style="text-align:right;">Total</th></tr>
+            </thead>
+            <tbody>
+                {% for site in salary_panel %}
+                <tr class="salary-site-row" data-idx="{{ forloop.counter0 }}"
+                    onclick="toggleSalaryDates({{ forloop.counter0 }})">
+                    <td>{{ site.site }}</td>
+                    <td>₹{{ site.total|floatformat:2 }}</td>
+                </tr>
+                <tr class="salary-dates-row" id="salary-dates-{{ forloop.counter0 }}" hidden>
+                    <td colspan="2">
+                        <table class="salary-inner">
+                            <thead><tr><th>Date</th><th style="text-align:right;">Amount</th></tr></thead>
+                            <tbody>
+                                {% for row in site.rows %}
+                                <tr>
+                                    <td>{{ row.date|date:"d/m/Y" }}</td>
+                                    <td>₹{{ row.amount|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="salary-empty">No salary expenses in this cycle.</div>
+        {% endif %}
+    </aside>
+    </div><!-- /.expenses-container -->
+
+    <script>
+    /* Salary Expenses side-panel — client-side toggle, state persisted
+       in localStorage so the panel remembers its open/closed state
+       across page loads. No round-trip: panel HTML is server-rendered. */
+    (function(){
+        var KEY = 'spim.expense.salaryPanelOpen';
+        var body = document.body;
+        var btn  = document.getElementById('toggleSalaryPanel');
+        if (!btn) return;
+
+        function apply(open){
+            body.classList.toggle('salary-panel-open', !!open);
+            btn.setAttribute('aria-pressed', open ? 'true' : 'false');
+        }
+        // Default OFF unless user has explicitly opened it before.
+        var stored = null;
+        try { stored = localStorage.getItem(KEY); } catch (e) {}
+        apply(stored === '1');
+
+        btn.addEventListener('click', function(){
+            var open = !body.classList.contains('salary-panel-open');
+            apply(open);
+            try { localStorage.setItem(KEY, open ? '1' : '0'); } catch (e) {}
+        });
+    })();
+
+    /* Drill-down toggle on each Site row inside the salary panel. */
+    function toggleSalaryDates(idx){
+        var row = document.getElementById('salary-dates-' + idx);
+        if (!row) return;
+        if (row.hasAttribute('hidden')) row.removeAttribute('hidden');
+        else row.setAttribute('hidden', '');
+    }
+    </script>
 </div>
 
 <!-- ═══════ Datalists for inline-edit From / To dropdowns ═══════ -->

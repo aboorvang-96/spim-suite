@@ -10,6 +10,61 @@ from .models import Transaction, Category, Source
 from .forms import TransactionForm, CategoryForm
 from branches.models import LocationSite
 from accounts.views import get_admin_id
+from accounts.date_utils import today_ist
+from accounts.cycle_utils import get_salary_cycle
+
+
+# Marker prefix that attendance/signals.py stamps on every auto-generated
+# salary expense. Grep target for the "salary vs non-salary" split.
+AUTO_SAL_PREFIX = '[AUTO-SAL:'
+
+
+def _cycle_label(start, end):
+    """Human label like '26 Jul → 25 Aug 2026'. Same year → year printed once."""
+    if start.year == end.year:
+        return f"{start.day:02d} {start.strftime('%b')} → {end.day:02d} {end.strftime('%b %Y')}"
+    return (
+        f"{start.day:02d} {start.strftime('%b %Y')} → "
+        f"{end.day:02d} {end.strftime('%b %Y')}"
+    )
+
+
+def _available_cycles(n=8):
+    """Return the last N salary cycles (most-recent first, including current).
+
+    Each entry: {'start': date, 'end': date, 'label': str, 'key': 'YYYY-MM-DD_YYYY-MM-DD'}
+    Reused by the top filter dropdown and every per-card cycle picker.
+    """
+    from dateutil.relativedelta import relativedelta
+    out = []
+    current = get_salary_cycle(today_ist())
+    ref = current['start']
+    for _ in range(n):
+        c = get_salary_cycle(ref)
+        out.append({
+            'start': c['start'],
+            'end':   c['end'],
+            'label': _cycle_label(c['start'], c['end']),
+            'key':   f"{c['start'].isoformat()}_{c['end'].isoformat()}",
+        })
+        ref = c['start'] - datetime.timedelta(days=1)
+    return out
+
+
+def _resolve_active_cycle(request):
+    """Pick the active cycle from ?cycle=<start_iso>_<end_iso> or fall back
+    to the current cycle (today IST). Returns (start, end, label)."""
+    raw = (request.GET.get('cycle') or '').strip()
+    if raw and '_' in raw:
+        try:
+            s, e = raw.split('_', 1)
+            start = datetime.date.fromisoformat(s)
+            end   = datetime.date.fromisoformat(e)
+            return start, end, _cycle_label(start, end)
+        except (ValueError, TypeError):
+            pass
+    current = get_salary_cycle(today_ist())
+    return current['start'], current['end'], _cycle_label(current['start'], current['end'])
 
 
 def _location_sites_json(user):
@@ -141,14 +196,23 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
             return '', '(No Site)'
         return s.lower(), s
 
+    def _cycle_key_for(d):
+        """Cycle bucket key for a date. Uses SPIM 26→25 cycle month_key
+        ('YYYY-MM' of the cycle's END month) so per-card breakdown
+        aggregates by payroll cycle instead of calendar month."""
+        try:
+            return get_salary_cycle(d)['month_key']
+        except Exception:
+            return d.strftime('%Y-%m')
+
     # Credit map: site → total income amount for that tenant. Built in a
     # single sweep so site_card render stays O(N) over expenses + incomes.
-    # credit_by_month[site_key][YYYY-MM] = Decimal — feeds the card-level
-    # month dropdown so each card can show monthly Credit/Debit/Balance.
+    # credit_by_cycle[site_key][cycle_key] = Decimal — feeds the card-level
+    # cycle dropdown so each card can show per-cycle Credit/Debit/Balance.
     credit_map  = {}
     site_disp   = {}
     income_dates = {}
-    credit_by_month = {}
+    credit_by_cycle = {}
     try:
         from income.models import Income
         income_qs = Income.objects.filter(admin_id=admin_id).only(
@@ -160,9 +224,9 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
             if key not in site_disp or not site_disp[key]:
                 site_disp[key] = disp
             if i.date:
-                mkey = i.date.strftime('%Y-%m')
-                cb = credit_by_month.setdefault(key, {})
-                cb[mkey] = cb.get(mkey, _D('0')) + (i.amount or _D('0'))
+                ckey = _cycle_key_for(i.date)
+                cb = credit_by_cycle.setdefault(key, {})
+                cb[ckey] = cb.get(ckey, _D('0')) + (i.amount or _D('0'))
                 prev = income_dates.get(key)
                 if prev is None or i.date > prev:
                     income_dates[key] = i.date
@@ -172,9 +236,9 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
         credit_map  = {}
         site_disp   = {}
         income_dates = {}
-        credit_by_month = {}
+        credit_by_cycle = {}
 
-    debit_by_month = {}
+    debit_by_cycle = {}
     groups = {}
 
     # Seed with the canonical site list from Projects/Attendance/WorkLog so
@@ -218,9 +282,9 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
         g['count'] += 1
         g['transactions'].append(e)
         if e.date:
-            mkey = e.date.strftime('%Y-%m')
-            db = debit_by_month.setdefault(key, {})
-            db[mkey] = db.get(mkey, _D('0')) + (e.amount or _D('0'))
+            ckey = _cycle_key_for(e.date)
+            db = debit_by_cycle.setdefault(key, {})
+            db[ckey] = db.get(ckey, _D('0')) + (e.amount or _D('0'))
         if e.date and (g['latest_date'] is None or e.date > g['latest_date']):
             g['latest_date'] = e.date
             # Don't overwrite the canonical display with a blank — keep the
@@ -247,9 +311,20 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
             'transactions': [],
         }
 
-    today = _dt.date.today()
-    current_month = today.strftime('%Y-%m')
-    month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    today = today_ist()
+    current_cycle = get_salary_cycle(today)
+    current_cycle_key = current_cycle['month_key']
+
+    # Preload a lookup of cycle_key → (start, end, label) covering the last
+    # 24 cycles so option labels don't recompute per-card. 24 keeps two
+    # full years addressable in the picker.
+    cycle_meta = {}
+    for c in _available_cycles(n=24):
+        cs = c['start']
+        ce = c['end']
+        cycle_meta[ce.strftime('%Y-%m')] = {
+            'start': cs, 'end': ce, 'label': c['label'],
+        }
 
     for g in groups.values():
         g['balance'] = g['credit'] - g['debit']
@@ -257,38 +332,48 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
             key=lambda x: (x.date or _dt.date.min),
             reverse=True,
         )
-        # Per-site monthly breakdown — fed to the card via data-monthly so
-        # the card's month dropdown can repaint the Credit/Debit/Balance
-        # tiles without a round-trip. Includes every month with credit OR
-        # debit activity, plus the current month (default selection).
+        # Per-site cycle breakdown — fed to the card via data-monthly so
+        # the card's cycle dropdown can repaint Credit/Debit/Balance tiles
+        # without a round-trip. Key kept as 'YYYY-MM' (the cycle END month)
+        # so the existing repaint JS works unchanged.
         ck = g['site_key']
-        cm = credit_by_month.get(ck, {})
-        dm = debit_by_month.get(ck, {})
-        all_months = set(cm.keys()) | set(dm.keys())
-        all_months.add(current_month)
-        monthly = {}
-        for m in all_months:
+        cm = credit_by_cycle.get(ck, {})
+        dm = debit_by_cycle.get(ck, {})
+        all_cycles = set(cm.keys()) | set(dm.keys())
+        all_cycles.add(current_cycle_key)
+        by_cycle = {}
+        for m in all_cycles:
             c = cm.get(m, _D('0'))
             d = dm.get(m, _D('0'))
-            monthly[m] = {
+            by_cycle[m] = {
                 'credit':  float(c),
                 'debit':   float(d),
                 'balance': float(c - d),
             }
-        g['monthly_json'] = json.dumps(monthly)
+        # `monthly_json` name preserved so existing card-repaint JS keeps
+        # working; the values inside are now per-cycle aggregates.
+        g['monthly_json'] = json.dumps(by_cycle)
         g['totals_json']  = json.dumps({
             'credit':  float(g['credit']),
             'debit':   float(g['debit']),
             'balance': float(g['balance']),
         })
-        # Pretty month options for the dropdown — sorted most-recent first.
+        # Pretty cycle options for the dropdown — sorted most-recent first.
         opts = []
-        for m in sorted(all_months, reverse=True):
-            try:
-                y, mo = m.split('-')
-                label = '{} {}'.format(month_names[int(mo) - 1], y)
-            except Exception:
-                label = m
+        for m in sorted(all_cycles, reverse=True):
+            meta = cycle_meta.get(m)
+            if meta:
+                label = meta['label']
+            else:
+                # Fall back to computing on-demand for cycles older than
+                # the 24-cycle preload window.
+                try:
+                    y, mo = m.split('-')
+                    end = datetime.date(int(y), int(mo), 25)
+                    start = get_salary_cycle(end)['start']
+                    label = _cycle_label(start, end)
+                except Exception:
+                    label = m
             opts.append({'key': m, 'label': label})
         g['month_options'] = opts
         # Per-site accent for the card border (Issue 4 — color palette).
@@ -560,21 +645,15 @@ def _apply_expense_filters(request, admin_id):
 
     exact_date = _parse_iso_date(request.GET.get('date'))
 
-    today_default_active = False
-    if not has_explicit_filter:
-        # Soft default — narrow the Expense landing view to sites that are
-        # active in Attendance / WorkLog / Transaction today (IST). Anything
-        # the user changes drops this restriction immediately.
-        today = timezone.localdate()
-        today_names = [
-            s['name'] for s in _dynamic_site_options(admin_id, exact_date=today)
-        ]
-        if today_names:
-            site_q = Q()
-            for n in today_names:
-                site_q |= Q(location_site__iexact=n)
-            qs = qs.filter(site_q)
-            today_default_active = True
+    # Cycle scope — the fresh default and the value the top-of-page
+    # dropdown drives. Precedence order for the date window:
+    #   1. exact ?date=YYYY-MM-DD  (already handled below)
+    #   2. ?from_date / ?to_date   (manual override)
+    #   3. ?month                  (legacy scalar override)
+    #   4. ?cycle=START_END        (explicit cycle pick)
+    #   5. current cycle (fallback default)
+    cycle_start, cycle_end, cycle_label = _resolve_active_cycle(request)
+    cycle_scope_active = False
 
     if cat_ids:
         qs = qs.filter(category_id__in=cat_ids)
@@ -588,6 +667,15 @@ def _apply_expense_filters(request, admin_id):
             qs = qs.filter(date__lte=to_date)
     elif month:
         qs = qs.filter(date__startswith=month)
+    else:
+        # No manual date narrowing → apply the salary cycle window.
+        qs = qs.filter(date__gte=cycle_start, date__lte=cycle_end)
+        cycle_scope_active = True
+
+    # Legacy alias — the template gates the banner on `today_default_active`.
+    # It now means "cycle scope is in effect" (fresh landing or explicit
+    # cycle pick). Renamed in-context below without breaking the template.
+    today_default_active = cycle_scope_active
 
     if search:
         qs = qs.filter(
@@ -628,6 +716,7 @@ def _apply_expense_filters(request, admin_id):
         'to_date':       to_date.isoformat() if to_date else '',
         'date':          exact_date.isoformat() if exact_date else '',
         'date_range_error': date_range_error,
+        'cycle':         f"{cycle_start.isoformat()}_{cycle_end.isoformat()}",
         # Back-compat scalar aliases — legacy template bits still read these
         # (e.g. the Grouped-by-Site "no expenses for {{ filters.date }}"
         # empty-state copy). First selected value if present, else ''.
@@ -636,7 +725,8 @@ def _apply_expense_filters(request, admin_id):
         'income_source': income_sources[0] if income_sources else '',
         'site':          sites[0] if sites else '',
     }
-    return qs, filters, has_explicit_filter, exact_date, month, today_default_active
+    return (qs, filters, has_explicit_filter, exact_date, month,
+            today_default_active, cycle_start, cycle_end, cycle_label)
 
 
 def _all_site_options(admin_id):
@@ -654,10 +744,17 @@ def _all_site_options(admin_id):
 @login_required
 def transaction_list(request):
     admin_id = get_admin_id(request.user)
-    qs, filters, has_explicit_filter, exact_date, month, today_default_active = \
+    (qs, filters, has_explicit_filter, exact_date, month,
+     today_default_active, cycle_start, cycle_end, cycle_label) = \
         _apply_expense_filters(request, admin_id)
 
-    total_expense = qs.aggregate(t=Sum('amount'))['t'] or 0
+    # Total Expenses card = grand total across ALL history for this tenant
+    # (unchanged — the top card is a historic anchor, not scope-narrowed).
+    total_expense = (
+        Transaction.objects
+        .filter(admin_id=admin_id, type='expense')
+        .aggregate(t=Sum('amount'))['t'] or 0
+    )
 
     # Total Income across the same tenant — feeds the Balance Summary box
     # so its numbers stay consistent with the Total Expenses card above.
@@ -669,13 +766,12 @@ def transaction_list(request):
         total_income = 0
     net_balance = (total_income or 0) - (total_expense or 0)
 
-    now = timezone.now()
-    this_month_qs = Transaction.objects.filter(
-        admin_id=admin_id, type='expense',
-        date__year=now.year, date__month=now.month
-    )
-    this_month_expense = this_month_qs.aggregate(t=Sum('amount'))['t'] or 0
-    expense_count = qs.count()
+    # This-cycle split — salary vs non-salary. The cycle window is
+    # already applied to `qs`; split by the AUTO-SAL marker prefix.
+    salary_qs     = qs.filter(reference__startswith=AUTO_SAL_PREFIX)
+    non_salary_qs = qs.exclude(reference__startswith=AUTO_SAL_PREFIX)
+    total_salary_expense     = salary_qs.aggregate(t=Sum('amount'))['t'] or 0
+    total_non_salary_expense = non_salary_qs.aggregate(t=Sum('amount'))['t'] or 0
 
     balance_combos = _balance_by_combo_expense(request.user)
     # Keyed by lower-case (source, account) so lookup is case-insensitive.
@@ -686,10 +782,15 @@ def transaction_list(request):
     # the SELECT includes a column that doesn't exist. Falling back to a
     # deferred fetch + a stubbed value in __dict__ prevents the template
     # from triggering a lazy load that would also fail.
+    # The site cards + inline list explicitly EXCLUDE salary rows — those
+    # get a dedicated panel (`salary_panel`). Auto-salary transactions are
+    # a per-day payroll shadow of Attendance, not something the admin edits
+    # inline like a food / diesel receipt.
+    non_salary_display_qs = non_salary_qs
     try:
-        transactions_list = list(qs[:200])
+        transactions_list = list(non_salary_display_qs[:200])
     except Exception:
-        transactions_list = list(qs.defer('expense_category')[:200])
+        transactions_list = list(non_salary_display_qs.defer('expense_category')[:200])
         for _t in transactions_list:
             _t.__dict__['expense_category'] = ''
 
@@ -796,6 +897,18 @@ def transaction_list(request):
     if has_unassigned:
         site_ms_options.append({'value': 'UNASSIGNED', 'display': '— Unassigned —'})
 
+    # Salary panel data — grouped per site, one totals row + drill-down of
+    # per-date entries. Scoped to the active cycle so the panel matches
+    # the top summary card.
+    from finance.services.salary_panel import build_salary_panel
+    salary_panel = build_salary_panel(admin_id, cycle_start, cycle_end)
+
+    # Available cycles for the top filter dropdown AND every per-card
+    # cycle picker (they share the same list).
+    available_cycles = _available_cycles(n=8)
+    active_cycle_key = f"{cycle_start.isoformat()}_{cycle_end.isoformat()}"
+    current_cycle_month_key = get_salary_cycle(today_ist())['month_key']
+
     return render(request, 'finance/list.html', {
         'transactions':        transactions_list,
         'transactions_json':   transactions_json,
@@ -804,8 +917,15 @@ def transaction_list(request):
         'total_expense':       total_expense,
         'total_income':        total_income,
         'net_balance':         net_balance,
-        'this_month_expense':  this_month_expense,
-        'expense_count':       expense_count,
+        # Cycle-scoped totals (top "This Cycle" card).
+        'total_salary_expense':     total_salary_expense,
+        'total_non_salary_expense': total_non_salary_expense,
+        'cycle_start':          cycle_start,
+        'cycle_end':            cycle_end,
+        'cycle_label':          cycle_label,
+        'active_cycle_key':     active_cycle_key,
+        'available_cycles':     available_cycles,
+        'salary_panel':         salary_panel,
         'categories':          Category.objects.filter(admin_id=admin_id, type='expense'),
         'filters':               filters,
         'site_options':          site_options,
@@ -830,10 +950,12 @@ def transaction_list(request):
         'selected_categories':     filters.get('categories') or [],
         'selected_sites':          filters.get('sites') or [],
         'balance_data':         balance_combos,
-        # Default selection for the per-card month dropdown (Issue 4) —
-        # the page renders with the current month pre-selected so each card
-        # surfaces this month's Credit/Debit/Balance immediately.
-        'current_month':        timezone.now().strftime('%Y-%m'),
+        # Per-card default selection — matches the page-level active cycle
+        # so cards land showing the same window as the top summary. Value
+        # is the cycle's END month key ('YYYY-MM'), stored in the option
+        # `value` and matched against `data-monthly` bucket keys by JS.
+        # Legacy variable name kept for template compatibility.
+        'current_month':        current_cycle_month_key,
         # Unique values for the inline-edit Credit From / Credit To dropdowns.
         'payment_by_options':   payment_by_options,
         'vendor_options':       vendor_options,
