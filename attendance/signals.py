@@ -37,13 +37,27 @@ def _marker(attendance_pk):
 
 
 def _resolve_site(instance):
+    """Best-guess site name for the salary expense row.
+
+    Priority: attendance.site_ref.name → attendance.site (CharField) →
+    employee.site (the employee's default/home site). Empty string when
+    none can be found — caller treats that as "unattributable" and
+    deletes any prior expense row for this attendance.
+    """
     ref = getattr(instance, 'site_ref', None)
     if ref is not None:
         name = getattr(ref, 'name', '') or ''
         if name.strip():
             return name.strip()
     site = (instance.site or '').strip()
-    return site
+    if site:
+        return site
+    emp = getattr(instance, 'employee', None)
+    if emp is not None:
+        emp_site = (getattr(emp, 'site', '') or '').strip()
+        if emp_site:
+            return emp_site
+    return ''
 
 
 def _resolve_user(instance):
@@ -133,10 +147,12 @@ def sync_expense_from_attendance(sender, instance, **kwargs):
                 created_by=user,
                 **fields,
             )
-    except Exception as exc:
-        logger.warning(
-            "AUTO-SAL post_save failed for AttendanceRecord pk=%s: %s",
-            getattr(instance, 'pk', None), exc,
+    except Exception:
+        # Full traceback — attendance save must never fail because of a
+        # downstream expense hiccup, but future debugging needs the stack.
+        logger.exception(
+            "[SALSYNC] post_save failed for AttendanceRecord pk=%s",
+            getattr(instance, 'pk', None),
         )
 
 
@@ -148,8 +164,8 @@ def remove_expense_on_attendance_delete(sender, instance, **kwargs):
             admin_id=instance.admin_id,
             reference=_marker(instance.pk),
         ).delete()
-    except Exception as exc:
-        logger.warning(
-            "AUTO-SAL post_delete failed for AttendanceRecord pk=%s: %s",
-            getattr(instance, 'pk', None), exc,
+    except Exception:
+        logger.exception(
+            "[SALSYNC] post_delete failed for AttendanceRecord pk=%s",
+            getattr(instance, 'pk', None),
         )

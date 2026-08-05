@@ -10,23 +10,27 @@ from .models import WorkDetailSuggestion
 
 
 def sites_for_admin(admin_id, restrict_attendance_to=None):
-    """Canonical site-name list for a tenant.
+    """Canonical site-name list for a tenant — hard-scoped to TODAY (IST).
 
-    Union of:
-      * projects.Site.name for this admin_id (source of truth — its casing wins)
-      * attendance.AttendanceRecord.site      (legacy CharField)
-      * attendance.AttendanceRecord.site_ref__name
+    A site name is returned iff EITHER of these hold today (IST):
+      * projects.Site row exists for `admin_id` with `is_active=True`, OR
+      * attendance.AttendanceRecord exists for `admin_id` on today's date
+        whose `site_ref.name` or `site` (CharField) matches.
 
-    Case-insensitive dedup; the FIRST casing encountered survives (Projects.Site
-    is loaded first so its spelling wins any collision). Sorted A→Z. Blank /
-    whitespace-only entries are dropped. Returns list[str].
+    Case-insensitive dedup; Projects.Site casing wins collisions (loaded
+    first). Sorted A→Z. Blank / whitespace-only entries are dropped.
+    Returns list[str].
 
-    `restrict_attendance_to` (date | None) narrows the Attendance contribution
-    to that day only. Projects.Site is always included.
+    `restrict_attendance_to` is accepted for signature compatibility but
+    IGNORED — the scope is fixed to today (IST) with no manual override,
+    per product spec. Kept in the signature so existing callers keep
+    working without churn.
 
-    Does NOT read Transaction.location_site or Income.location_site — legacy
-    manual-entry values are considered orphans and never resurface here.
+    Does NOT read Transaction.location_site or Income.location_site.
     """
+    from accounts.date_utils import today_ist
+
+    today = today_ist()
     canonical = {}
 
     def _add(name):
@@ -39,22 +43,23 @@ def sites_for_admin(admin_id, restrict_attendance_to=None):
         if k not in canonical:
             canonical[k] = n
 
+    # Projects.Site — only rows flagged active. Loaded first so their
+    # casing wins any collision with an attendance-only spelling.
     try:
         from .models import Site as ProjSite
         for n in (
             ProjSite.objects
-            .filter(admin_id=admin_id)
+            .filter(admin_id=admin_id, is_active=True)
             .values_list('name', flat=True)
         ):
             _add(n)
     except Exception:
         pass
 
+    # Attendance — TODAY ONLY, both the FK name and the legacy CharField.
     try:
         from attendance.models import AttendanceRecord
-        att = AttendanceRecord.objects.filter(admin_id=admin_id)
-        if restrict_attendance_to is not None:
-            att = att.filter(date=restrict_attendance_to)
+        att = AttendanceRecord.objects.filter(admin_id=admin_id, date=today)
         for n in (
             att.exclude(site__isnull=True).exclude(site='')
                .values_list('site', flat=True).distinct()
