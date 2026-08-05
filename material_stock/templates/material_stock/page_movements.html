@@ -32,9 +32,18 @@
                        max="{{ date_max|date:'Y-m-d' }}">
             </div>
             <div class="ms-field">
-                <label>Site <span class="req">*</span></label>
+                <label>Source Site</label>
                 <select class="ms-select" id="h_site">
-                    <option value="">— Select site —</option>
+                    <option value="">— None —</option>
+                    {% for s in sites %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="ms-field">
+                <label>Destination Site</label>
+                <select class="ms-select" id="h_dest_site">
+                    <option value="">— None —</option>
                     {% for s in sites %}
                     <option value="{{ s.id }}">{{ s.name }}</option>
                     {% endfor %}
@@ -82,7 +91,8 @@
         <table class="data-table" style="min-width:1000px;">
             <thead><tr>
                 <th style="width:120px;">Date</th>
-                <th>Site</th>
+                <th>From Site</th>
+                <th>To Site</th>
                 <th>Material</th>
                 <th>Serial No</th>
                 <th>From</th>
@@ -94,7 +104,8 @@
                 {% for mv in history %}
                 <tr>
                     <td>{{ mv.movement_date|date:'d M Y' }}</td>
-                    <td>{{ mv.site.name }}</td>
+                    <td>{% if mv.source_site %}{{ mv.source_site.name }}{% else %}—{% endif %}</td>
+                    <td>{% if mv.destination_site %}{{ mv.destination_site.name }}{% else %}—{% endif %}</td>
                     <td>{{ mv.stock_item.material_type.brand.name }} · {{ mv.stock_item.material_type.name }}</td>
                     <td>{{ mv.stock_item.serial_no }}</td>
                     <td>{{ mv.from_person|default:'— stock —' }}</td>
@@ -105,7 +116,7 @@
                     {% endif %}
                 </tr>
                 {% empty %}
-                <tr><td colspan="{% if is_admin %}8{% else %}7{% endif %}" class="ms-empty">No movements this month.</td></tr>
+                <tr><td colspan="{% if is_admin %}9{% else %}8{% endif %}" class="ms-empty">No movements this month.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -134,10 +145,11 @@ document.getElementById('h_month').addEventListener('change', function () {
     // material_type_id -> {id, brand_id, label}
     const MTYPE_BY_ID = new Map(MTYPES.map(m => [String(m.id), m]));
 
-    const hSite   = document.getElementById('h_site');
-    const hDate   = document.getElementById('h_date');
-    const hFrom   = document.getElementById('h_from');
-    const hTo     = document.getElementById('h_to');
+    const hSite    = document.getElementById('h_site');
+    const hDestSite= document.getElementById('h_dest_site');
+    const hDate    = document.getElementById('h_date');
+    const hFrom    = document.getElementById('h_from');
+    const hTo      = document.getElementById('h_to');
     const tbody   = document.getElementById('batch_rows');
     const btnAdd  = document.getElementById('btn_add_row');
     const btnSave = document.getElementById('btn_save_all');
@@ -199,11 +211,11 @@ document.getElementById('h_month').addEventListener('change', function () {
         const sel = tr.querySelector('.row-mtype');
         sel.innerHTML = '';
         const first = document.createElement('option');
-        first.value = ''; first.textContent = hSite.value ? '— Select material —' : '— pick site first —';
+        first.value = ''; first.textContent = '— Select material —';
         sel.appendChild(first);
-        if (!hSite.value) { sel.disabled = true; return; }
         sel.disabled = false;
-        // Only material types that have at least one available item at this site.
+        // Only material types that have at least one available item in the
+        // current scope (site-filtered or all-tenant if no source site).
         siteGroups.forEach(g => {
             const o = document.createElement('option');
             o.value = g.material_type_id;
@@ -295,7 +307,6 @@ document.getElementById('h_month').addEventListener('change', function () {
         });
 
         display.addEventListener('click', () => {
-            if (!hSite.value) { MS.toast('Pick a site in the header first.', false); return; }
             if (!mSel.value)  { MS.toast('Pick a material type first.', false); return; }
             openPop(!pop.classList.contains('open'));
         });
@@ -324,7 +335,6 @@ document.getElementById('h_month').addEventListener('change', function () {
         }
         addOpen.addEventListener('click', (e) => {
             e.preventDefault();
-            if (!hSite.value) { MS.toast('Pick a site in the header first.', false); return; }
             if (!mSel.value)  { MS.toast('Pick a material type first.', false); return; }
             showAddForm(true);
         });
@@ -400,14 +410,13 @@ document.getElementById('h_month').addEventListener('change', function () {
         });
     }
 
-    // ── Header: Site change → re-fetch, warn if rows would be cleared ─
+    // ── Header: Source-site change → re-fetch, warn if rows would be cleared ─
     async function loadItemsForSite() {
         siteGroups = [];
-        if (!hSite.value) {
-            [...tbody.querySelectorAll('tr')].forEach(populateMtypeSelect);
-            return;
-        }
-        const r = await MS.get(`{% url 'material_stock:items_by_site' %}?site_id=${hSite.value}`);
+        const url = hSite.value
+            ? `{% url 'material_stock:items_by_site' %}?site_id=${hSite.value}`
+            : `{% url 'material_stock:items_by_site' %}`;
+        const r = await MS.get(url);
         siteGroups = (r && r.groups) || [];
         // Refresh every row's material dropdown; clear any prior selection.
         [...tbody.querySelectorAll('tr')].forEach(tr => {
@@ -440,7 +449,6 @@ document.getElementById('h_month').addEventListener('change', function () {
     btnAdd.addEventListener('click', () => renderRow(++rowSeq));
 
     btnSave.addEventListener('click', async () => {
-        if (!hSite.value) { MS.toast('Pick a site.', false); return; }
         if (!hDate.value) { MS.toast('Pick a date.', false); return; }
         const rows = [];
         let anySelected = false;
@@ -460,11 +468,12 @@ document.getElementById('h_month').addEventListener('change', function () {
 
         btnSave.disabled = true;
         const r = await MS.post("{% url 'material_stock:movement_batch_add' %}", {
-            movement_date: hDate.value,
-            site_id:       parseInt(hSite.value, 10),
-            from_person:   hFrom.value.trim(),
-            to_person:     hTo.value.trim(),
-            rows:          rows,
+            movement_date:        hDate.value,
+            source_site_id:       hSite.value ? parseInt(hSite.value, 10) : null,
+            destination_site_id:  hDestSite.value ? parseInt(hDestSite.value, 10) : null,
+            from_person:          hFrom.value.trim(),
+            to_person:            hTo.value.trim(),
+            rows:                 rows,
         });
         btnSave.disabled = false;
 
@@ -477,8 +486,9 @@ document.getElementById('h_month').addEventListener('change', function () {
         }
     });
 
-    // Kick off with one empty row.
+    // Kick off with one empty row + a first load (no source site → all items).
     renderRow(++rowSeq);
+    loadItemsForSite();
 })();
 
 async function delMovement(id) {

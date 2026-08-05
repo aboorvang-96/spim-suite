@@ -2,51 +2,73 @@
 {% load static %}
 
 {% block ms_body %}
-{{ brands|json_script:"ms-brands-data" }}
+{{ mtypes_all|json_script:"ms-mtypes-all-data" }}
 
-{% if is_admin %}
+<!-- ── Filter bar ── -->
 <div class="ms-panel">
     <div class="ms-panel-head">
         <div>
-            <h3 class="ms-panel-title">Add Stock Item</h3>
-            <p class="ms-panel-note">Pick equipment and a material type, then enter the unit details.</p>
+            <h3 class="ms-panel-title">Filters</h3>
+            <p class="ms-panel-note">All fields optional. Download applies the same filters.</p>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <a class="btn btn-outline btn-sm" id="btn_pdf">Download PDF</a>
+            <a class="btn btn-outline btn-sm" id="btn_xlsx">Download Excel</a>
         </div>
     </div>
     <div class="ms-panel-body">
-        <form id="addForm" class="ms-form-grid" autocomplete="off">
+        <form id="filterForm" method="get" class="ms-form-grid">
             <div class="ms-field">
-                <label>Equipment <span class="req">*</span></label>
-                <select class="ms-select" id="f_brand"></select>
+                <label>Serial Number</label>
+                <input class="ms-input" type="text" name="serial" value="{{ filters.serial }}" placeholder="contains…">
             </div>
-
-            <div class="ms-field tracked-field">
-                <label>Material Type <span class="req">*</span></label>
-                <select class="ms-select" id="f_mtype"></select>
+            <div class="ms-field">
+                <label>Site</label>
+                <select class="ms-select" name="site_id">
+                    <option value="">— Any site —</option>
+                    {% for s in sites %}
+                    <option value="{{ s.id }}" {% if filters.site_id == s.id|stringformat:'s' %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
             </div>
-            <div class="ms-field tracked-field">
-                <label>Serial Number <span class="req">*</span></label>
-                <input class="ms-input" id="f_serial" type="text" placeholder="e.g. PZ-00123">
+            <div class="ms-field">
+                <label>Equipment</label>
+                <select class="ms-select" name="equipment_id" id="f_equipment">
+                    <option value="">— Any equipment —</option>
+                    {% for e in equipments %}
+                    <option value="{{ e.id }}" {% if filters.equipment_id == e.id|stringformat:'s' %}selected{% endif %}>{{ e.name }}</option>
+                    {% endfor %}
+                </select>
             </div>
-            <div class="ms-field tracked-field batched-field">
-                <label>Batch No</label>
-                <input class="ms-input" id="f_batch" type="text" placeholder="Batch number">
+            <div class="ms-field">
+                <label>Material Type</label>
+                <select class="ms-select" name="material_type_id" id="f_mtype">
+                    <option value="">— Any material —</option>
+                </select>
             </div>
-            <div class="ms-field tracked-field batched-field">
-                <label>Mfg Date</label>
-                <input class="ms-input" id="f_mfg" type="date" max="{{ today_ist_iso }}">
+            <div class="ms-field">
+                <label>Purchase Date From</label>
+                <input class="ms-input" type="date" name="pdate_from" value="{{ filters.pdate_from }}" max="{{ today_ist_iso }}">
             </div>
-            <div class="ms-field tracked-field">
-                <label>Purchase Date <span class="req">*</span></label>
-                <input class="ms-input" id="f_purchase" type="date" value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
+            <div class="ms-field">
+                <label>Purchase Date To</label>
+                <input class="ms-input" type="date" name="pdate_to" value="{{ filters.pdate_to }}" max="{{ today_ist_iso }}">
             </div>
-
             <div class="ms-field" style="align-self:end;">
-                <button type="submit" class="btn btn-primary btn-sm" id="addBtn">+ Add Item</button>
+                <label style="display:flex; align-items:center; gap:6px; font-weight:600;">
+                    <input type="checkbox" name="has_in" value="1" {% if filters.has_in %}checked{% endif %}> Has Stock In
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; font-weight:600; margin-top:6px;">
+                    <input type="checkbox" name="has_out" value="1" {% if filters.has_out %}checked{% endif %}> Has Stock Out
+                </label>
+            </div>
+            <div class="ms-field" style="align-self:end; display:flex; gap:8px;">
+                <button type="submit" class="btn btn-primary btn-sm">Apply Filters</button>
+                <a href="{% url 'material_stock:index' %}" class="btn btn-outline btn-sm">Reset</a>
             </div>
         </form>
     </div>
 </div>
-{% endif %}
 
 <div class="ms-panel">
     <div class="ms-panel-head">
@@ -84,7 +106,7 @@
                     <td><strong>{{ g.balance }}</strong></td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="ms-empty">No stock yet. {% if is_admin %}Add an item above to get started.{% endif %}</td></tr>
+                <tr><td colspan="8" class="ms-empty">No stock matches these filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -93,71 +115,48 @@
 {% endblock %}
 
 {% block ms_scripts %}
-{% if is_admin %}
 <script>
 (function () {
-    const BRANDS   = JSON.parse(document.getElementById('ms-brands-data').textContent || '[]');
-    const brandSel = document.getElementById('f_brand');
-    const mtypeSel = document.getElementById('f_mtype');
-    const form     = document.getElementById('addForm');
+    // Cascading Equipment → Material Type filter dropdown.
+    const MTYPES  = JSON.parse(document.getElementById('ms-mtypes-all-data').textContent || '[]');
+    const eqSel   = document.getElementById('f_equipment');
+    const mtSel   = document.getElementById('f_mtype');
+    const preMt   = "{{ filters.material_type_id }}";
 
-    function opt(v, t) { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
+    function refreshMtypes() {
+        const eq = eqSel.value;
+        const prev = mtSel.value || preMt;
+        mtSel.innerHTML = '<option value="">— Any material —</option>';
+        MTYPES.forEach(m => {
+            if (eq && String(m.brand_id) !== String(eq)) return;
+            const o = document.createElement('option');
+            o.value = m.id; o.textContent = m.label;
+            if (String(m.id) === String(prev)) o.selected = true;
+            mtSel.appendChild(o);
+        });
+    }
+    eqSel.addEventListener('change', refreshMtypes);
+    refreshMtypes();
 
-    // Populate equipment dropdown.
-    brandSel.appendChild(opt('', '— Select equipment —'));
-    BRANDS.forEach(b => brandSel.appendChild(opt(b.id, b.name)));
-
-    function currentBrand() { return BRANDS.find(b => String(b.id) === String(brandSel.value)); }
-    function currentMtype() { const b = currentBrand(); return b ? b.types.find(t => String(t.id) === String(mtypeSel.value)) : null; }
-
-    function show(sel, on) { document.querySelectorAll(sel).forEach(el => el.classList.toggle('hidden', !on)); }
-
-    function refreshMode() {
-        const b = currentBrand();
-        show('.tracked-field', !!b);
-        // Material type list.
-        mtypeSel.innerHTML = '';
-        if (b) {
-            mtypeSel.appendChild(opt('', '— Select material —'));
-            b.types.forEach(t => mtypeSel.appendChild(opt(t.id, t.name)));
+    // Download buttons build URL from current form values.
+    function buildQuery() {
+        const fd = new FormData(document.getElementById('filterForm'));
+        const qs = new URLSearchParams();
+        for (const [k, v] of fd.entries()) {
+            if (v !== '') qs.append(k, v);
         }
-        refreshBatched();
+        return qs.toString();
     }
-
-    function refreshBatched() {
-        const mt = currentMtype();
-        const batched = mt && mt.tracking_mode === 'batched';
-        show('.batched-field', !!batched);
-    }
-
-    brandSel.addEventListener('change', refreshMode);
-    mtypeSel.addEventListener('change', refreshBatched);
-    refreshMode();
-
-    form.addEventListener('submit', async (e) => {
+    document.getElementById('btn_pdf').addEventListener('click', (e) => {
         e.preventDefault();
-        const b = currentBrand();
-        if (!b) { MS.toast('Select an equipment.', false); return; }
-
-        const payload = {
-            brand_id:         b.id,
-            material_type_id: mtypeSel.value,
-            serial_no:        document.getElementById('f_serial').value.trim(),
-            batch_no:         document.getElementById('f_batch').value.trim(),
-            mfg_date:         document.getElementById('f_mfg').value,
-            purchase_date:    document.getElementById('f_purchase').value,
-        };
-        if (!payload.material_type_id) { MS.toast('Select a material type.', false); return; }
-        if (!payload.serial_no)        { MS.toast('Serial number is required.', false); return; }
-
-        const btn = document.getElementById('addBtn');
-        btn.disabled = true;
-        const r = await MS.post("{% url 'material_stock:item_add' %}", payload);
-        btn.disabled = false;
-        if (r.ok) { MS.toast('Item added.'); location.reload(); }
-        else      { MS.toast(r.data.error || 'Failed to add.', false); }
+        const q = buildQuery();
+        location.href = "{% url 'material_stock:stock_report_export' %}?format=pdf" + (q ? '&' + q : '');
+    });
+    document.getElementById('btn_xlsx').addEventListener('click', (e) => {
+        e.preventDefault();
+        const q = buildQuery();
+        location.href = "{% url 'material_stock:stock_report_export' %}?format=xlsx" + (q ? '&' + q : '');
     });
 })();
 </script>
-{% endif %}
 {% endblock %}

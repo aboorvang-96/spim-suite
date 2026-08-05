@@ -56,6 +56,64 @@
         <div class="ms-panel"><div class="ms-empty">Select or add an entry to begin.</div></div>
 
     {% else %}
+        {% if is_admin %}
+        <!-- ── Add Stock Item form (single source of truth for creating items) ── -->
+        <div class="ms-panel">
+            <div class="ms-panel-head">
+                <div>
+                    <h3 class="ms-panel-title">Add Stock Item — {{ selected.name }}</h3>
+                    <p class="ms-panel-note">Creates a new serial-tracked unit under this equipment.</p>
+                </div>
+            </div>
+            <div class="ms-panel-body">
+                <form id="addItemForm" class="ms-form-grid" autocomplete="off">
+                    <div class="ms-field">
+                        <label>Equipment</label>
+                        <input class="ms-input" type="text" value="{{ selected.name }}" readonly>
+                    </div>
+                    <div class="ms-field">
+                        <label>Material Type <span class="req">*</span></label>
+                        <select class="ms-select" id="ai_mtype">
+                            <option value="">— Select material —</option>
+                            {% for mt in mtype_options %}
+                            <option value="{{ mt.id }}" data-batched="{{ mt.is_batched|yesno:'1,0' }}">{{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="ms-field">
+                        <label>Serial Number <span class="req">*</span></label>
+                        <input class="ms-input" id="ai_serial" type="text" placeholder="e.g. PZ-00123">
+                    </div>
+                    <div class="ms-field ai-batched hidden">
+                        <label>Batch No</label>
+                        <input class="ms-input" id="ai_batch" type="text">
+                    </div>
+                    <div class="ms-field ai-batched hidden">
+                        <label>Mfg Date</label>
+                        <input class="ms-input" id="ai_mfg" type="date" max="{{ today_ist_iso }}">
+                    </div>
+                    <div class="ms-field">
+                        <label>Purchase Date <span class="req">*</span></label>
+                        <input class="ms-input" id="ai_purchase" type="date"
+                               value="{{ today|date:'Y-m-d' }}" max="{{ today_ist_iso }}">
+                    </div>
+                    <div class="ms-field">
+                        <label>Site</label>
+                        <select class="ms-select" id="ai_site">
+                            <option value="">— None —</option>
+                            {% for s in sites %}
+                            <option value="{{ s.id }}">{{ s.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="ms-field" style="align-self:end;">
+                        <button type="submit" class="btn btn-primary btn-sm" id="ai_btn">+ Add Item</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Tracked entry: material type sub-tabs -->
         <div class="ms-panel">
             <div class="ms-panel-head">
@@ -235,20 +293,80 @@
 
 {% block ms_scripts %}
 <script>
-// Sub-tab switching (works for all users).
-document.querySelectorAll('.ms-subtab').forEach(btn => {
-    btn.addEventListener('click', () => {
+// Sub-tab switching (works for all users). Preserves the selected tab in
+// the URL hash so post-add reloads land on the same material tab.
+(function () {
+    function activateTab(id) {
+        const btn = document.querySelector(`.ms-subtab[data-target="${id}"]`);
+        const pane = document.getElementById(id);
+        if (!btn || !pane) return false;
         document.querySelectorAll('.ms-subtab').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.ms-subpanel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
-        document.getElementById(btn.dataset.target).classList.add('active');
+        pane.classList.add('active');
+        return true;
+    }
+    document.querySelectorAll('.ms-subtab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            activateTab(btn.dataset.target);
+            history.replaceState(null, '', '#' + btn.dataset.target);
+        });
     });
-});
+    if (location.hash && location.hash.startsWith('#sub-')) {
+        activateTab(location.hash.slice(1));
+    }
+})();
 </script>
 
 {% if is_admin %}
 <script>
 const SELECTED_BRAND = {% if selected %}{{ selected.id }}{% else %}null{% endif %};
+
+// ── Add Stock Item (Master Control) ──
+(function () {
+    const form = document.getElementById('addItemForm');
+    if (!form) return;
+    const mtSel   = document.getElementById('ai_mtype');
+    const batched = document.querySelectorAll('.ai-batched');
+
+    function refreshBatched() {
+        const opt = mtSel.selectedOptions[0];
+        const on  = opt && opt.dataset.batched === '1';
+        batched.forEach(el => el.classList.toggle('hidden', !on));
+    }
+    mtSel.addEventListener('change', refreshBatched);
+    refreshBatched();
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const mtVal = mtSel.value;
+        if (!mtVal) { MS.toast('Select a material type.', false); return; }
+        const payload = {
+            brand_id:         SELECTED_BRAND,
+            material_type_id: mtVal,
+            serial_no:        document.getElementById('ai_serial').value.trim(),
+            batch_no:         document.getElementById('ai_batch').value.trim(),
+            mfg_date:         document.getElementById('ai_mfg').value,
+            purchase_date:    document.getElementById('ai_purchase').value,
+            site_id:          document.getElementById('ai_site').value,
+        };
+        if (!payload.serial_no)     { MS.toast('Serial number is required.', false); return; }
+        if (!payload.purchase_date) { MS.toast('Purchase date is required.', false); return; }
+
+        const btn = document.getElementById('ai_btn');
+        btn.disabled = true;
+        const r = await MS.post("{% url 'material_stock:item_add' %}", payload);
+        btn.disabled = false;
+        if (r.ok) {
+            MS.toast('Item added.');
+            // Reload preserving equipment + material tab.
+            const target = 'sub-' + mtVal;
+            location.href = '?brand=' + SELECTED_BRAND + '#' + target;
+        } else {
+            MS.toast(r.data.error || 'Failed to add.', false);
+        }
+    });
+})();
 
 // ── Equipment / Machinery ──
 function openAddBrand(section) {

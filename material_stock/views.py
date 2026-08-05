@@ -24,7 +24,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST, require_GET
@@ -147,15 +147,49 @@ def _brands_payload(admin_id):
 # PAGE 1 — Stock  (default landing page)
 # ===========================================================================
 
-@login_required
-def index(request):
-    admin_id = get_admin_id(request.user)
-    today    = timezone.localdate()
+def _stock_report_rows(admin_id, params, today):
+    """
+    Shared summary-row builder used by index() and the PDF/Excel exports.
+    Groups by (material_type + purchase_date). Site is NOT a grouping key:
+    the column shows the site name only when every item in the group shares
+    one site, otherwise it shows an em-dash.
 
-    items = (StockItem.objects.filter(admin_id=admin_id)
-             .select_related('material_type', 'material_type__brand', 'site'))
+    `params` is a plain dict of GET-style filters:
+        serial, site_id, equipment_id, material_type_id,
+        pdate_from, pdate_to, has_in ('1'), has_out ('1')
+    """
+    items_qs = (StockItem.objects.filter(admin_id=admin_id)
+                .select_related('material_type', 'material_type__brand', 'site'))
 
-    # Movement in/out counts per stock item (single query).
+    serial = (params.get('serial') or '').strip()
+    if serial:
+        items_qs = items_qs.filter(serial_no__icontains=serial)
+    try:
+        if params.get('site_id'):
+            items_qs = items_qs.filter(site_id=int(params['site_id']))
+    except (ValueError, TypeError):
+        pass
+    try:
+        if params.get('equipment_id'):
+            items_qs = items_qs.filter(material_type__brand_id=int(params['equipment_id']))
+    except (ValueError, TypeError):
+        pass
+    try:
+        if params.get('material_type_id'):
+            items_qs = items_qs.filter(material_type_id=int(params['material_type_id']))
+    except (ValueError, TypeError):
+        pass
+    pd_from = _to_date(params.get('pdate_from'))
+    if pd_from:
+        items_qs = items_qs.filter(purchase_date__gte=pd_from)
+    pd_to = _to_date(params.get('pdate_to'))
+    if pd_to:
+        items_qs = items_qs.filter(purchase_date__lte=pd_to)
+
+    items = list(items_qs)
+
+    # Movement in/out counts per stock item (single query, unfiltered — we
+    # want the item's real balance regardless of the row-level filters).
     mv_rows = (StockMovement.objects.filter(admin_id=admin_id)
                .values('stock_item_id')
                .annotate(
@@ -164,34 +198,77 @@ def index(request):
                ))
     mv_map = {r['stock_item_id']: (r['ins'], r['outs']) for r in mv_rows}
 
-    # Group by (material_type, site, purchase_date) — site is first-class now,
-    # so the summary shows a separate row per site instead of blending across.
     groups = {}
     for it in items:
-        key = (it.material_type_id, it.site_id, it.purchase_date)
+        key = (it.material_type_id, it.purchase_date)
         g = groups.get(key)
         if g is None:
             g = groups[key] = {
                 'material_type_id': it.material_type_id,
                 'material_label':   f"{it.material_type.brand.name} · {it.material_type.name}",
-                'site_label':       it.site.name if it.site_id else '',
                 'purchase_date':    it.purchase_date,
                 'is_new':           it.purchase_date == today,
                 'quantity':         0,
                 'stock_in':         0,
                 'stock_out':        0,
+                '_site_ids':        set(),
+                '_site_name':       '',
             }
         g['quantity'] += 1
         ins, outs = mv_map.get(it.id, (0, 0))
         g['stock_in']  += ins
         g['stock_out'] += outs
+        g['_site_ids'].add(it.site_id)
+        if it.site_id and not g['_site_name']:
+            g['_site_name'] = it.site.name
+
+    for g in groups.values():
+        # Single-site group iff exactly one non-null site is present.
+        sids = {s for s in g['_site_ids'] if s is not None}
+        g['site_label'] = g['_site_name'] if len(sids) == 1 else ''
+        g['balance'] = g['quantity'] + g['stock_in'] - g['stock_out']
+        del g['_site_ids']
+        del g['_site_name']
 
     group_list = sorted(groups.values(),
-                        key=lambda g: (g['material_label'], g['site_label'],
+                        key=lambda g: (g['material_label'],
                                        g['purchase_date'] or date_cls.min))
+
+    # Post-aggregation filters (need summed values).
+    if params.get('has_in') in ('1', 'true', 'on'):
+        group_list = [g for g in group_list if g['stock_in'] > 0]
+    if params.get('has_out') in ('1', 'true', 'on'):
+        group_list = [g for g in group_list if g['stock_out'] > 0]
+
     for i, g in enumerate(group_list, start=1):
         g['sl'] = i
-        g['balance'] = g['quantity'] + g['stock_in'] - g['stock_out']
+    return group_list
+
+
+@login_required
+def index(request):
+    admin_id = get_admin_id(request.user)
+    today    = timezone.localdate()
+
+    filters = {
+        'serial':           request.GET.get('serial', ''),
+        'site_id':          request.GET.get('site_id', ''),
+        'equipment_id':     request.GET.get('equipment_id', ''),
+        'material_type_id': request.GET.get('material_type_id', ''),
+        'pdate_from':       request.GET.get('pdate_from', ''),
+        'pdate_to':         request.GET.get('pdate_to', ''),
+        'has_in':           request.GET.get('has_in', ''),
+        'has_out':          request.GET.get('has_out', ''),
+    }
+    group_list = _stock_report_rows(admin_id, filters, today)
+
+    # Filter-bar dropdown data.
+    equipments = list(Brand.objects.filter(admin_id=admin_id, is_active=True)
+                      .order_by('name').values('id', 'name'))
+    mtypes = list(MaterialType.objects.filter(admin_id=admin_id, is_active=True)
+                  .select_related('brand').order_by('brand__name', 'name'))
+    mtype_rows = [{'id': m.id, 'brand_id': m.brand_id,
+                   'label': f'{m.brand.name} · {m.name}'} for m in mtypes]
 
     return render(request, 'material_stock/page_stock.html', {
         'active_page': 'stock',
@@ -199,7 +276,168 @@ def index(request):
         'groups':      group_list,
         'brands':      _brands_payload(admin_id),
         'today':       today,
+        'sites':       _sites_payload(admin_id),
+        'equipments':  equipments,
+        'mtypes_all':  mtype_rows,
+        'filters':     filters,
     })
+
+
+def _report_filename(ext):
+    now = timezone.localtime()
+    return f'material_stock_report_{now.strftime("%Y-%m-%d_%H%M")}.{ext}'
+
+
+@login_required
+def stock_report_export(request):
+    """
+    GET /material-stock/report/download/?format=pdf|xlsx&<filters>
+    Downloads the currently-filtered Stock Summary. Reuses the same
+    reportlab + openpyxl patterns as projects.machine_history_download
+    (commit ce3a6bb6).
+    """
+    admin_id = get_admin_id(request.user)
+    today    = timezone.localdate()
+    filters = {k: request.GET.get(k, '') for k in
+               ('serial', 'site_id', 'equipment_id', 'material_type_id',
+                'pdate_from', 'pdate_to', 'has_in', 'has_out')}
+    rows = _stock_report_rows(admin_id, filters, today)
+    fmt  = (request.GET.get('format') or 'pdf').lower()
+
+    if fmt == 'xlsx':
+        from io import BytesIO
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+        from openpyxl.utils import get_column_letter
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Stock Summary'
+
+        thin   = Side(style='thin', color='CCCCCC')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        header_fill = PatternFill('solid', fgColor='F1F5F9')
+
+        ws.cell(row=1, column=1, value='Material Stock Report').font = Font(bold=True, size=13)
+        ws.cell(row=2, column=1, value=f'Generated: {today.strftime("%Y-%m-%d")}  •  Rows: {len(rows)}'
+                ).font = Font(italic=True, color='64748B')
+
+        headers = ['SL No', 'Purchase Date', 'Equipment', 'Material Type',
+                   'Site', 'Quantity', 'Stock In', 'Stock Out', 'Balance']
+        for ci, h in enumerate(headers, start=1):
+            c = ws.cell(row=4, column=ci, value=h)
+            c.font = Font(bold=True)
+            c.fill = header_fill
+            c.alignment = Alignment(vertical='center')
+
+        for ri, g in enumerate(rows, start=5):
+            # material_label = "Brand · Material" — split for display.
+            brand_part, _, mt_part = g['material_label'].partition(' · ')
+            ws.cell(row=ri, column=1, value=g['sl'])
+            ws.cell(row=ri, column=2,
+                    value=g['purchase_date'].strftime('%d %b %Y') if g['purchase_date'] else '')
+            ws.cell(row=ri, column=3, value=brand_part)
+            ws.cell(row=ri, column=4, value=mt_part or g['material_label'])
+            ws.cell(row=ri, column=5, value=g['site_label'] or '—')
+            ws.cell(row=ri, column=6, value=g['quantity']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=7, value=g['stock_in']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=8, value=g['stock_out']).alignment = Alignment(horizontal='center')
+            ws.cell(row=ri, column=9, value=g['balance']).alignment = Alignment(horizontal='center')
+
+        last_row = max(4, 4 + len(rows))
+        for rr in range(4, last_row + 1):
+            for cc in range(1, len(headers) + 1):
+                ws.cell(row=rr, column=cc).border = border
+
+        widths = [7, 14, 20, 22, 20, 10, 10, 11, 10]
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+        buf = BytesIO()
+        wb.save(buf)
+        resp = HttpResponse(
+            buf.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        resp['Content-Disposition'] = f'attachment; filename="{_report_filename("xlsx")}"'
+        return resp
+
+    if fmt == 'pdf':
+        from io import BytesIO
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT
+
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=landscape(A4),
+            leftMargin=1*cm, rightMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm,
+        )
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'TitleBold', parent=styles['Normal'],
+            fontName='Helvetica-Bold', fontSize=14, spaceAfter=4, alignment=TA_LEFT,
+        )
+        sub_style = ParagraphStyle(
+            'Sub', parent=styles['Normal'],
+            fontName='Helvetica', fontSize=9, textColor=colors.HexColor('#475569'), spaceAfter=8,
+        )
+        cell_style = ParagraphStyle(
+            'Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10,
+        )
+
+        def _wrap(txt):
+            safe = (str(txt) if txt is not None else '').replace('&', '&amp;')\
+                .replace('<', '&lt;').replace('>', '&gt;')
+            return Paragraph(safe or '—', cell_style)
+
+        story = [
+            Paragraph('Material Stock Report', title_style),
+            Paragraph(f'Generated: {today.strftime("%Y-%m-%d")} &nbsp;•&nbsp; Rows: {len(rows)}', sub_style),
+            Spacer(1, 4),
+        ]
+
+        headers = ['SL', 'Purchase Date', 'Equipment', 'Material Type',
+                   'Site', 'Qty', 'Stock In', 'Stock Out', 'Balance']
+        data = [headers]
+        for g in rows:
+            brand_part, _, mt_part = g['material_label'].partition(' · ')
+            data.append([
+                str(g['sl']),
+                g['purchase_date'].strftime('%d %b %Y') if g['purchase_date'] else '',
+                _wrap(brand_part),
+                _wrap(mt_part or g['material_label']),
+                _wrap(g['site_label'] or '—'),
+                str(g['quantity']),
+                str(g['stock_in']),
+                str(g['stock_out']),
+                str(g['balance']),
+            ])
+        col_widths = [1.0*cm, 2.6*cm, 4.5*cm, 5.5*cm, 4.5*cm,
+                      1.4*cm, 1.9*cm, 1.9*cm, 1.9*cm]
+        t = Table(data, colWidths=col_widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, 0), (-1, 0), 9),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
+            ('GRID',       (0, 0), (-1, -1), 0.3, colors.HexColor('#CBD5E1')),
+            ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN',      (0, 0), (1, -1), 'CENTER'),
+            ('ALIGN',      (5, 0), (-1, -1), 'CENTER'),
+            ('FONTSIZE',   (0, 1), (-1, -1), 8),
+        ]))
+        story.append(t)
+        if not rows:
+            story.append(Paragraph('No stock rows match the current filters.', sub_style))
+        doc.build(story)
+        resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+        resp['Content-Disposition'] = f'attachment; filename="{_report_filename("pdf")}"'
+        return resp
+
+    return HttpResponse('Unsupported format. Use ?format=xlsx or pdf.', status=400)
 
 
 # ===========================================================================
@@ -233,6 +471,11 @@ def master(request):
 
     if selected:
         mtypes = list(selected.material_types.filter(is_active=True).order_by('name'))
+        # Payload for the in-page Add Stock Item form (material dropdown).
+        ctx['mtype_options'] = [
+            {'id': mt.id, 'name': mt.name, 'is_batched': mt.is_batched}
+            for mt in mtypes
+        ]
         items_by_type = {}
         items = (StockItem.objects.filter(admin_id=admin_id, material_type__in=mtypes)
                  .select_related('site')
@@ -288,7 +531,7 @@ def movements(request):
                .filter(admin_id=admin_id,
                        movement_date__gte=month_start,
                        movement_date__lt=next_start)
-               .select_related('site',
+               .select_related('source_site', 'destination_site',
                                'stock_item', 'stock_item__material_type',
                                'stock_item__material_type__brand'))
 
@@ -626,9 +869,14 @@ def movement_batch_add(request):
     except ValidationError as e:
         return _err('; '.join(e.messages))
 
-    site = _get_tenant_site(admin_id, data.get('site_id'))
-    if site is None:
-        return _err('Site is required.')
+    # Source + destination sites are both optional. If provided, they must
+    # belong to this tenant.
+    source_site = _get_tenant_site(admin_id, data.get('source_site_id'))
+    if data.get('source_site_id') and source_site is None:
+        return _err('Invalid source site for this account.')
+    dest_site = _get_tenant_site(admin_id, data.get('destination_site_id'))
+    if data.get('destination_site_id') and dest_site is None:
+        return _err('Invalid destination site for this account.')
 
     from_person = _clean(data.get('from_person'), 150) or None
     to_person   = _clean(data.get('to_person'), 150) or None
@@ -669,15 +917,22 @@ def movement_batch_add(request):
 
                     mv = StockMovement.objects.create(
                         admin_id=admin_id, stock_item=item, movement_date=mdate,
-                        site=site,
+                        source_site=source_site, destination_site=dest_site,
                         from_person=from_person, to_person=to_person,
                         remarks=row['remarks'],
                         created_by=request.user if request.user.is_authenticated else None,
                     )
 
-                    # Live pointer on the item.
+                    # Live pointer on the item. The item's own StockItem.site
+                    # (home site) is NOT modified — sites recorded on the
+                    # movement are ledger-only.
                     item.current_holder_name = to_person
-                    item.current_site_name   = site.name
+                    # Prefer destination for the live "current site" pointer;
+                    # fall back to source, else clear.
+                    item.current_site_name = (
+                        dest_site.name if dest_site
+                        else (source_site.name if source_site else None)
+                    )
                     item.status = StockItem.ISSUED if to_person else StockItem.AVAILABLE
                     item.save(update_fields=['current_holder_name', 'current_site_name',
                                              'status', 'updated_at'])
@@ -721,7 +976,8 @@ def movement_delete(request, pk):
 
         if prior:
             item.current_holder_name = prior.to_person or None
-            item.current_site_name   = prior.site.name if prior.site_id else None
+            prior_site = prior.destination_site or prior.source_site
+            item.current_site_name   = prior_site.name if prior_site else None
             item.status = StockItem.ISSUED if prior.to_person else StockItem.AVAILABLE
         else:
             # First-ever movement → back to unissued stock.
@@ -771,18 +1027,14 @@ def sites_suggest(request):
     q = (request.GET.get('q') or '').strip()
 
     sites = set()
-    mv = StockMovement.objects.filter(admin_id=admin_id)
     it = StockItem.objects.filter(admin_id=admin_id)
     if q:
-        mv_sites = mv.filter(site_name__icontains=q).values_list('site_name', flat=True)
         it_sites = it.filter(current_site_name__icontains=q).values_list('current_site_name', flat=True)
     else:
-        mv_sites = mv.values_list('site_name', flat=True)
         it_sites = it.values_list('current_site_name', flat=True)
-    for src in (mv_sites, it_sites):
-        for s in src:
-            if s and s.strip():
-                sites.add(s.strip())
+    for s in it_sites:
+        if s and s.strip():
+            sites.add(s.strip())
     return JsonResponse({'results': sorted(sites)[:10]})
 
 
@@ -821,21 +1073,29 @@ def serials_suggest(request):
 @login_required
 @require_GET
 def items_by_site(request):
-    """Available stock at a site, grouped by material type.
+    """Available stock, grouped by material type.
 
-    Used by the Stock In/Out header→batch UI to populate material dropdowns
-    once a site is chosen. Only AVAILABLE items are returned.
+    Used by the Stock In/Out header→batch UI. Only AVAILABLE items are
+    returned. If `site_id` is given the list is scoped to items whose
+    home site matches it OR items with no home site set (unassigned stock
+    can be moved from any site). If `site_id` is omitted, ALL available
+    items across the tenant are returned.
     """
     admin_id = get_admin_id(request.user)
-    site = _get_tenant_site(admin_id, request.GET.get('site_id'))
-    if site is None:
-        return _err('Invalid or missing site_id.', status=400)
+    site_id  = request.GET.get('site_id')
 
     qs = (StockItem.objects
-          .filter(admin_id=admin_id, site=site, status=StockItem.AVAILABLE)
+          .filter(admin_id=admin_id, status=StockItem.AVAILABLE)
           .select_related('material_type', 'material_type__brand')
           .order_by('material_type__brand__name',
                     'material_type__name', 'serial_no'))
+
+    site = None
+    if site_id:
+        site = _get_tenant_site(admin_id, site_id)
+        if site is None:
+            return _err('Invalid site for this account.', status=400)
+        qs = qs.filter(Q(site=site) | Q(site__isnull=True))
 
     groups = {}
     for it in qs:
@@ -856,7 +1116,7 @@ def items_by_site(request):
         })
 
     return JsonResponse({
-        'site':   {'id': site.id, 'name': site.name},
+        'site':   {'id': site.id, 'name': site.name} if site else None,
         'groups': sorted(groups.values(), key=lambda g: g['label']),
     })
 
@@ -867,14 +1127,13 @@ def items_by_site(request):
 def quick_add_item(request):
     """Inline stock-item creation from the + Add Serial popover.
 
-    Thin wrapper over `item_add` — the only difference is that `site_id` is
-    strictly required here (whereas item_add tolerates NULL for legacy
-    callers). Keeps the endpoint the popover targets stable / discoverable.
+    Thin passthrough to `item_add`. Site is optional (matches the top-level
+    Master Control add form). If a site_id is supplied it must belong to
+    this tenant.
     """
     data = _body(request)
-    if not data.get('site_id'):
-        return _err('Site is required.')
-    if not _get_tenant_site(get_admin_id(request.user), data.get('site_id')):
+    if data.get('site_id') and not _get_tenant_site(
+            get_admin_id(request.user), data.get('site_id')):
         return _err('Invalid site for this account.', status=400)
     return item_add(request)
 

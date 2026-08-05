@@ -10,6 +10,9 @@ urlpatterns = [
     path('master/',     views.master,    name='master'),     # Page 2 — Master Control
     path('movements/',  views.movements, name='movements'),  # Page 3 — Stock In/Out
 
+    # ── Stock report download (PDF / Excel — Page 1) ────────────────────
+    path('report/download/', views.stock_report_export, name='stock_report_export'),
+
     # ── Stock item CRUD ─────────────────────────────────────────────────
     path('api/items/add/',            views.item_add,    name='item_add'),
     path('api/items/<int:pk>/edit/',  views.item_edit,   name='item_edit'),
