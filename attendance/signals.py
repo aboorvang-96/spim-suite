@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Cutover date — auto-expense rows are only written for attendance dated
 # on/after this day. Bump manually if you redeploy and want a fresh
 # cutover window; existing rows are unaffected.
-CUTOVER_DATE = datetime.date(2026, 8, 4)
+CUTOVER_DATE = datetime.date(2026, 6, 26)
 
 
 def _marker(attendance_pk):

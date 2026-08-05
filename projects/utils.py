@@ -10,27 +10,43 @@ from .models import WorkDetailSuggestion
 
 
 def sites_for_admin(admin_id, restrict_attendance_to=None):
-    """Canonical site-name list for a tenant — hard-scoped to TODAY (IST).
+    """Canonical site-name list for a tenant — scope: current + previous cycle.
 
-    A site name is returned iff EITHER of these hold today (IST):
+    A site name is returned iff EITHER holds:
       * projects.Site row exists for `admin_id` with `is_active=True`, OR
-      * attendance.AttendanceRecord exists for `admin_id` on today's date
-        whose `site_ref.name` or `site` (CharField) matches.
+      * attendance.AttendanceRecord exists for `admin_id` in the salary-
+        cycle window [previous_cycle.start .. today (IST)], whose
+        `site_ref.name` or `site` (CharField) matches.
+
+    Salary cycle: 26th of month N-1 → 25th of month N. On 2026-08-05 the
+    current cycle is Jul 26 – Aug 25 and the previous is Jun 26 – Jul 25,
+    so the attendance window runs 2026-06-26 → 2026-08-05.
 
     Case-insensitive dedup; Projects.Site casing wins collisions (loaded
     first). Sorted A→Z. Blank / whitespace-only entries are dropped.
     Returns list[str].
 
     `restrict_attendance_to` is accepted for signature compatibility but
-    IGNORED — the scope is fixed to today (IST) with no manual override,
-    per product spec. Kept in the signature so existing callers keep
-    working without churn.
+    IGNORED — the scope is fixed with no manual override, per product spec.
 
     Does NOT read Transaction.location_site or Income.location_site.
     """
+    from datetime import timedelta
+
     from accounts.date_utils import today_ist
+    from accounts.cycle_utils import get_salary_cycle
 
     today = today_ist()
+    # Current cycle contains today. Previous cycle = the one containing
+    # (current.start - 1 day), i.e. the 25th of the month before current
+    # starts. This derives 'previous' from get_salary_cycle alone; the
+    # module's get_previous_cycle is day-insensitive and returns the
+    # cycle ending in `today`'s calendar month, which does NOT equal the
+    # cycle before the current one for early-month dates.
+    current = get_salary_cycle(today)
+    previous = get_salary_cycle(current['start'] - timedelta(days=1))
+    window_start = previous['start']
+
     canonical = {}
 
     def _add(name):
@@ -56,10 +72,14 @@ def sites_for_admin(admin_id, restrict_attendance_to=None):
     except Exception:
         pass
 
-    # Attendance — TODAY ONLY, both the FK name and the legacy CharField.
+    # Attendance — window is [previous cycle start .. today], inclusive.
     try:
         from attendance.models import AttendanceRecord
-        att = AttendanceRecord.objects.filter(admin_id=admin_id, date=today)
+        att = AttendanceRecord.objects.filter(
+            admin_id=admin_id,
+            date__gte=window_start,
+            date__lte=today,
+        )
         for n in (
             att.exclude(site__isnull=True).exclude(site='')
                .values_list('site', flat=True).distinct()
