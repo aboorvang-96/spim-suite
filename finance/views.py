@@ -848,10 +848,31 @@ def transaction_list(request):
             today=timezone.localdate() if today_default_active else None,
             module='expense',
         )
+        # Widen the seed with any site that has a Transaction in the
+        # active cycle window — INCLUDING salary rows. A site whose only
+        # expense this cycle is salary still gets a card (the card body
+        # renders empty because salary rows are shown in the side panel).
+        # This is what stops sites like OFFICE / KKNPP disappearing from
+        # the grid on quiet-non-salary cycles.
+        cycle_txn_sites = (
+            Transaction.objects
+            .filter(admin_id=admin_id, type='expense',
+                    date__gte=cycle_start, date__lte=cycle_end)
+            .exclude(location_site__isnull=True).exclude(location_site='')
+            .values_list('location_site', flat=True).distinct()
+        )
+        seen = {(n or '').strip().lower() for n in seed_site_names if n}
+        for n in cycle_txn_sites:
+            k = (n or '').strip().lower()
+            if k and k not in seen:
+                seed_site_names.append(n.strip())
+                seen.add(k)
 
     # Group the filtered transactions by Account (legacy) and Site (new
     # site-based card view, Income/Expense restructure). The site card uses
-    # live Income totals as Credit — never duplicated.
+    # live Income totals as Credit — never duplicated. Salary rows were
+    # already stripped from transactions_list; the seed above may include
+    # salary-only sites so they still render as empty cards.
     accounts_grouped = _group_expenses_by_account(transactions_list)
     sites_grouped    = _group_expenses_by_site(transactions_list, request.user, seed_names=seed_site_names)
 

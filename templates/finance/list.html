@@ -907,6 +907,7 @@
       }
       .salary-panel table.salary-table {
         width: 100%; border-collapse: collapse; font-size: 12px;
+        table-layout: fixed;
       }
       .salary-panel table.salary-table th {
         text-align: left; font-size: 9px; font-weight: 900; color: #94a3b8;
@@ -915,25 +916,34 @@
       }
       .salary-panel table.salary-table td {
         padding: 8px; border-bottom: 1px solid #f1f5f9; color: #334155;
+        vertical-align: middle;
       }
-      .salary-panel .salary-site-row { cursor: pointer; font-weight: 700; }
-      .salary-panel .salary-site-row:hover { background: #f8fafc; }
-      .salary-panel .salary-site-row td:nth-child(2) {
-        text-align: right; font-weight: 900; color: #ef4444;
+      .salary-panel table.salary-table col.site-col   { width: 32%; }
+      .salary-panel table.salary-table col.date-col   { width: 36%; }
+      .salary-panel table.salary-table col.amount-col { width: 32%; }
+      .salary-panel table.salary-table th.amount-col,
+      .salary-panel table.salary-table td.amount-col { text-align: right; }
+      .salary-panel table.salary-table tr.salary-site-row {
+        cursor: pointer; font-weight: 800; background: #fff;
       }
-      .salary-panel .salary-dates-row td { background: #fafbfc; padding: 0; }
-      .salary-panel table.salary-inner {
-        width: 100%; border-collapse: collapse; font-size: 11px;
+      .salary-panel table.salary-table tr.salary-site-row:hover { background: #f8fafc; }
+      .salary-panel table.salary-table tr.salary-site-row td.site-col {
+        color: #0f172a; font-weight: 900;
       }
-      .salary-panel table.salary-inner th {
-        font-size: 8px; padding: 4px 10px; background: transparent;
-        color: #94a3b8; border-bottom: 1px dashed #e2e8f0;
+      .salary-panel table.salary-table tr.salary-site-row td.amount-col {
+        color: #ef4444; font-weight: 900;
       }
-      .salary-panel table.salary-inner td {
-        padding: 4px 10px; border-bottom: 1px dashed #f1f5f9;
+      .salary-panel table.salary-table tr.salary-site-row .disc {
+        display: inline-block; width: 10px; color: #94a3b8;
+        margin-right: 6px; font-size: 10px;
       }
-      .salary-panel table.salary-inner td:nth-child(2) {
-        text-align: right; font-weight: 800; color: #ef4444;
+      .salary-panel table.salary-table tr.salary-date-row {
+        background: #fafbfc;
+      }
+      .salary-panel table.salary-table tr.salary-date-row td.site-col { color: transparent; }
+      .salary-panel table.salary-table tr.salary-date-row td.date-col { color: #64748b; font-size: 11px; }
+      .salary-panel table.salary-table tr.salary-date-row td.amount-col {
+        color: #ef4444; font-weight: 700; font-size: 11px;
       }
       .salary-panel .salary-empty {
         padding: 20px; text-align: center; color: #94a3b8; font-size: 12px;
@@ -1126,31 +1136,34 @@
         <p class="cycle-note">Cycle: {{ cycle_label }}</p>
         {% if salary_panel %}
         <table class="salary-table">
+            <colgroup>
+                <col class="site-col"><col class="date-col"><col class="amount-col">
+            </colgroup>
             <thead>
-                <tr><th>Site</th><th style="text-align:right;">Total</th></tr>
+                <tr>
+                    <th class="site-col">Site</th>
+                    <th class="date-col">Date</th>
+                    <th class="amount-col">Total Amount</th>
+                </tr>
             </thead>
             <tbody>
                 {% for site in salary_panel %}
                 <tr class="salary-site-row" data-idx="{{ forloop.counter0 }}"
+                    aria-expanded="false"
                     onclick="toggleSalaryDates({{ forloop.counter0 }})">
-                    <td>{{ site.site }}</td>
-                    <td>₹{{ site.total|floatformat:2 }}</td>
-                </tr>
-                <tr class="salary-dates-row" id="salary-dates-{{ forloop.counter0 }}" hidden>
-                    <td colspan="2">
-                        <table class="salary-inner">
-                            <thead><tr><th>Date</th><th style="text-align:right;">Amount</th></tr></thead>
-                            <tbody>
-                                {% for row in site.rows %}
-                                <tr>
-                                    <td>{{ row.date|date:"d/m/Y" }}</td>
-                                    <td>₹{{ row.amount|floatformat:2 }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                    <td class="site-col">
+                        <span class="disc" data-disc>▶</span>{{ site.site }}
                     </td>
+                    <td class="date-col">{{ cycle_start|date:"d/m/y" }} – {{ cycle_end|date:"d/m/y" }}</td>
+                    <td class="amount-col">₹{{ site.total|floatformat:2 }}</td>
                 </tr>
+                {% for row in site.rows %}
+                <tr class="salary-date-row" data-parent-idx="{{ forloop.parentloop.counter0 }}" hidden>
+                    <td class="site-col"></td>
+                    <td class="date-col">{{ row.date|date:"d/m/y" }}</td>
+                    <td class="amount-col">₹{{ row.amount|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
                 {% endfor %}
             </tbody>
         </table>
@@ -1186,12 +1199,22 @@
         });
     })();
 
-    /* Drill-down toggle on each Site row inside the salary panel. */
+    /* Drill-down toggle on each Site row inside the salary panel. Shows or
+       hides the sibling per-date rows tagged data-parent-idx="<idx>" and
+       flips the ▶/▼ disclosure indicator. */
     function toggleSalaryDates(idx){
-        var row = document.getElementById('salary-dates-' + idx);
-        if (!row) return;
-        if (row.hasAttribute('hidden')) row.removeAttribute('hidden');
-        else row.setAttribute('hidden', '');
+        var head = document.querySelector('.salary-site-row[data-idx="' + idx + '"]');
+        if (!head) return;
+        var rows = document.querySelectorAll('.salary-date-row[data-parent-idx="' + idx + '"]');
+        var open = head.getAttribute('aria-expanded') === 'true';
+        var next = !open;
+        head.setAttribute('aria-expanded', next ? 'true' : 'false');
+        var disc = head.querySelector('[data-disc]');
+        if (disc) disc.textContent = next ? '▼' : '▶';
+        for (var i = 0; i < rows.length; i++) {
+            if (next) rows[i].removeAttribute('hidden');
+            else rows[i].setAttribute('hidden', '');
+        }
     }
     </script>
 </div>
