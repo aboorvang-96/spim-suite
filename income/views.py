@@ -470,22 +470,40 @@ def _group_incomes_by_site(incomes, user, seed_names=None):
                 'transactions': [],
             }
 
+    # OFFICE is the roll-up bucket for any Income/Expense row whose
+    # location_site isn't in the canonical seed set (orphan sites created
+    # via the free-form form, or by legacy imports). The rewrite_income_sites
+    # backfill actually mutates these rows to location_site="OFFICE"; this
+    # presentation-layer fold makes the page correct even before the
+    # backfill runs.
+    OFFICE_KEY = 'office'
+
+    def _office_group():
+        g = groups.get(OFFICE_KEY)
+        if g is None:
+            g = {
+                'site':         'OFFICE',
+                'site_key':     OFFICE_KEY,
+                'credit':       _D('0'),
+                'debit':        debit_map.get(OFFICE_KEY, _D('0')),
+                'balance':      _D('0'),
+                'count':        0,
+                'latest_date':  None,
+                'transactions': [],
+            }
+            groups[OFFICE_KEY] = g
+            seeded_keys.add(OFFICE_KEY)
+        return g
+
     for i in incomes:
         site = (getattr(i, 'location_site', None) or '').strip()
         key  = site.lower()
         g = groups.get(key)
         if g is None:
-            g = {
-                'site':         site or '(No Site)',
-                'site_key':     key,
-                'credit':       _D('0'),
-                'debit':        debit_map.get(key, _D('0')),
-                'balance':      _D('0'),
-                'count':        0,
-                'latest_date':  i.date,
-                'transactions': [],
-            }
-            groups[key] = g
+            # Orphan (or blank): fold into OFFICE instead of minting a
+            # standalone card. Preserves totals; hides orphan site names.
+            g = _office_group()
+            key = OFFICE_KEY
         g['credit'] += (i.amount or _D('0'))
         g['count']  += 1
         g['transactions'].append(i)
@@ -495,14 +513,22 @@ def _group_incomes_by_site(incomes, user, seed_names=None):
             cm[mkey] = cm.get(mkey, _D('0')) + (i.amount or _D('0'))
         if i.date and (g['latest_date'] is None or i.date > g['latest_date']):
             g['latest_date'] = i.date
-            # Preserve seeded (Projects.Site) casing over the income row's spelling.
-            if key not in seeded_keys:
-                g['site'] = site or '(No Site)'
 
     # Also surface sites that have expenses but zero income — admin still
-    # needs to see those in the site card list.
+    # needs to see those in the site card list. Orphan expense sites (not
+    # in the seed set) roll up under OFFICE too so the Income card grid
+    # matches the canonical set.
     for key, debit in debit_map.items():
         if key in groups:
+            continue
+        if key not in seeded_keys:
+            og = _office_group()
+            og['debit'] = og.get('debit', _D('0')) + debit
+            dm = debit_by_month.get(key, {})
+            if dm:
+                merged = debit_by_month.setdefault(OFFICE_KEY, {})
+                for mk, mv in dm.items():
+                    merged[mk] = merged.get(mk, _D('0')) + mv
             continue
         # Re-derive a display name from the most recent expense row of this site
         site_disp = ''
