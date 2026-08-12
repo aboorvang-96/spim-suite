@@ -260,16 +260,24 @@ def income_list(request):
     # Projects/Attendance appear even with zero income rows. Site cards on
     # Income don't have a today-restriction — Income is a manual entry flow
     # and admins expect to see the full site universe.
-    from finance.services.site_cards import get_active_site_names, has_unassigned_transactions
+    # Seed one card per canonical site — same set as /expenses/. Source:
+    # projects.utils.sites_for_admin (union of Projects.Site + attendance
+    # within current+previous salary cycle). Deliberately bypasses the
+    # module-hide list (finance.ModuleHiddenSite) so that a card hidden
+    # from the Income Manager UI doesn't cause the card grid to diverge
+    # from the /expenses/ page. Cards for sites with no income yet still
+    # render as ₹0 credit/debit/balance so admin sees the full site set.
+    from finance.services.site_cards import has_unassigned_transactions
+    from projects.utils import sites_for_admin
+    canonical_sites = sites_for_admin(admin_id)
     selected_sites = [s for s in sites if s != 'UNASSIGNED']
     if selected_sites:
-        universe = get_active_site_names(admin_id, restrict_today=False, module='income')
         wanted = {s.lower() for s in selected_sites}
-        seed_site_names = [n for n in universe if n.lower() in wanted]
+        seed_site_names = [n for n in canonical_sites if n.lower() in wanted]
         if not seed_site_names:
             seed_site_names = selected_sites
     else:
-        seed_site_names = get_active_site_names(admin_id, restrict_today=False, module='income')
+        seed_site_names = canonical_sites
 
     accounts_grouped = _group_incomes_by_account(incomes_list)
     sites_grouped    = _group_incomes_by_site(incomes_list, request.user, seed_names=seed_site_names)
