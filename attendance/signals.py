@@ -37,27 +37,28 @@ def _marker(attendance_pk):
 
 
 def _resolve_site(instance):
-    """Best-guess site name for the salary expense row.
+    """Working-site name for the salary expense row.
 
-    Priority: attendance.site_ref.name → attendance.site (CharField) →
-    employee.site (the employee's default/home site). Empty string when
-    none can be found — caller treats that as "unattributable" and
-    deletes any prior expense row for this attendance.
+    Delegates to attendance.site_utils.resolve_working_site — never returns
+    empty (falls back to "OFFICE"). Employee.site is the employee's
+    primary/home site and MUST NOT be used for expense attribution; the
+    old fallback that read it (and the attendance.site echo from SPIM
+    Lite) was the root cause of expenses being attributed to KKNPP /
+    KUDANKULAM when the employee actually worked at RADHAPURAM etc.
     """
-    ref = getattr(instance, 'site_ref', None)
-    if ref is not None:
-        name = getattr(ref, 'name', '') or ''
-        if name.strip():
-            return name.strip()
-    site = (instance.site or '').strip()
-    if site:
-        return site
-    emp = getattr(instance, 'employee', None)
-    if emp is not None:
-        emp_site = (getattr(emp, 'site', '') or '').strip()
-        if emp_site:
-            return emp_site
-    return ''
+    from attendance.site_utils import resolve_working_site, get_or_create_office_site, OFFICE_SITE_NAME
+    name = resolve_working_site(instance)
+    if name == OFFICE_SITE_NAME:
+        # Materialize the OFFICE projects.Site on first use per tenant so
+        # site cards and dropdowns can list it.
+        try:
+            get_or_create_office_site(instance.admin_id)
+        except Exception:
+            logger.exception(
+                "[AUTO-SAL] failed to ensure OFFICE site for tenant=%s",
+                instance.admin_id,
+            )
+    return name
 
 
 def _resolve_user(instance):

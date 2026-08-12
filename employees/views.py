@@ -2067,6 +2067,9 @@ def generate_salary_expenses(request):
     """
     from finance.models import Transaction, Category
     from django.db import IntegrityError
+    from django.utils.text import slugify as _slugify
+    from attendance.models import AttendanceRecord
+    from attendance.site_utils import resolve_working_site, get_or_create_office_site, OFFICE_SITE_NAME
     import logging as _sal_logging
     _sal_log = _sal_logging.getLogger(__name__)
 
@@ -2122,51 +2125,114 @@ def generate_salary_expenses(request):
         created_count = 0
         skipped_count = 0
 
+        # Attendance window for the payroll month → drives per-day
+        # working-site attribution. One SalaryUpdate row → possibly many
+        # Transaction rows (one per distinct working site that month).
+        month_start = target_date
+        month_end   = datetime.date(year, m_idx, last_day)
+
         for record in salary_records:
-            emp     = record.employee
-            ref_key = f"SAL-{emp.pk}-{target_date.strftime('%Y-%m')}"
+            emp        = record.employee
+            month_slug = target_date.strftime('%Y-%m')
+            ref_prefix = f"SAL-{emp.pk}-{month_slug}"
 
-            # Dedup: skip if already generated for this employee + cycle
-            if Transaction.objects.filter(
+            # Idempotent: drop any stale rows from a previous click (old
+            # single-row shape SAL-{emp}-{YYYY-MM}, and any per-site rows
+            # SAL-{emp}-{YYYY-MM}-{slug}). Do NOT touch [AUTO-SAL:...] —
+            # the per-day live sync owns those.
+            Transaction.objects.filter(
                 admin_id=admin_id,
-                reference=ref_key,
                 type='expense',
-            ).exists():
-                skipped_count += 1
-                continue
+                reference__startswith=ref_prefix,
+            ).delete()
 
-            loc  = (emp.location or '').strip()
-            site = (emp.site or '').strip()
-            location_site = f"{loc} / {site}" if loc and site else (loc or site or '')
+            # Group attendance days by working site.
+            attendances = list(
+                AttendanceRecord.objects
+                .filter(admin_id=admin_id, employee=emp,
+                        date__gte=month_start, date__lte=month_end)
+                .select_related('site_ref')
+            )
+            site_days = {}
+            for att in attendances:
+                site_name = resolve_working_site(att)
+                site_days[site_name] = site_days.get(site_name, 0) + 1
 
-            try:
-                Transaction.objects.create(
-                    user          = request.user,
-                    type          = 'expense',
-                    category      = salary_category,
-                    amount        = record.net_pay,
-                    description   = description,
-                    date          = expense_date,
-                    purpose       = 'Employee Salary',
-                    location_site = location_site,
-                    reference     = ref_key,
-                    income_source = income_source_val,
-                    payment_mode  = account_val,
-                    admin_id      = admin_id,
-                    created_by    = request.user,
+            net_pay = Decimal(record.net_pay or 0)
+
+            if not site_days:
+                # No attendance rows for the month — book the full amount
+                # to OFFICE so the number still shows up on a card.
+                _sal_log.info(
+                    "generate_salary_expenses: no attendance for emp=%s "
+                    "month=%s; booking full amount to OFFICE.",
+                    emp.pk, month_slug,
                 )
-                created_count += 1
-            except IntegrityError:
-                # Race: another request slipped a duplicate past the
-                # exists() check. The partial unique constraint on
-                # (admin_id, reference, type) for SAL- rows blocked it —
-                # treat as an already-generated skip instead of erroring.
-                _sal_log.warning(
-                    "IntegrityError on salary expense insert; "
-                    "treating as duplicate skip. ref=%s admin=%s",
-                    ref_key, admin_id,
+                site_days = {OFFICE_SITE_NAME: 1}
+
+            if OFFICE_SITE_NAME in site_days:
+                try:
+                    get_or_create_office_site(admin_id, request.user)
+                except Exception:
+                    _sal_log.exception(
+                        "generate_salary_expenses: failed to ensure "
+                        "OFFICE site for tenant=%s", admin_id,
+                    )
+
+            total_days = sum(site_days.values())
+            # Deterministic ordering so the "last row absorbs rounding"
+            # rule is stable across re-clicks.
+            ordered_sites = sorted(site_days.items(), key=lambda kv: kv[0])
+
+            splits = []
+            allocated = Decimal('0.00')
+            for idx, (site_name, days) in enumerate(ordered_sites):
+                if idx == len(ordered_sites) - 1:
+                    # Last row absorbs sub-paisa rounding drift so the
+                    # sum matches net_pay exactly.
+                    share = (net_pay - allocated).quantize(Decimal('0.01'))
+                else:
+                    share = (net_pay * Decimal(days) / Decimal(total_days)) \
+                        .quantize(Decimal('0.01'))
+                    allocated += share
+                splits.append((site_name, days, share))
+
+            for site_name, days, share in splits:
+                if share <= 0:
+                    continue
+                site_slug = _slugify(site_name) or 'nosite'
+                ref_key = f"{ref_prefix}-{site_slug}"
+                per_site_desc = (
+                    f"{description} — {site_name} ({days}/{total_days} days)"
                 )
-                skipped_count += 1
+                try:
+                    Transaction.objects.create(
+                        user          = request.user,
+                        type          = 'expense',
+                        category      = salary_category,
+                        amount        = share,
+                        description   = per_site_desc,
+                        date          = expense_date,
+                        purpose       = 'Employee Salary',
+                        location_site = site_name,
+                        reference     = ref_key,
+                        income_source = income_source_val,
+                        payment_mode  = account_val,
+                        admin_id      = admin_id,
+                        created_by    = request.user,
+                    )
+                    created_count += 1
+                except IntegrityError:
+                    # Partial UniqueConstraint on (admin_id, reference,
+                    # type) for SAL-% caught a concurrent write — the
+                    # prior delete + this create raced with a second
+                    # click. Treat as skip.
+                    _sal_log.warning(
+                        "IntegrityError on salary expense insert; "
+                        "treating as duplicate skip. ref=%s admin=%s",
+                        ref_key, admin_id,
+                    )
+                    skipped_count += 1
 
         msg = f"{created_count} expense(s) generated for {month_name} {year}."
         if skipped_count:
