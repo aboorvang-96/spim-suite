@@ -13,4 +13,5 @@ urlpatterns = [
     path('debug-site-match/',     views.debug_site_match_income, name='debug_site_match'),
     path('api/sources/', views.shared_sources_api, name='sources_api'),
     path('api/accounts/', views.shared_accounts_api, name='accounts_api'),
+    path('api/autocomplete/', views.income_autocomplete_api, name='autocomplete'),
 ]

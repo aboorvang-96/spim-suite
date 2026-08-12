@@ -29,10 +29,7 @@
           style="display:none;" onclick="exitIncomeDeleteMode()">
     Cancel
   </button>
-  <button type="button" id="openAddIncomeModal" class="btn btn-primary btn-sm">
-    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 4v16m8-8H4" /></svg>
-    Add Income
-  </button>
+  {# Global "+ Add Income" removed — income is now created inline per site card. #}
 </div>
 {% endblock %}
 
@@ -220,42 +217,7 @@
   .mgmt-del-btn:hover { color: #ef4444; background: #fee2e2; }
   .container-boost { z-index: 1500 !important; }
 
-  /* Compact 2-col income form layout */
-  #addIncomeForm { display: flex; flex-direction: column; gap: 14px; }
-  #addIncomeForm .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  #addIncomeForm .form-row > * { min-width: 0; }
-  #addIncomeForm .form-input,
-  #addIncomeForm select.form-input,
-  #addIncomeForm textarea.form-input { width: 100%; }
-  #addIncomeForm label.field-label {
-    display: block; font-size: 11px; font-weight: 700; color: #64748b;
-    text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px 0;
-  }
-  #addIncomeForm .field-head {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 4px; gap: 6px;
-  }
-  #addIncomeForm .field-head label.field-label { margin: 0; }
-  #addIncomeForm .amount-wrap { position: relative; }
-  #addIncomeForm .amount-wrap .currency {
-    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-    color: #94a3b8; font-weight: 600; pointer-events: none;
-  }
-  #addIncomeForm .amount-wrap input { padding-left: 28px; }
-  #addIncomeForm .modal-actions {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-    padding-top: 14px; border-top: 1px solid #f1f5f9; margin-top: 4px;
-  }
-  #addIncomeForm .modal-actions .btn { width: 100%; }
-  #addIncomeFormError {
-    font-size: 12px; font-weight: 600; color: #b91c1c;
-    background: #fef2f2; border: 1px solid #fecaca;
-    border-radius: 8px; padding: 8px 12px;
-  }
-  @media (max-width: 640px) {
-    #addIncomeForm .form-row { grid-template-columns: 1fr; }
-    #addIncomeForm .modal-actions { grid-template-columns: 1fr; }
-  }
+  /* Modal-only styles removed with Add Income modal (inline row editor took over). */
 
   /* Confirmation modal */
   .confirm-overlay {
@@ -582,78 +544,65 @@
         <div class="card-actions-v5">
           <button type="button" class="btn-action-v5 edit" data-view-site="{{ group.site_key }}">View</button>
         </div>
-        <!-- DETAIL PANEL — table layout with new column structure.
-             Date | From Account | To Account | Description | Income Source |
-             Amount | Remarks | Edit | Delete -->
-        <div class="site-detail-panel" data-detail-for="{{ group.site_key }}" hidden>
-          {% if group.transactions %}
+        <!-- DETAIL PANEL — inline per-row editing. Mirrors the /expenses/
+             card row-editing pattern. Columns: Date | From | To | Amount |
+             Remarks | Action. Site is implicit (this card's site). Any
+             other Income model fields (income_type, payment_by, category,
+             description) are intentionally omitted from this row — they
+             are recorded as blank/default and can be edited from the
+             mobile HR flow if needed. -->
+        <div class="site-detail-panel inline-income-panel"
+             data-detail-for="{{ group.site_key }}"
+             data-site-name="{{ group.site }}" hidden>
           <div class="site-detail-wrap">
             <div style="overflow-x:auto;">
-              <table class="site-detail-table">
+              <table class="site-detail-table inline-income-table">
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>From Account</th>
-                    <th>To Account</th>
-                    <th>Description</th>
-                    <th>Income Source</th>
+                    <th>From</th>
+                    <th>To</th>
                     <th style="text-align:right;">Amount</th>
                     <th>Remarks</th>
-                    <th style="text-align:center;">Edit</th>
-                    <th style="text-align:center;">Delete</th>
+                    <th style="text-align:center;white-space:nowrap;">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody class="inline-income-tbody">
                   {% for i in group.transactions %}
-                  <tr class="account-detail-row"
+                  <tr class="inline-income-row"
                       data-income-id="{{ i.pk }}"
                       data-date="{{ i.date|date:'Y-m-d' }}"
                       data-amount="{{ i.amount|stringformat:'s' }}"
-                      data-income-type="{{ i.income_type|default_if_none:'' }}"
-                      data-payment-by="{{ i.payment_by|default_if_none:'' }}"
-                      data-location-site="{{ i.location_site|default_if_none:'' }}"
-                      data-payment-mode="{{ i.payment_mode|default_if_none:'' }}"
                       data-from-account="{{ i.from_account|default_if_none:'' }}"
                       data-to-account="{{ i.to_account|default_if_none:'' }}"
-                      data-remarks="{{ i.remarks|default_if_none:'' }}"
-                      data-description="{{ i.description|default_if_none:'' }}">
-                    <td>{{ i.date|date:"d M, Y" }}</td>
-                    <td>{{ i.from_account|default:"-" }}</td>
-                    <td>{{ i.to_account|default:"-" }}</td>
-                    <td>{{ i.description|default:"-"|truncatechars:60 }}</td>
-                    <td>{{ i.payment_by|default:"-" }}</td>
-                    <td class="num">+₹{{ i.amount|floatformat:2 }}</td>
-                    <td>{{ i.remarks|default:"-"|truncatechars:40 }}</td>
-                    <td style="text-align:center;">
-                      <button type="button" class="btn-action-mini edit" data-edit-income="{{ i.pk }}">Edit</button>
+                      data-remarks="{{ i.remarks|default_if_none:'' }}">
+                    <td class="cell-date">{{ i.date|date:"d M, Y" }}</td>
+                    <td class="cell-from">{{ i.from_account|default:"-" }}</td>
+                    <td class="cell-to">{{ i.to_account|default:"-" }}</td>
+                    <td class="cell-amount num">+₹{{ i.amount|floatformat:2 }}</td>
+                    <td class="cell-remarks">{{ i.remarks|default:"-"|truncatechars:60 }}</td>
+                    <td style="text-align:center;white-space:nowrap;">
+                      <button type="button" class="btn-action-mini edit inline-row-edit-btn">Edit</button>
+                      <button type="button" class="btn-action-mini delete inline-row-del-btn">Del</button>
                     </td>
-                    <td style="text-align:center;">
-                      <form method="post" action="{% url 'income:delete' i.pk %}" class="m-0" onsubmit="return confirm('Confirm deletion of this income?')">
-                        {% csrf_token %}
-                        <button type="submit" class="btn-action-mini delete">Delete</button>
-                      </form>
+                  </tr>
+                  {% empty %}
+                  <tr class="inline-income-empty-row">
+                    <td colspan="6" style="text-align:center;color:#94a3b8;padding:16px;">
+                      No income entries yet for this site.
                     </td>
                   </tr>
                   {% endfor %}
                 </tbody>
               </table>
             </div>
-            <div class="site-detail-actions">
-              <button type="button" class="btn-v5 btn-primary-v5" data-add-income-site="{{ group.site }}">
-                + Add Income
+            <div class="site-detail-actions" style="display:flex;justify-content:flex-end;padding:10px 14px;">
+              <button type="button" class="btn-action-mini edit inline-add-row-btn"
+                      style="background:#0f172a;color:#fff;border-color:#0f172a;">
+                + Add Row
               </button>
             </div>
           </div>
-          {% else %}
-          <div class="site-detail-wrap" style="padding:18px;text-align:center;color:#94a3b8;font-size:12px;">
-            No income entries yet for this site.
-            <div class="site-detail-actions" style="border-top:1px solid #f1f5f9;background:transparent;margin-top:14px;">
-              <button type="button" class="btn-v5 btn-primary-v5" data-add-income-site="{{ group.site }}">
-                + Add Income
-              </button>
-            </div>
-          </div>
-          {% endif %}
         </div>
       </div>
       {% endfor %}
@@ -665,183 +614,404 @@
   </section>
 </div>
 
-<!-- ═══════ Add / Edit Income Modal ═══════ -->
-<div id="addIncomeModal" class="modal-overlay">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3>
-        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color: #10b981;"><path d="M12 4v16m8-8H4"/></svg>
-        <span id="addIncomeModalTitle">Add Income</span>
-      </h3>
-      <button type="button" class="modal-close" id="closeAddIncomeX" aria-label="Close">
-        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"/></svg>
-      </button>
-    </div>
-    <div class="modal-body">
-      <form id="addIncomeForm" method="POST" novalidate>
-        {% csrf_token %}
-        <input type="hidden" name="income_id" id="incomeEditId" value="">
-        <div id="addIncomeFormError" class="hidden"></div>
 
-        <!-- Row 1: Date | Account -->
-        <div class="form-row">
-          <div>
-            <label class="field-label" for="incDateInput">Date</label>
-            <input id="incDateInput" type="date" name="date" class="form-input" required max="{{ today_ist_iso }}" />
-          </div>
-          <div id="incAccountContainer" class="relative">
-            <div class="field-head">
-              <label class="field-label" for="incAccountSelect">Account</label>
-              <button type="button" id="manageIncAccountIcon" title="Manage Accounts" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-              </button>
-            </div>
-            <select id="incAccountSelect" name="payment_mode" class="form-input" required>
-              <option value="" disabled selected>Select Account</option>
-              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Account</option>
-            </select>
-            <div id="incAddAccountWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
-              <input type="text" id="incNewAccountInput" class="form-input" style="flex:1;" placeholder="New Account Name" />
-              <button type="button" id="incSaveAccountBtn" class="btn btn-navy btn-sm">Add</button>
-              <button type="button" id="incCancelAddAccountBtn" class="btn btn-outline btn-sm">✕</button>
-            </div>
-            <div id="incManageAccountWrapper" class="hidden mgmt-popover">
-              <div class="mgmt-title">
-                <span>Manage Accounts</span>
-                <button type="button" id="incCloseManageAccountBtn" class="modal-close">
-                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-              </div>
-              <div id="incAccountDeleteList" class="mgmt-list"></div>
-            </div>
-          </div>
-        </div>
+<!-- CSRF token for inline row endpoints (fetch reads it from this input) -->
+<form id="incInlineCsrf" style="display:none;">{% csrf_token %}</form>
 
-        <!-- Row 2: Income Source | Amount -->
-        <div class="form-row">
-          <div id="incPaymentByContainer" class="relative">
-            <div class="field-head">
-              <label class="field-label" for="incPaymentBySelect">Income Source</label>
-              <button type="button" id="manageIncPaymentByIcon" title="Manage Options" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-              </button>
-            </div>
-            <select id="incPaymentBySelect" name="payment_by" class="form-input" required>
-              <option value="" disabled selected>Select Income Source</option>
-              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Income Source</option>
-            </select>
-            <div id="incAddPaymentByWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
-              <input type="text" id="incNewPaymentByInput" class="form-input" style="flex:1;" placeholder="New Income Source" />
-              <button type="button" id="incSavePaymentByBtn" class="btn btn-navy btn-sm">Add</button>
-              <button type="button" id="incCancelAddPaymentByBtn" class="btn btn-outline btn-sm">✕</button>
-            </div>
-            <div id="incManagePaymentByWrapper" class="hidden mgmt-popover">
-              <div class="mgmt-title">
-                <span>Manage Income Source</span>
-                <button type="button" id="incCloseManagePaymentByBtn" class="modal-close">
-                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-              </div>
-              <div id="incPaymentByDeleteList" class="mgmt-list"></div>
-            </div>
-          </div>
-          <div>
-            <label class="field-label" for="incAmountInput">Amount</label>
-            <div class="amount-wrap">
-              <span class="currency">₹</span>
-              <input id="incAmountInput" type="number" step="0.01" name="amount" class="form-input" placeholder="0.00" required />
-            </div>
-          </div>
-        </div>
+<!-- ═══════ Inline income row editor ═══════
+     Handles: View toggle, Edit, Del, + Add Row, and From/To autocomplete.
+     Endpoints reused: income:add, income:edit, income:delete, income:autocomplete.
+     No modal, no page reload; server responses are the source of truth. -->
+<style>
+  .inline-income-panel .inline-input {
+    width: 100%; box-sizing: border-box;
+    padding: 4px 6px; font-size: 12px;
+    border: 1px solid #cbd5e1; border-radius: 6px;
+    background: #fff;
+  }
+  .inline-income-panel .inline-input:focus {
+    outline: none; border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+  }
+  .inline-income-panel .autocomplete-wrap { position: relative; }
+  .inline-income-panel .autocomplete-menu {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(15,23,42,0.12);
+    max-height: 180px; overflow-y: auto; margin-top: 2px;
+    display: none;
+  }
+  .inline-income-panel .autocomplete-menu.open { display: block; }
+  .inline-income-panel .autocomplete-item {
+    padding: 6px 10px; font-size: 12px; cursor: pointer;
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+  .inline-income-panel .autocomplete-item:hover,
+  .inline-income-panel .autocomplete-item.active {
+    background: #f1f5f9;
+  }
+  .inline-income-panel .autocomplete-item .count {
+    color: #94a3b8; font-size: 10px; font-weight: 600;
+  }
+  .inline-income-panel .inline-row-error {
+    color: #dc2626; font-size: 11px; padding: 4px 12px;
+  }
+</style>
+<script>
+(function () {
+  const CSRF = (() => {
+    const el = document.querySelector('#incInlineCsrf input[name="csrfmiddlewaretoken"]');
+    return el ? el.value : '';
+  })();
+  const AUTOCOMPLETE_URL = "{% url 'income:autocomplete' %}";
+  const ADD_URL          = "{% url 'income:add' %}";
+  function EDIT_URL(pk)  { return `/income/${pk}/edit/`; }
+  function DEL_URL(pk)   { return `/income/${pk}/delete/`; }
+  const TODAY_ISO = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  })();
 
-        <!-- Row 3: Income Type | Location / Site -->
-        <div class="form-row">
-          <div id="incomeTypeContainer" class="relative">
-            <div class="field-head">
-              <label class="field-label" for="incomeTypeSelect">Income Type</label>
-              <button type="button" id="manageIncomeTypeIcon" title="Manage Types" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-              </button>
-            </div>
-            <select id="incomeTypeSelect" name="income_type" class="form-input" required>
-              <option value="" disabled selected>Select Type</option>
-              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Income Type</option>
-            </select>
-            <div id="incAddIncomeTypeWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
-              <input type="text" id="incNewIncomeTypeInput" class="form-input" style="flex:1;" placeholder="New Type" />
-              <button type="button" id="incSaveIncomeTypeBtn" class="btn btn-navy btn-sm">Add</button>
-              <button type="button" id="incCancelAddIncomeTypeBtn" class="btn btn-outline btn-sm">✕</button>
-            </div>
-            <div id="incManageIncomeTypeWrapper" class="hidden mgmt-popover">
-              <div class="mgmt-title">
-                <span>Manage Income Types</span>
-                <button type="button" id="incCloseIncomeTypeBtn" class="modal-close">
-                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-              </div>
-              <div id="incIncomeTypeDeleteList" class="mgmt-list"></div>
-            </div>
-          </div>
-          <div id="incLocationContainer" class="relative">
-            <div class="field-head">
-              <label class="field-label" for="incLocationSelect">Location / Site</label>
-              <button type="button" id="manageIncLocationIcon" title="Manage Locations" style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:2px;">
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-              </button>
-            </div>
-            <select id="incLocationSelect" name="location_site" class="form-input" required>
-              <option value="" disabled selected>Select Location / Site</option>
-              <option value="add_new" style="font-weight: 600; color: #2563eb;">+ Add New Location/Site</option>
-            </select>
-            <div id="incAddLocationWrapper" class="hidden" style="margin-top:8px;display:flex;gap:8px;">
-              <input type="text" id="incNewLocationInput" class="form-input" style="flex:1;" placeholder="New Location/Site" />
-              <button type="button" id="incSaveLocationBtn" class="btn btn-navy btn-sm">Add</button>
-              <button type="button" id="incCancelAddLocationBtn" class="btn btn-outline btn-sm">✕</button>
-            </div>
-            <div id="incManageLocationWrapper" class="hidden mgmt-popover">
-              <div class="mgmt-title">
-                <span>Manage Locations</span>
-                <button type="button" id="incCloseManageLocationBtn" class="modal-close">
-                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-              </div>
-              <div id="incLocationDeleteList" class="mgmt-list"></div>
-            </div>
-          </div>
-        </div>
+  function esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function fmtDate(iso) {
+    if (!iso) return '-';
+    const [y,m,d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${d} ${months[parseInt(m,10)-1]}, ${y}`;
+  }
+  function fmtAmount(a) {
+    const n = parseFloat(a);
+    if (isNaN(n)) return '-';
+    return `+₹${n.toFixed(2)}`;
+  }
 
-        <!-- Row 4: From Account | To Account (Income/Expense restructure) -->
-        <div class="form-row">
-          <div>
-            <label class="field-label" for="incFromAccountInput">From Account</label>
-            <input id="incFromAccountInput" type="text" name="from_account" class="form-input" placeholder="From Account" />
-          </div>
-          <div>
-            <label class="field-label" for="incToAccountInput">To Account</label>
-            <input id="incToAccountInput" type="text" name="to_account" class="form-input" placeholder="To Account" />
-          </div>
-        </div>
+  // View / Hide toggle
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view-site]');
+    if (!btn) return;
+    const key = btn.getAttribute('data-view-site');
+    const panel = document.querySelector(`.site-detail-panel[data-detail-for="${key}"]`);
+    if (!panel) return;
+    const open = !panel.hasAttribute('hidden');
+    if (open) { panel.setAttribute('hidden', ''); btn.textContent = 'View'; }
+    else      { panel.removeAttribute('hidden');  btn.textContent = 'Hide'; }
+  });
 
-        <!-- Row 5: Description (full-width) -->
-        <div>
-          <label class="field-label" for="incNotesInput">Description</label>
-          <textarea id="incNotesInput" name="description" class="form-input" rows="2" placeholder="Description of the income..."></textarea>
-        </div>
+  // Build editable row markup for either a new row or an existing one.
+  function buildEditRow(data) {
+    // data: { id (nullable), date, from, to, amount, remarks }
+    return `
+      <td><input type="date" class="inline-input inline-date" value="${esc(data.date || TODAY_ISO)}" max="${TODAY_ISO}"></td>
+      <td><div class="autocomplete-wrap">
+            <input type="text" class="inline-input inline-from" data-field="from_account" autocomplete="off" value="${esc(data.from || '')}" placeholder="From">
+            <div class="autocomplete-menu"></div>
+          </div></td>
+      <td><div class="autocomplete-wrap">
+            <input type="text" class="inline-input inline-to" data-field="to_account" autocomplete="off" value="${esc(data.to || '')}" placeholder="To">
+            <div class="autocomplete-menu"></div>
+          </div></td>
+      <td><input type="number" step="0.01" min="0" class="inline-input inline-amount num" value="${esc(data.amount || '')}" placeholder="0.00" style="text-align:right;"></td>
+      <td><input type="text" class="inline-input inline-remarks" value="${esc(data.remarks || '')}" placeholder="Remarks"></td>
+      <td style="text-align:center;white-space:nowrap;">
+        <button type="button" class="btn-action-mini edit inline-row-save-btn">Save</button>
+        <button type="button" class="btn-action-mini inline-row-cancel-btn">Cancel</button>
+      </td>`;
+  }
+  function buildReadRow(data) {
+    return `
+      <td class="cell-date">${esc(fmtDate(data.date))}</td>
+      <td class="cell-from">${esc(data.from) || '-'}</td>
+      <td class="cell-to">${esc(data.to) || '-'}</td>
+      <td class="cell-amount num">${fmtAmount(data.amount)}</td>
+      <td class="cell-remarks">${esc(data.remarks) || '-'}</td>
+      <td style="text-align:center;white-space:nowrap;">
+        <button type="button" class="btn-action-mini edit inline-row-edit-btn">Edit</button>
+        <button type="button" class="btn-action-mini delete inline-row-del-btn">Del</button>
+      </td>`;
+  }
+  function readRowData(tr) {
+    return {
+      id:      tr.getAttribute('data-income-id') || '',
+      date:    tr.getAttribute('data-date') || '',
+      from:    tr.getAttribute('data-from-account') || '',
+      to:      tr.getAttribute('data-to-account') || '',
+      amount:  tr.getAttribute('data-amount') || '',
+      remarks: tr.getAttribute('data-remarks') || '',
+    };
+  }
+  function writeRowData(tr, d) {
+    tr.setAttribute('data-date', d.date || '');
+    tr.setAttribute('data-from-account', d.from || '');
+    tr.setAttribute('data-to-account', d.to || '');
+    tr.setAttribute('data-amount', d.amount || '');
+    tr.setAttribute('data-remarks', d.remarks || '');
+    if (d.id) tr.setAttribute('data-income-id', d.id);
+  }
+  function siteOf(tr) {
+    const panel = tr.closest('.inline-income-panel');
+    return panel ? panel.getAttribute('data-site-name') : '';
+  }
+  function showRowError(tr, msg) {
+    let err = tr.querySelector('.inline-row-error');
+    if (!err) {
+      const errTr = document.createElement('tr');
+      errTr.className = 'inline-row-error-tr';
+      errTr.innerHTML = `<td colspan="6" class="inline-row-error">${esc(msg)}</td>`;
+      tr.parentNode.insertBefore(errTr, tr.nextSibling);
+    }
+  }
+  function clearRowError(tr) {
+    const nxt = tr.nextSibling;
+    if (nxt && nxt.classList && nxt.classList.contains('inline-row-error-tr')) {
+      nxt.remove();
+    }
+  }
 
-        <!-- Row 6: Remarks (full-width, short text) -->
-        <div>
-          <label class="field-label" for="incRemarksInput">Remarks</label>
-          <input id="incRemarksInput" type="text" name="remarks" class="form-input" placeholder="Remarks (optional)" />
-        </div>
+  // Edit button
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.inline-row-edit-btn');
+    if (!btn) return;
+    const tr = btn.closest('.inline-income-row');
+    if (!tr) return;
+    tr._snapshot = readRowData(tr);
+    tr.innerHTML = buildEditRow(tr._snapshot);
+    tr.querySelector('.inline-date').focus();
+  });
 
-        <div class="modal-actions">
-          <button type="button" class="btn btn-outline" id="closeAddIncomeCancel">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="saveAddIncomeBtn">Save Income</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+  // Cancel button (both for new rows and edited rows)
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.inline-row-cancel-btn');
+    if (!btn) return;
+    const tr = btn.closest('tr');
+    if (!tr) return;
+    clearRowError(tr);
+    if (tr.classList.contains('inline-income-new-row')) {
+      tr.remove();
+    } else if (tr._snapshot) {
+      tr.innerHTML = buildReadRow(tr._snapshot);
+    }
+  });
+
+  // Save button
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.inline-row-save-btn');
+    if (!btn) return;
+    const tr = btn.closest('tr');
+    if (!tr) return;
+    clearRowError(tr);
+    const date    = (tr.querySelector('.inline-date') || {}).value || '';
+    const amount  = (tr.querySelector('.inline-amount') || {}).value || '';
+    const from    = (tr.querySelector('.inline-from') || {}).value || '';
+    const to      = (tr.querySelector('.inline-to') || {}).value || '';
+    const remarks = (tr.querySelector('.inline-remarks') || {}).value || '';
+    if (!date)   { showRowError(tr, 'Date is required.'); return; }
+    if (!amount || parseFloat(amount) <= 0) { showRowError(tr, 'Amount must be greater than zero.'); return; }
+    const id = tr.getAttribute('data-income-id') || '';
+    const site = siteOf(tr);
+    const url = id ? EDIT_URL(id) : ADD_URL;
+    const body = new URLSearchParams();
+    body.set('date', date);
+    body.set('amount', amount);
+    body.set('from_account', from);
+    body.set('to_account', to);
+    body.set('remarks', remarks);
+    body.set('location_site', site);
+    body.set('payment_mode', '');
+    body.set('income_type', '');
+    body.set('payment_by', '');
+    body.set('description', '');
+    btn.disabled = true;
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRFToken': CSRF,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || !j.success) {
+        showRowError(tr, j.message || 'Save failed.');
+        btn.disabled = false;
+        return;
+      }
+      const inc = j.income || {};
+      const d = {
+        id:      inc.id || id,
+        date:    inc.date || date,
+        from:    inc.from_account || from,
+        to:      inc.to_account || to,
+        amount:  inc.amount || amount,
+        remarks: inc.remarks || remarks,
+      };
+      writeRowData(tr, d);
+      tr.classList.remove('inline-income-new-row');
+      tr.classList.add('inline-income-row');
+      tr.innerHTML = buildReadRow(d);
+      // Drop the "No income entries yet" placeholder row if present.
+      const tbody = tr.closest('tbody');
+      const empty = tbody && tbody.querySelector('.inline-income-empty-row');
+      if (empty) empty.remove();
+    } catch (err) {
+      showRowError(tr, 'Network error — please retry.');
+      btn.disabled = false;
+    }
+  });
+
+  // Delete button
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.inline-row-del-btn');
+    if (!btn) return;
+    const tr = btn.closest('.inline-income-row');
+    if (!tr) return;
+    const id = tr.getAttribute('data-income-id');
+    if (!id) { tr.remove(); return; }
+    if (!confirm('Delete this income entry?')) return;
+    btn.disabled = true;
+    try {
+      const resp = await fetch(DEL_URL(id), {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRFToken': CSRF,
+        },
+      });
+      if (resp.ok || resp.status === 302) {
+        tr.remove();
+      } else {
+        btn.disabled = false;
+        alert('Delete failed.');
+      }
+    } catch (err) {
+      btn.disabled = false;
+      alert('Network error — please retry.');
+    }
+  });
+
+  // + Add Row button
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.inline-add-row-btn');
+    if (!btn) return;
+    const panel = btn.closest('.inline-income-panel');
+    if (!panel) return;
+    const tbody = panel.querySelector('.inline-income-tbody');
+    if (!tbody) return;
+    const empty = tbody.querySelector('.inline-income-empty-row');
+    if (empty) empty.remove();
+    if (tbody.querySelector('.inline-income-new-row')) return; // one at a time
+    const tr = document.createElement('tr');
+    tr.className = 'inline-income-new-row';
+    tr.innerHTML = buildEditRow({ date: TODAY_ISO });
+    tbody.appendChild(tr);
+    tr.querySelector('.inline-date').focus();
+  });
+
+  // ─── Autocomplete for From / To Account inputs ───
+  let acCache = new Map();          // "field|q" → suggestions
+  let acDebounce = null;
+  let acActiveInput = null;
+  let acActiveIdx = -1;
+
+  function acKey(field, q) { return `${field}|${(q||'').toLowerCase()}`; }
+  async function fetchSuggestions(field, q) {
+    const key = acKey(field, q);
+    if (acCache.has(key)) return acCache.get(key);
+    const resp = await fetch(`${AUTOCOMPLETE_URL}?field=${encodeURIComponent(field)}&q=${encodeURIComponent(q)}`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (!resp.ok) return [];
+    const j = await resp.json().catch(() => ({ suggestions: [] }));
+    const list = j.suggestions || [];
+    acCache.set(key, list);
+    return list;
+  }
+  function renderMenu(input, suggestions) {
+    const wrap = input.closest('.autocomplete-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.autocomplete-menu');
+    if (!menu) return;
+    if (!suggestions.length) { menu.classList.remove('open'); menu.innerHTML = ''; return; }
+    menu.innerHTML = suggestions.map((s, i) =>
+      `<div class="autocomplete-item" data-value="${esc(s.value)}" data-idx="${i}"><span>${esc(s.value)}</span><span class="count">×${s.count}</span></div>`
+    ).join('');
+    menu.classList.add('open');
+    acActiveIdx = -1;
+  }
+  function closeMenu(input) {
+    const wrap = input.closest('.autocomplete-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.autocomplete-menu');
+    if (menu) { menu.classList.remove('open'); }
+  }
+  document.addEventListener('input', (e) => {
+    const inp = e.target.closest('.inline-from, .inline-to');
+    if (!inp) return;
+    acActiveInput = inp;
+    const field = inp.getAttribute('data-field');
+    const q = inp.value || '';
+    clearTimeout(acDebounce);
+    acDebounce = setTimeout(async () => {
+      const list = await fetchSuggestions(field, q);
+      if (acActiveInput === inp) renderMenu(inp, list);
+    }, 180);
+  });
+  document.addEventListener('focus', async (e) => {
+    const inp = e.target.closest && e.target.closest('.inline-from, .inline-to');
+    if (!inp) return;
+    acActiveInput = inp;
+    const field = inp.getAttribute('data-field');
+    const list = await fetchSuggestions(field, inp.value || '');
+    if (acActiveInput === inp) renderMenu(inp, list);
+  }, true);
+  document.addEventListener('click', (e) => {
+    const item = e.target.closest('.autocomplete-item');
+    if (item) {
+      e.preventDefault();
+      const wrap = item.closest('.autocomplete-wrap');
+      const input = wrap ? wrap.querySelector('input') : null;
+      if (input) {
+        input.value = item.getAttribute('data-value') || '';
+        closeMenu(input);
+      }
+      return;
+    }
+    // Click elsewhere closes any open menu.
+    document.querySelectorAll('.autocomplete-menu.open').forEach(m => m.classList.remove('open'));
+  });
+  document.addEventListener('keydown', (e) => {
+    const inp = e.target.closest('.inline-from, .inline-to');
+    if (!inp) return;
+    const wrap = inp.closest('.autocomplete-wrap');
+    const menu = wrap ? wrap.querySelector('.autocomplete-menu') : null;
+    if (!menu || !menu.classList.contains('open')) return;
+    const items = Array.from(menu.querySelectorAll('.autocomplete-item'));
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      acActiveIdx = Math.min(items.length - 1, acActiveIdx + 1);
+      items.forEach((it, i) => it.classList.toggle('active', i === acActiveIdx));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      acActiveIdx = Math.max(0, acActiveIdx - 1);
+      items.forEach((it, i) => it.classList.toggle('active', i === acActiveIdx));
+    } else if (e.key === 'Enter') {
+      if (acActiveIdx >= 0) {
+        e.preventDefault();
+        inp.value = items[acActiveIdx].getAttribute('data-value') || '';
+        closeMenu(inp);
+      }
+    } else if (e.key === 'Escape') {
+      closeMenu(inp);
+    }
+  });
+})();
+</script>
 
 <!-- ═══════ Delete Confirmation Modal ═══════ -->
 <div id="incDeleteConfirmModal" class="confirm-overlay">
@@ -864,630 +1034,6 @@
   </div>
 </div>
 
-<script>
-  (function () {
-    const openBtn = document.getElementById('openAddIncomeModal');
-    const modal = document.getElementById('addIncomeModal');
-    const closeX = document.getElementById('closeAddIncomeX');
-    const closeCanc = document.getElementById('closeAddIncomeCancel');
-    const addForm = document.getElementById('addIncomeForm');
-    const formError = document.getElementById('addIncomeFormError');
-    const saveBtn = document.getElementById('saveAddIncomeBtn');
-    const modalTitle = document.getElementById('addIncomeModalTitle');
-    const editIdInput = document.getElementById('incomeEditId');
-    const dateInput = addForm ? addForm.querySelector('input[name="date"]') : null;
-    const amountInput = addForm ? addForm.querySelector('input[name="amount"]') : null;
-    const notesInput = addForm ? addForm.querySelector('textarea[name="description"]') : null;
-    const accountSelectEl = document.getElementById('incAccountSelect');
-    const paymentBySelectEl = document.getElementById('incPaymentBySelect');
-    const incomeTypeSelectEl = document.getElementById('incomeTypeSelect');
-    const locationSelectEl = document.getElementById('incLocationSelect');
-    const fromAccountInput = document.getElementById('incFromAccountInput');
-    const toAccountInput   = document.getElementById('incToAccountInput');
-    const remarksInput     = document.getElementById('incRemarksInput');
-    const incomeGrid = document.getElementById('incomeGrid');
-    const emptyState = document.getElementById('incomeEmptyState');
-    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
-    const ADD_INCOME_URL = "{% url 'income:add' %}";
-
-    function todayISO() {
-      const d = new Date();
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    }
-    function escapeHtml(s) {
-      if (s === null || s === undefined) return '';
-      return String(s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
-    function setSelectValue(selectEl, value) {
-      if (!selectEl) return;
-      const v = value == null ? '' : String(value);
-      if (!v) { selectEl.selectedIndex = 0; return; }
-      selectEl.value = v;
-      if (selectEl.value !== v) {
-        const opt = new Option(v, v);
-        selectEl.add(opt);
-        selectEl.value = v;
-      }
-    }
-    function setEditMode(isEdit) {
-      if (modalTitle) modalTitle.textContent = isEdit ? 'Edit Income' : 'Add Income';
-      if (saveBtn) saveBtn.textContent = isEdit ? 'Save Changes' : 'Save Income';
-    }
-    function resetFormForAdd() {
-      if (!addForm) return;
-      addForm.reset();
-      if (editIdInput) editIdInput.value = '';
-      if (dateInput) dateInput.value = todayISO();
-      if (fromAccountInput) fromAccountInput.value = '';
-      if (toAccountInput)   toAccountInput.value   = '';
-      if (remarksInput)     remarksInput.value     = '';
-      [accountSelectEl, paymentBySelectEl, incomeTypeSelectEl, locationSelectEl]
-        .forEach(s => { if (s) s.selectedIndex = 0; });
-      setEditMode(false);
-    }
-    function prefillFormFromCard(card) {
-      if (!addForm || !card) return;
-      if (editIdInput) editIdInput.value = card.dataset.incomeId || '';
-      if (dateInput) dateInput.value = card.dataset.date || '';
-      if (amountInput) amountInput.value = card.dataset.amount || '';
-      if (notesInput) notesInput.value = card.dataset.description || '';
-      if (fromAccountInput) fromAccountInput.value = card.dataset.fromAccount || '';
-      if (toAccountInput)   toAccountInput.value   = card.dataset.toAccount   || '';
-      if (remarksInput)     remarksInput.value     = card.dataset.remarks     || '';
-      setSelectValue(accountSelectEl, card.dataset.paymentMode);
-      setSelectValue(paymentBySelectEl, card.dataset.paymentBy);
-      setSelectValue(incomeTypeSelectEl, card.dataset.incomeType);
-      setSelectValue(locationSelectEl, card.dataset.locationSite);
-      setEditMode(true);
-    }
-    function openModal(forEdit) {
-      if (formError) { formError.textContent = ''; formError.classList.add('hidden'); }
-      if (!forEdit) resetFormForAdd();
-      modal.classList.add('open');
-    }
-    function closeModal() {
-      modal.classList.remove('open');
-      if (editIdInput) editIdInput.value = '';
-      setEditMode(false);
-    }
-    function showFormError(msg) {
-      if (!formError) return;
-      formError.textContent = msg || 'Could not save income. Please check the fields and try again.';
-      formError.classList.remove('hidden');
-    }
-    function buildIncomeCard(inc) {
-      const dash = '-';
-      const notesBlock = inc.description
-        ? `<div class="notes-box-v5">"${escapeHtml(inc.description)}"</div>` : '';
-      let comboBlock = '';
-      if (inc.combo) {
-        const bal = parseFloat(inc.combo.balance);
-        const balColor = bal >= 0 ? '#0f172a' : '#ef4444';
-        const fmtNum = n => Math.abs(parseFloat(n)).toLocaleString('en-IN', {maximumFractionDigits: 0});
-        comboBlock = `
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f0fdf4;border-radius:10px;padding:10px 12px;border:1px solid #bbf7d0;">
-            <div class="data-point-v5">
-              <span class="label">Total Income</span>
-              <span class="value" style="color:#10b981;font-size:14px;font-weight:900;">+₹${fmtNum(inc.combo.income)}</span>
-            </div>
-            <div class="data-point-v5" style="text-align:right;">
-              <span class="label">Balance</span>
-              <span class="value" style="font-size:14px;font-weight:900;color:${balColor};">₹${fmtNum(bal)}</span>
-            </div>
-          </div>`;
-      }
-      const card = document.createElement('div');
-      card.className = 'income-card-v5';
-      card.dataset.incomeId = inc.id;
-      card.dataset.date = inc.date || '';
-      card.dataset.amount = inc.amount || '';
-      card.dataset.incomeType = inc.income_type || '';
-      card.dataset.paymentBy = inc.payment_by || '';
-      card.dataset.locationSite = inc.location || '';
-      card.dataset.paymentMode = inc.payment_mode || '';
-      card.dataset.description = inc.description || '';
-      card.innerHTML = `
-        <div class="card-top-row-v5">
-          <div class="data-point-v5">
-            <span class="label">Date</span>
-            <span class="value">${escapeHtml(inc.date_display) || dash}</span>
-          </div>
-          <div class="data-point-v5" style="text-align:right;">
-            <span class="label">Amount</span>
-            <span class="value amount">+₹${escapeHtml(inc.amount_display)}</span>
-          </div>
-        </div>
-        <div class="card-top-row-v5" style="border:none;">
-          <div class="data-point-v5">
-            <span class="label">Income Type</span>
-            <span class="value">${escapeHtml(inc.income_type) || dash}</span>
-          </div>
-          <div class="data-point-v5" style="text-align:right;">
-            <span class="label">Income Source</span>
-            <span class="value">${escapeHtml(inc.payment_by) || dash}</span>
-          </div>
-        </div>
-        <div class="card-top-row-v5" style="border:none; padding-top:0;">
-          <div class="data-point-v5">
-            <span class="label">Account</span>
-            <span class="value">${escapeHtml(inc.payment_mode) || dash}</span>
-          </div>
-          <div class="data-point-v5" style="text-align:right;">
-            <span class="label">Location / Site</span>
-            <span class="value">${escapeHtml(inc.location) || dash}</span>
-          </div>
-        </div>
-        ${comboBlock}
-        ${notesBlock}
-        <div class="card-actions-v5">
-          <button type="button" class="btn-action-v5 edit" data-edit-income="${escapeHtml(inc.id)}">Edit</button>
-          <form method="post" action="${escapeHtml(inc.delete_url)}" class="m-0" onsubmit="return confirm('Confirm deletion of this income?')">
-            <input type="hidden" name="csrfmiddlewaretoken" value="${escapeHtml(csrfToken)}">
-            <button type="submit" class="btn-action-v5 delete">Delete</button>
-          </form>
-        </div>
-      `;
-      return card;
-    }
-
-    if (addForm) {
-      addForm.addEventListener('submit', async function (e) {
-        e.preventDefault();
-        if (formError) formError.classList.add('hidden');
-        const fd = new FormData(addForm);
-        const editId = (editIdInput && editIdInput.value) ? editIdInput.value : '';
-        fd.delete('income_id');
-        const url = editId ? `/income/${encodeURIComponent(editId)}/edit/` : ADD_INCOME_URL;
-
-        const originalLabel = saveBtn ? saveBtn.textContent : '';
-        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
-
-        try {
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'X-Requested-With': 'XMLHttpRequest',
-              'X-CSRFToken': csrfToken,
-              'Accept': 'application/json',
-            },
-            body: fd,
-            credentials: 'same-origin',
-          });
-          let data = null;
-          try { data = await res.json(); } catch (_) {}
-          if (res.ok && data && data.success && data.income) {
-            // Full reload so the server re-groups by account. Filters
-            // survive via the URL query string. The legacy
-            // buildIncomeCard() helper builds a per-income card, which
-            // would break the new per-account grouped layout, so we
-            // intentionally skip it here.
-            closeModal();
-            resetFormForAdd();
-            window.location.reload();
-            return;
-          } else {
-            const msg = (data && (data.message || data.error)) ||
-                        'Could not save income. Please check the fields and try again.';
-            showFormError(msg);
-          }
-        } catch (err) {
-          showFormError('Network error. Please try again.');
-        } finally {
-          if (saveBtn) {
-            saveBtn.disabled = false;
-            saveBtn.textContent = originalLabel || (editId ? 'Save Changes' : 'Save Income');
-          }
-        }
-      });
-    }
-
-    // Edit click delegation: open modal with prefilled data.
-    // After regrouping, the per-income data-* attrs live on the
-    // .account-detail-row inside the account card's detail panel, not on
-    // the .income-card-v5 itself. The [data-income-id] selector finds the
-    // row carrying the attrs. The "View" button toggles the inline panel.
-    // ── Card-level month dropdown (Issue 5) ─────────────────────────
-    // Repaints the Credit/Debit/Balance tiles from the per-site monthly
-    // breakdown JSON (data-monthly). 'all' falls back to the all-time
-    // totals (data-totals).
-    function _incFmtTile(n) {
-      const v = Math.abs(parseFloat(n) || 0).toFixed(2);
-      return v;
-    }
-    function applyIncomeCardMonthly(card, monthKey) {
-      let monthly = {};
-      let totals  = { credit: 0, debit: 0, balance: 0 };
-      try { monthly = JSON.parse(card.dataset.monthly || '{}'); } catch (_) {}
-      try { totals  = JSON.parse(card.dataset.totals  || '{}'); } catch (_) {}
-      let credit, debit, balance;
-      if (!monthKey || monthKey === 'all') {
-        credit  = parseFloat(totals.credit)  || 0;
-        debit   = parseFloat(totals.debit)   || 0;
-        balance = parseFloat(totals.balance) || 0;
-      } else {
-        const m = monthly[monthKey] || {};
-        credit  = parseFloat(m.credit)  || 0;
-        debit   = parseFloat(m.debit)   || 0;
-        balance = (parseFloat(m.balance) || (credit - debit));
-      }
-      const creditEl  = card.querySelector('.site-stat .val.credit');
-      const debitEl   = card.querySelector('.site-stat .val.debit');
-      const balanceEl = card.querySelector('.site-stat .val.bal-pos, .site-stat .val.bal-neg');
-      if (creditEl) creditEl.textContent = '+₹' + _incFmtTile(credit);
-      if (debitEl)  debitEl.textContent  = '-₹' + _incFmtTile(debit);
-      if (balanceEl) {
-        balanceEl.textContent = (balance >= 0 ? '+' : '-') + '₹' + _incFmtTile(balance);
-        balanceEl.classList.remove('bal-pos', 'bal-neg');
-        balanceEl.classList.add(balance >= 0 ? 'bal-pos' : 'bal-neg');
-      }
-    }
-    if (incomeGrid) {
-      // Initial paint so the default-selected current month is reflected in
-      // each card's tiles on first render.
-      incomeGrid.querySelectorAll('.income-card-v5').forEach(function (card) {
-        const sel = card.querySelector('.card-month-picker');
-        if (sel) applyIncomeCardMonthly(card, sel.value || '');
-      });
-
-      incomeGrid.addEventListener('change', function (e) {
-        const target = e.target;
-        if (target && target.classList && target.classList.contains('card-month-picker')) {
-          const card = target.closest('.income-card-v5');
-          if (card) applyIncomeCardMonthly(card, target.value || '');
-        }
-      });
-
-      incomeGrid.addEventListener('click', function (e) {
-        // "View" toggles the site detail panel
-        const viewBtn = e.target.closest('[data-view-site]');
-        if (viewBtn) {
-          e.preventDefault();
-          const card = viewBtn.closest('.income-card-v5');
-          if (!card) return;
-          const panel = card.querySelector('.site-detail-panel');
-          if (!panel) return;
-          if (panel.hasAttribute('hidden')) {
-            panel.removeAttribute('hidden');
-            viewBtn.textContent = 'Hide';
-          } else {
-            panel.setAttribute('hidden', '');
-            viewBtn.textContent = 'View';
-          }
-          return;
-        }
-
-        // "+ Add Income" inside the detail panel — prefill Location/Site
-        // with the site name from the surrounding card so the new row
-        // lands in the same bucket.
-        const addBtn = e.target.closest('[data-add-income-site]');
-        if (addBtn) {
-          e.preventDefault();
-          resetFormForAdd();
-          const siteName = addBtn.dataset.addIncomeSite || '';
-          if (siteName && siteName !== '(No Site)') {
-            setSelectValue(locationSelectEl, siteName);
-          }
-          openModal(false);
-          return;
-        }
-
-        const editBtn = e.target.closest('[data-edit-income]');
-        if (!editBtn) return;
-        e.preventDefault();
-        const source = editBtn.closest('[data-income-id]');
-        if (!source) return;
-        prefillFormFromCard(source);
-        openModal(true);
-      });
-    }
-
-    openBtn.addEventListener('click', () => openModal(false));
-    closeX.addEventListener('click', closeModal);
-    closeCanc.addEventListener('click', closeModal);
-    modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
-    });
-
-    // ----- Confirmation modal for dynamic-select deletes -----
-    const confirmModal = document.getElementById('incDeleteConfirmModal');
-    const confirmText = document.getElementById('incConfirmItemName');
-    const confirmBtn = document.getElementById('incConfirmDeleteBtn');
-    const cancelBtn = document.getElementById('incCancelDeleteBtn');
-    let currentConfirmCallback = null;
-    confirmBtn.onclick = () => { if (currentConfirmCallback) currentConfirmCallback(); confirmModal.style.display = 'none'; };
-    cancelBtn.onclick = () => { confirmModal.style.display = 'none'; };
-    confirmModal.onclick = (e) => { if (e.target === confirmModal) confirmModal.style.display = 'none'; };
-    function showConfirm(itemName, callback) {
-      confirmText.textContent = `"${itemName}"`;
-      currentConfirmCallback = callback;
-      confirmModal.style.display = 'flex';
-    }
-
-    // ----- Reusable Dynamic-Select Manager -----
-    function setupDynamicSelect(config) {
-      const container = document.getElementById(config.containerId);
-      const select = document.getElementById(config.selectId);
-      const addWrapper = document.getElementById(config.addWrapperId);
-      const input = document.getElementById(config.inputId);
-      const saveBtnEl = document.getElementById(config.saveBtnId);
-      const cancelAddBtn = document.getElementById(config.cancelAddBtnId);
-      const manageIcon = document.getElementById(config.manageIconId);
-      const manageWrapper = document.getElementById(config.manageWrapperId);
-      const deleteListEl = document.getElementById(config.deleteListId);
-      const closeManageBtn = document.getElementById(config.closeManageBtnId);
-      const storageKey = config.storageKey;
-      const deletedDefaultsKey = `spim_deleted_defaults_${storageKey}`;
-      let customItems = JSON.parse(localStorage.getItem(storageKey) || "[]");
-      let deletedDefaults = JSON.parse(localStorage.getItem(deletedDefaultsKey) || "[]");
-
-      function renderOptions() {
-        while (select.options.length > 2) select.remove(2);
-        config.defaults.forEach(opt => {
-          if (!deletedDefaults.includes(opt.name)) select.add(new Option(opt.name, opt.value));
-        });
-        customItems.forEach(item => select.add(new Option(item, item)));
-      }
-      function renderDeleteList() {
-        deleteListEl.innerHTML = '';
-        config.defaults.forEach(opt => {
-          if (deletedDefaults.includes(opt.name)) return;
-          const row = document.createElement('div');
-          row.className = 'mgmt-item';
-          row.innerHTML = `
-            <div class="name-box"><span class="name">${opt.name}</span></div>
-            <button type="button" class="mgmt-del-btn" data-item="${opt.name}" data-type="default" title="Delete Item">
-              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-            </button>`;
-          deleteListEl.appendChild(row);
-        });
-        customItems.forEach(item => {
-          const row = document.createElement('div');
-          row.className = 'mgmt-item';
-          row.innerHTML = `
-            <div class="name-box"><span class="name">${item}</span></div>
-            <button type="button" class="mgmt-del-btn" data-item="${item}" data-type="custom" title="Delete Item">
-              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-            </button>`;
-          deleteListEl.appendChild(row);
-        });
-      }
-
-      renderOptions();
-
-      select.addEventListener('change', () => {
-        if (select.value === 'add_new') {
-          addWrapper.classList.remove('hidden');
-          manageWrapper.classList.add('hidden');
-          input.focus();
-          select.value = '';
-        } else {
-          addWrapper.classList.add('hidden');
-        }
-      });
-      saveBtnEl.addEventListener('click', (e) => {
-        e.preventDefault();
-        const val = input.value.trim();
-        const valLower = val.toLowerCase();
-        const existsInDefaults = config.defaults.some(d => d.value.toLowerCase() === valLower);
-        const existsInCustom = customItems.some(i => i.toLowerCase() === valLower);
-        if (val && !existsInCustom && !existsInDefaults) {
-          customItems.push(val);
-          localStorage.setItem(storageKey, JSON.stringify(customItems));
-          if (deletedDefaults.includes(val)) {
-            deletedDefaults = deletedDefaults.filter(d => d !== val);
-            localStorage.setItem(deletedDefaultsKey, JSON.stringify(deletedDefaults));
-          }
-          renderOptions();
-          if (!manageWrapper.classList.contains('hidden')) renderDeleteList();
-          select.value = val;
-          if (config.onSave) config.onSave(val);
-        }
-        input.value = '';
-        addWrapper.classList.add('hidden');
-      });
-      cancelAddBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        input.value = '';
-        addWrapper.classList.add('hidden');
-      });
-      manageIcon.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const isHidden = manageWrapper.classList.contains('hidden');
-        document.querySelectorAll('#addIncomeForm .mgmt-popover').forEach(el => el.classList.add('hidden'));
-        document.querySelectorAll('#addIncomeForm .relative').forEach(el => el.classList.remove('container-boost'));
-        if (isHidden) {
-          renderDeleteList();
-          manageWrapper.classList.remove('hidden');
-          container.classList.add('container-boost');
-        } else {
-          manageWrapper.classList.add('hidden');
-          container.classList.remove('container-boost');
-        }
-      });
-      closeManageBtn.addEventListener('click', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        manageWrapper.classList.add('hidden');
-        container.classList.remove('container-boost');
-      });
-      deleteListEl.addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (btn && btn.dataset.item) {
-          e.preventDefault(); e.stopPropagation();
-          const itemToDelete = btn.dataset.item;
-          const typeToDelete = btn.dataset.type;
-          showConfirm(itemToDelete, () => {
-            if (typeToDelete === 'custom') {
-              customItems = customItems.filter(i => i !== itemToDelete);
-              localStorage.setItem(storageKey, JSON.stringify(customItems));
-            } else {
-              deletedDefaults.push(itemToDelete);
-              localStorage.setItem(deletedDefaultsKey, JSON.stringify(deletedDefaults));
-            }
-            renderOptions();
-            renderDeleteList();
-            if (select.value === itemToDelete) select.value = '';
-          });
-        }
-      });
-      document.addEventListener('click', (e) => {
-        if (!container.contains(e.target)) {
-          manageWrapper.classList.add('hidden');
-          container.classList.remove('container-boost');
-        }
-      });
-    }
-
-    // 1. Account — centralized shared store
-    (function() {
-      const key = 'spim_shared_accounts';
-      const serverAccounts = {{ accounts_json|safe }};
-      const existing = JSON.parse(localStorage.getItem(key) || '[]');
-      const seen = new Set(existing.map(x => x.toLowerCase()));
-      serverAccounts.forEach(n => {
-        if (n && !seen.has(n.toLowerCase())) { existing.push(n); seen.add(n.toLowerCase()); }
-      });
-      localStorage.setItem(key, JSON.stringify(existing));
-    })();
-
-    setupDynamicSelect({
-      containerId: 'incAccountContainer', selectId: 'incAccountSelect',
-      addWrapperId: 'incAddAccountWrapper', inputId: 'incNewAccountInput',
-      saveBtnId: 'incSaveAccountBtn', cancelAddBtnId: 'incCancelAddAccountBtn',
-      manageIconId: 'manageIncAccountIcon', manageWrapperId: 'incManageAccountWrapper',
-      deleteListId: 'incAccountDeleteList', closeManageBtnId: 'incCloseManageAccountBtn',
-      storageKey: 'spim_shared_accounts',
-      defaults: [
-        { name: 'Cash', value: 'Cash' },
-        { name: 'Bank Account 1', value: 'Bank Account 1' },
-        { name: 'UPI', value: 'UPI' },
-        { name: 'Cheque', value: 'Cheque' }
-      ],
-      onSave: function(val) {
-        fetch('/income/api/accounts/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-          body: JSON.stringify({ name: val })
-        }).then(r => r.json()).then(data => {
-          if (data.accounts) {
-            const cur = JSON.parse(localStorage.getItem('spim_shared_accounts') || '[]');
-            const seen = new Set(cur.map(x => x.toLowerCase()));
-            data.accounts.forEach(n => { if (!seen.has(n.toLowerCase())) cur.push(n); });
-            localStorage.setItem('spim_shared_accounts', JSON.stringify(cur));
-          }
-        }).catch(() => {});
-      }
-    });
-
-    // 2. Income Source — centralized shared store
-    (function() {
-      const key = 'spim_shared_income_sources';
-      const serverSources = {{ income_sources_json|safe }};
-      const existing = JSON.parse(localStorage.getItem(key) || '[]');
-      const seen = new Set(existing.map(x => x.toLowerCase()));
-      serverSources.forEach(n => {
-        if (n && !seen.has(n.toLowerCase())) { existing.push(n); seen.add(n.toLowerCase()); }
-      });
-      localStorage.setItem(key, JSON.stringify(existing));
-    })();
-
-    setupDynamicSelect({
-      containerId: 'incPaymentByContainer', selectId: 'incPaymentBySelect',
-      addWrapperId: 'incAddPaymentByWrapper', inputId: 'incNewPaymentByInput',
-      saveBtnId: 'incSavePaymentByBtn', cancelAddBtnId: 'incCancelAddPaymentByBtn',
-      manageIconId: 'manageIncPaymentByIcon', manageWrapperId: 'incManagePaymentByWrapper',
-      deleteListId: 'incPaymentByDeleteList', closeManageBtnId: 'incCloseManagePaymentByBtn',
-      storageKey: 'spim_shared_income_sources',
-      defaults: [
-        { name: 'Client', value: 'Client' },
-        { name: 'Customer', value: 'Customer' },
-        { name: 'Vendor', value: 'Vendor' },
-        { name: 'Other', value: 'Other' }
-      ],
-      onSave: function(val) {
-        fetch('/income/api/sources/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-          body: JSON.stringify({ name: val })
-        }).then(r => r.json()).then(data => {
-          if (data.sources) {
-            const cur = JSON.parse(localStorage.getItem('spim_shared_income_sources') || '[]');
-            const seen = new Set(cur.map(x => x.toLowerCase()));
-            data.sources.forEach(n => { if (!seen.has(n.toLowerCase())) cur.push(n); });
-            localStorage.setItem('spim_shared_income_sources', JSON.stringify(cur));
-          }
-        }).catch(() => {});
-      }
-    });
-
-    // 3. Income Type
-    setupDynamicSelect({
-      containerId: 'incomeTypeContainer', selectId: 'incomeTypeSelect',
-      addWrapperId: 'incAddIncomeTypeWrapper', inputId: 'incNewIncomeTypeInput',
-      saveBtnId: 'incSaveIncomeTypeBtn', cancelAddBtnId: 'incCancelAddIncomeTypeBtn',
-      manageIconId: 'manageIncomeTypeIcon', manageWrapperId: 'incManageIncomeTypeWrapper',
-      deleteListId: 'incIncomeTypeDeleteList', closeManageBtnId: 'incCloseIncomeTypeBtn',
-      storageKey: 'spim_income_types',
-      defaults: [
-        { name: 'Salary', value: 'Salary' },
-        { name: 'Freelance', value: 'Freelance' },
-        { name: 'Sale', value: 'Sale' },
-        { name: 'Investment', value: 'Investment' },
-        { name: 'Other', value: 'Other' }
-      ]
-    });
-
-    // 4. Location / Site — centralized shared store
-    (function() {
-      const SHARED_KEY = 'spim_shared_locations';
-      const serverLocations = {{ location_sites_json|safe }};
-
-      // Merge server-side centralized list into the shared localStorage key
-      const existing  = JSON.parse(localStorage.getItem(SHARED_KEY) || '[]');
-      const lowerSeen = new Set(existing.map(x => x.toLowerCase()));
-      serverLocations.forEach(n => {
-        if (n && !lowerSeen.has(n.toLowerCase())) { existing.push(n); lowerSeen.add(n.toLowerCase()); }
-      });
-      localStorage.setItem(SHARED_KEY, JSON.stringify(existing));
-    })();
-
-    setupDynamicSelect({
-      containerId: 'incLocationContainer', selectId: 'incLocationSelect',
-      addWrapperId: 'incAddLocationWrapper', inputId: 'incNewLocationInput',
-      saveBtnId: 'incSaveLocationBtn', cancelAddBtnId: 'incCancelAddLocationBtn',
-      manageIconId: 'manageIncLocationIcon', manageWrapperId: 'incManageLocationWrapper',
-      deleteListId: 'incLocationDeleteList', closeManageBtnId: 'incCloseManageLocationBtn',
-      storageKey: 'spim_shared_locations',
-      defaults: []
-    });
-
-    // Also POST new location to centralized API so other modules see it instantly
-    document.getElementById('incSaveLocationBtn').addEventListener('click', function() {
-      const val = (document.getElementById('incNewLocationInput').value || '').trim();
-      if (val) {
-        fetch('/branches/api/locations/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-          body: JSON.stringify({ name: val })
-        }).then(r => r.json()).then(data => {
-          if (data.locations) {
-            const key = 'spim_shared_locations';
-            const cur = JSON.parse(localStorage.getItem(key) || '[]');
-            const seen = new Set(cur.map(x => x.toLowerCase()));
-            data.locations.forEach(n => { if (!seen.has(n.toLowerCase())) cur.push(n); });
-            localStorage.setItem(key, JSON.stringify(cur));
-          }
-        }).catch(() => {});
-      }
-    });
-  })();
-</script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      Site-card bulk delete UI. Deletes ONLY income.Income rows; never

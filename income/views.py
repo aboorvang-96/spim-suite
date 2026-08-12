@@ -357,6 +357,73 @@ def _is_ajax(request):
     )
 
 
+def _normalize_site_or_office(admin_id, raw, user=None):
+    """Reject orphan sites on the write path.
+
+    Inline row writes always POST location_site from the card they were
+    added under, but a crafted request could try to smuggle in an
+    arbitrary site name. If the value isn't in the canonical set
+    (sites_for_admin), fold it to "OFFICE" — matching the presentation-
+    layer OFFICE fold in _group_incomes_by_site and the rewrite_income_sites
+    backfill. Guarantees no new orphan Income rows leak past the API.
+    """
+    from projects.utils import sites_for_admin
+    from attendance.site_utils import get_or_create_office_site, OFFICE_SITE_NAME
+    value = (raw or '').strip()
+    if not value:
+        try:
+            get_or_create_office_site(admin_id, user)
+        except Exception:
+            pass
+        return OFFICE_SITE_NAME
+    canonical = {s.lower(): s for s in sites_for_admin(admin_id)}
+    hit = canonical.get(value.lower())
+    if hit is not None:
+        return hit
+    try:
+        get_or_create_office_site(admin_id, user)
+    except Exception:
+        pass
+    return OFFICE_SITE_NAME
+
+
+@login_required
+def income_autocomplete_api(request):
+    """Autocomplete for the inline row's From / To Account inputs.
+
+    GET /income/api/autocomplete/?field=from_account|to_account&q=<prefix>
+    Returns {'suggestions': [{'value': str, 'count': int}, ...]} ordered
+    by usage count desc. Admin-scoped, case-insensitive dedup. No new
+    model — just DISTINCT + COUNT over Income.
+    """
+    field = (request.GET.get('field') or '').strip()
+    if field not in ('from_account', 'to_account'):
+        return JsonResponse({'error': 'field must be from_account or to_account'}, status=400)
+    q = (request.GET.get('q') or '').strip()
+    admin_id = get_admin_id(request.user)
+
+    qs = Income.objects.filter(admin_id=admin_id).exclude(**{f'{field}__exact': ''})
+    if q:
+        qs = qs.filter(**{f'{field}__icontains': q})
+
+    # DISTINCT + COUNT via values+annotate. Values case-fold client-side
+    # so "Bank A" and "bank a" collapse — keep the first-seen casing.
+    counts = {}
+    order = []
+    for row in qs.values(field).annotate(n=Count('id')).order_by('-n')[:100]:
+        raw = (row[field] or '').strip()
+        if not raw:
+            continue
+        k = raw.lower()
+        if k in counts:
+            counts[k]['count'] += row['n']
+        else:
+            counts[k] = {'value': raw, 'count': row['n']}
+            order.append(k)
+    result = [counts[k] for k in order][:20]
+    return JsonResponse({'suggestions': result})
+
+
 def _group_incomes_by_account(qs):
     """
     Group an already-filtered Income queryset by `payment_mode` (the
@@ -676,6 +743,9 @@ def income_add(request):
         income = form.save(commit=False)
         income.user     = request.user
         income.admin_id = get_admin_id(request.user)
+        income.location_site = _normalize_site_or_office(
+            income.admin_id, income.location_site, request.user,
+        )
         income.save()
         _ensure_location_site(
             get_admin_id(request.user),
@@ -715,6 +785,9 @@ def income_edit(request, pk):
     if form.is_valid():
         income = form.save(commit=False)
         income.admin_id = get_admin_id(request.user)
+        income.location_site = _normalize_site_or_office(
+            income.admin_id, income.location_site, request.user,
+        )
         income.save()
         _ensure_location_site(
             get_admin_id(request.user),
