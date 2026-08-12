@@ -825,48 +825,16 @@ def transaction_list(request):
     #     Transaction distincts (the helper always includes those).
     #   * Explicit site filter → just that one site.
     #   * Any other filter → full union across Projects/Attendance/Transaction.
-    from finance.services.site_cards import get_active_site_names, has_unassigned_transactions
+    from finance.services.site_cards import get_expense_card_seed, has_unassigned_transactions
     selected_sites = [s for s in filters.get('sites') or [] if s != 'UNASSIGNED']
-    if selected_sites:
-        # User picked specific sites — cards must be restricted to that set.
-        # Intersect case-insensitively with the canonical universe so we
-        # preserve Projects.Site casing when the dropdown submitted a lower-
-        # cased spelling.
-        universe = get_active_site_names(admin_id, restrict_today=False, module='expense')
-        wanted = {s.lower() for s in selected_sites}
-        seed_site_names = [n for n in universe if n.lower() in wanted]
-        # Fallback: if none of the picked names match the canonical universe
-        # (e.g. legacy row with a spelling that never made it into Projects),
-        # honour the user's raw selection so their filter never silently
-        # collapses to zero cards.
-        if not seed_site_names:
-            seed_site_names = selected_sites
-    else:
-        seed_site_names = get_active_site_names(
-            admin_id,
-            restrict_today=today_default_active,
-            today=timezone.localdate() if today_default_active else None,
-            module='expense',
-        )
-        # Widen the seed with any site that has a Transaction in the
-        # active cycle window — INCLUDING salary rows. A site whose only
-        # expense this cycle is salary still gets a card (the card body
-        # renders empty because salary rows are shown in the side panel).
-        # This is what stops sites like OFFICE / KKNPP disappearing from
-        # the grid on quiet-non-salary cycles.
-        cycle_txn_sites = (
-            Transaction.objects
-            .filter(admin_id=admin_id, type='expense',
-                    date__gte=cycle_start, date__lte=cycle_end)
-            .exclude(location_site__isnull=True).exclude(location_site='')
-            .values_list('location_site', flat=True).distinct()
-        )
-        seen = {(n or '').strip().lower() for n in seed_site_names if n}
-        for n in cycle_txn_sites:
-            k = (n or '').strip().lower()
-            if k and k not in seen:
-                seed_site_names.append(n.strip())
-                seen.add(k)
+    seed_site_names = get_expense_card_seed(
+        admin_id,
+        selected_sites=selected_sites,
+        restrict_today=today_default_active,
+        today=timezone.localdate() if today_default_active else None,
+        cycle_start=cycle_start,
+        cycle_end=cycle_end,
+    )
 
     # Group the filtered transactions by Account (legacy) and Site (new
     # site-based card view, Income/Expense restructure). The site card uses

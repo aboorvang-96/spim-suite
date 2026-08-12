@@ -51,6 +51,58 @@ def get_active_site_names(admin_id, restrict_today=False, today=None, module=Non
     return names
 
 
+def get_expense_card_seed(admin_id, selected_sites=None, restrict_today=False,
+                          today=None, cycle_start=None, cycle_end=None):
+    """Single source of truth for the site-card seed list rendered on
+    /expenses/ AND /income/.
+
+    Both pages must render the identical card set for the same tenant —
+    same names, same order — so this helper encapsulates the full rule:
+
+      * If `selected_sites` is provided (user picked cards / filter),
+        return the intersection with the canonical universe (case-
+        insensitive), falling back to the raw picked names when the
+        picks aren't in the universe.
+      * Otherwise, return the module='expense' universe (module hide
+        list applied), widened with any Transaction.location_site
+        distincts in the [cycle_start, cycle_end] window when both are
+        supplied. This is what keeps salary-only sites on the card grid.
+
+    Mirrors the inline logic that used to live in
+    finance.views.transaction_list; extracted so income.views.income_list
+    can call it verbatim and cannot drift.
+    """
+    from finance.models import Transaction
+
+    if selected_sites:
+        universe = get_active_site_names(admin_id, restrict_today=False, module='expense')
+        wanted = {s.lower() for s in selected_sites}
+        seed = [n for n in universe if n.lower() in wanted]
+        return seed if seed else list(selected_sites)
+
+    seed = get_active_site_names(
+        admin_id,
+        restrict_today=restrict_today,
+        today=today,
+        module='expense',
+    )
+    if cycle_start and cycle_end:
+        cycle_txn_sites = (
+            Transaction.objects
+            .filter(admin_id=admin_id, type='expense',
+                    date__gte=cycle_start, date__lte=cycle_end)
+            .exclude(location_site__isnull=True).exclude(location_site='')
+            .values_list('location_site', flat=True).distinct()
+        )
+        seen = {(n or '').strip().lower() for n in seed if n}
+        for n in cycle_txn_sites:
+            k = (n or '').strip().lower()
+            if k and k not in seen:
+                seed.append(n.strip())
+                seen.add(k)
+    return seed
+
+
 def has_unassigned_transactions(admin_id, txn_type=None):
     """True if any Transaction row for this tenant has a null/empty
     location_site. Used to decide whether to render the "(No Site)" bucket

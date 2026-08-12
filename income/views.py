@@ -260,24 +260,22 @@ def income_list(request):
     # Projects/Attendance appear even with zero income rows. Site cards on
     # Income don't have a today-restriction — Income is a manual entry flow
     # and admins expect to see the full site universe.
-    # Seed one card per canonical site — same set as /expenses/. Source:
-    # projects.utils.sites_for_admin (union of Projects.Site + attendance
-    # within current+previous salary cycle). Deliberately bypasses the
-    # module-hide list (finance.ModuleHiddenSite) so that a card hidden
-    # from the Income Manager UI doesn't cause the card grid to diverge
-    # from the /expenses/ page. Cards for sites with no income yet still
-    # render as ₹0 credit/debit/balance so admin sees the full site set.
-    from finance.services.site_cards import has_unassigned_transactions
-    from projects.utils import sites_for_admin
-    canonical_sites = sites_for_admin(admin_id)
-    selected_sites = [s for s in sites if s != 'UNASSIGNED']
-    if selected_sites:
-        wanted = {s.lower() for s in selected_sites}
-        seed_site_names = [n for n in canonical_sites if n.lower() in wanted]
-        if not seed_site_names:
-            seed_site_names = selected_sites
-    else:
-        seed_site_names = canonical_sites
+    # Seed identical to /expenses/: single-source helper get_expense_card_seed.
+    # Same admin, same cycle bounds → identical card set (names + order).
+    # Any divergence between the two pages is a bug in the shared helper.
+    from finance.services.site_cards import get_expense_card_seed, has_unassigned_transactions
+    from accounts.cycle_utils import get_salary_cycle
+    from accounts.date_utils import today_ist
+    from django.utils import timezone as _tz_seed
+    _cycle = get_salary_cycle(today_ist())
+    seed_site_names = get_expense_card_seed(
+        admin_id,
+        selected_sites=[s for s in sites if s != 'UNASSIGNED'],
+        restrict_today=False,
+        today=_tz_seed.localdate(),
+        cycle_start=_cycle['start'],
+        cycle_end=_cycle['end'],
+    )
 
     accounts_grouped = _group_incomes_by_account(incomes_list)
     sites_grouped    = _group_incomes_by_site(incomes_list, request.user, seed_names=seed_site_names)
