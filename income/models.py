@@ -35,6 +35,10 @@ class Income(models.Model):
     from_account = models.CharField(max_length=200, blank=True, default='')
     to_account   = models.CharField(max_length=200, blank=True, default='')
     remarks      = models.CharField(max_length=500, blank=True, default='')
+    # Salary income flag — Income rows created via the Salary side panel
+    # carry is_salary=True and are strictly excluded from the standard
+    # site card queries. Regular income creation paths default to False.
+    is_salary    = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -145,6 +145,14 @@ def income_list(request):
         incomes = Income.objects.filter(admin_id=admin_id).select_related('category', 'user')
     else:
         incomes = Income.objects.filter(user=request.user).select_related('category')
+    # Regular income view NEVER shows salary-income rows. Those are
+    # segregated into the Salary Income side panel further down.
+    try:
+        incomes = incomes.filter(is_salary=False)
+    except Exception:
+        # Migration 0006 not yet applied — defer to the defensive fetch
+        # branch below, which will still filter after load.
+        pass
         
     # Filters — parity with Expense Manager. Multi-value site/category/
     # account/income_source read via getlist so ?site=A&site=B applies
@@ -286,6 +294,14 @@ def income_list(request):
     )):
         sites_grouped = [g for g in sites_grouped if g['site_key']]
 
+    # Salary Income side panel — mirrors the expense-side salary panel.
+    # Rows are Income.objects with is_salary=True in the current salary
+    # cycle. Each row shows the expense-side salary total for that site
+    # in the same cycle (read-only Total Amount column).
+    salary_panel_rows, salary_cycle = _build_salary_income_panel(
+        request.user, admin_id, seed_site_names,
+    )
+
     from django.utils import timezone as _tz
     return render(request, 'income/list.html', {
         'incomes':          incomes_list,
@@ -325,7 +341,86 @@ def income_list(request):
         'income_sources_json': _shared_sources_json(request.user),
         'accounts_json':       _shared_accounts_json(request.user),
         'balance_data':        balance_combos,
+        'salary_panel_rows':   salary_panel_rows,
+        'salary_sites_json':   json.dumps(sorted(list(seed_site_names)) if seed_site_names else []),
+        'salary_cycle_label':  salary_cycle['label'],
+        'salary_cycle_start':  salary_cycle['start'],
+        'salary_cycle_end':    salary_cycle['end'],
     })
+
+
+def _build_salary_income_panel(user, admin_id, seed_site_names):
+    """Return (rows, cycle_dict) for the Salary Income side panel.
+
+    Rows: one dict per Income row where is_salary=True in the current
+    salary cycle. Each dict includes the expense-side salary total for
+    the same site+cycle (repeats across sibling rows of the same site —
+    that's expected). Sorted by site (case-insensitive) then date desc.
+    """
+    from decimal import Decimal as _D
+    from accounts.cycle_utils import get_salary_cycle
+    from accounts.date_utils import today_ist
+    from django.db.models import Sum
+    cycle = get_salary_cycle(today_ist())
+
+    # Per-site expense-side salary totals for the cycle. Same query the
+    # expense-side salary panel builder uses (finance.services.salary_panel).
+    exp_totals = {}
+    try:
+        rows = (
+            FinanceTransaction.objects
+            .filter(
+                admin_id=admin_id,
+                type='expense',
+                reference__startswith='[AUTO-SAL:',
+                date__gte=cycle['start'],
+                date__lte=cycle['end'],
+            )
+            .values('location_site')
+            .annotate(total=Sum('amount'))
+        )
+        for r in rows:
+            key = (r['location_site'] or '').strip().lower()
+            if not key:
+                continue
+            exp_totals[key] = (exp_totals.get(key, _D('0')) + (r['total'] or _D('0')))
+    except Exception:
+        exp_totals = {}
+
+    try:
+        if is_admin_user(user):
+            qs = Income.objects.filter(
+                admin_id=admin_id, is_salary=True,
+                date__gte=cycle['start'], date__lte=cycle['end'],
+            )
+        else:
+            qs = Income.objects.filter(
+                user=user, is_salary=True,
+                date__gte=cycle['start'], date__lte=cycle['end'],
+            )
+        salary_rows_qs = list(qs.order_by('location_site', '-date', '-created_at'))
+    except Exception:
+        salary_rows_qs = []
+
+    rows_out = []
+    for i in salary_rows_qs:
+        site = (i.location_site or '').strip()
+        key = site.lower()
+        total_amt = exp_totals.get(key, _D('0'))
+        rows_out.append({
+            'id':           i.pk,
+            'date':         i.date,
+            'site':         site or 'OFFICE',
+            'total_amount': total_amt,
+            'from_account': i.from_account or '',
+            'amount':       i.amount,
+            'remarks':      i.remarks or '',
+        })
+    rows_out.sort(key=lambda r: ((r['site'] or '').lower(), r['date'] or cycle['start'].__class__.min), reverse=False)
+    # Reverse so date-desc within the site-asc primary sort. Two-pass:
+    rows_out.sort(key=lambda r: (r['date'] or cycle['start']), reverse=True)
+    rows_out.sort(key=lambda r: (r['site'] or '').lower())
+    return rows_out, cycle
 
 
 @login_required
@@ -712,6 +807,7 @@ def _income_to_dict(i):
         'from_account': getattr(i, 'from_account', '') or '',
         'to_account':   getattr(i, 'to_account',   '') or '',
         'remarks':      getattr(i, 'remarks',      '') or '',
+        'is_salary':    bool(getattr(i, 'is_salary', False)),
         'edit_url': f'/income/{i.pk}/edit/',
         'delete_url': f'/income/{i.pk}/delete/',
     }
@@ -743,6 +839,7 @@ def income_add(request):
         income = form.save(commit=False)
         income.user     = request.user
         income.admin_id = get_admin_id(request.user)
+        income.is_salary = _parse_is_salary(request.POST)
         income.location_site = _normalize_site_or_office(
             income.admin_id, income.location_site, request.user,
         )
@@ -768,6 +865,11 @@ def income_add(request):
     return redirect('income:list')
 
 
+def _parse_is_salary(post):
+    v = (post.get('is_salary') or '').strip().lower()
+    return v in ('1', 'true', 'on', 'yes')
+
+
 @login_required
 def income_edit(request, pk):
     if is_admin_user(request.user):
@@ -785,6 +887,11 @@ def income_edit(request, pk):
     if form.is_valid():
         income = form.save(commit=False)
         income.admin_id = get_admin_id(request.user)
+        # Preserve is_salary across edits: only overwrite if POST explicitly
+        # supplied the flag. Prevents an inline edit from the standard site
+        # panel from silently flipping a salary row into a regular row.
+        if 'is_salary' in request.POST:
+            income.is_salary = _parse_is_salary(request.POST)
         income.location_site = _normalize_site_or_office(
             income.admin_id, income.location_site, request.user,
         )

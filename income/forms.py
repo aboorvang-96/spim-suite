@@ -10,6 +10,8 @@ class IncomeForm(forms.ModelForm):
             'payment_mode', 'income_type', 'location_site', 'payment_by',
             # New site-detail fields (Income/Expense restructure).
             'from_account', 'to_account', 'remarks',
+            # Salary income flag (side panel writes True; regular writes False).
+            'is_salary',
         ]
         widgets = {
             'amount':      forms.NumberInput(attrs={'class': 'form-input', 'placeholder': '0.00', 'step': '0.01', 'min': '0'}),
