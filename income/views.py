@@ -302,6 +302,31 @@ def income_list(request):
         request.user, admin_id, seed_site_names,
     )
 
+    # Cycle-scoped KPI tiles (Total Credits / Total Debits / Net Balance).
+    # Both queries are tenant-scoped by admin_id and windowed to the
+    # current salary cycle. Credits sum EVERY Income row in the cycle
+    # (is_salary True + False). Debits sum every expense Transaction in
+    # the cycle regardless of reference shape (salary + standard).
+    from decimal import Decimal as _KD
+    from django.db.models import Sum as _KSum
+    _cycle_credits = (
+        Income.objects
+        .filter(admin_id=admin_id, date__gte=salary_cycle['start'], date__lte=salary_cycle['end'])
+        .aggregate(s=_KSum('amount'))['s'] or _KD('0')
+    )
+    _cycle_debits = (
+        FinanceTransaction.objects
+        .filter(admin_id=admin_id, type='expense',
+                date__gte=salary_cycle['start'], date__lte=salary_cycle['end'])
+        .aggregate(s=_KSum('amount'))['s'] or _KD('0')
+    )
+    _cycle_net = _cycle_credits - _cycle_debits
+    _cycle_range_label = '{} - {} {}'.format(
+        salary_cycle['start'].strftime('%d %b'),
+        salary_cycle['end'].strftime('%d %b'),
+        salary_cycle['end'].strftime('%Y'),
+    )
+
     from django.utils import timezone as _tz
     return render(request, 'income/list.html', {
         'incomes':          incomes_list,
@@ -346,6 +371,10 @@ def income_list(request):
         'salary_cycle_label':  salary_cycle['label'],
         'salary_cycle_start':  salary_cycle['start'],
         'salary_cycle_end':    salary_cycle['end'],
+        'cycle_credits':       _cycle_credits,
+        'cycle_debits':        _cycle_debits,
+        'cycle_net':           _cycle_net,
+        'cycle_range_label':   _cycle_range_label,
     })
 
 

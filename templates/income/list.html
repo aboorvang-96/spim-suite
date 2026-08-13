@@ -56,7 +56,7 @@
   }
   .summary-grid-v5 {
     display: grid !important;
-    grid-template-columns: repeat(4, 1fr) !important;
+    grid-template-columns: repeat(3, 1fr) !important;
     gap: 14px !important;
     width: 100% !important;
     position: sticky !important;
@@ -253,58 +253,35 @@
 </style>
 
 <div class="income-page-container">
-  <!-- SUMMARY CARDS -->
+  <!-- SUMMARY CARDS — cycle-scoped Credits / Debits / Net.
+       Subtitle uses the dynamic cycle range from get_salary_cycle(); on
+       the 26th the label auto-flips to the new cycle window. -->
   <section class="summary-grid-v5">
     <div class="summary-card-v5">
       <div class="card-header">
         <svg style="color:#10b981;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        <span>Total Revenue</span>
+        <span>Total Credits</span>
       </div>
-      <p class="card-value">₹{{ total|floatformat:2 }}</p>
+      <p style="font-size:11px;font-weight:600;color:#64748b;margin:2px 0 0;letter-spacing:0.02em;">Current Cycle {{ cycle_range_label }}</p>
+      <p class="card-value" style="color:#10b981;">+₹{{ cycle_credits|floatformat:2 }}</p>
     </div>
     <div class="summary-card-v5">
       <div class="card-header">
-        <svg style="color:#6366f1;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-        <span>Entries</span>
+        <svg style="color:#ef4444;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6"/></svg>
+        <span>Total Debits</span>
       </div>
-      <p class="card-value">{{ count }}</p>
+      <p style="font-size:11px;font-weight:600;color:#64748b;margin:2px 0 0;letter-spacing:0.02em;">Current Cycle {{ cycle_range_label }}</p>
+      <p class="card-value" style="color:#ef4444;">-₹{{ cycle_debits|floatformat:2 }}</p>
     </div>
     <div class="summary-card-v5">
       <div class="card-header">
-        <svg style="color:#f59e0b;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
-        <span>Average</span>
-      </div>
-      <p class="card-value">₹{{ average|floatformat:2 }}</p>
-    </div>
-
-    <!-- 4th card: Balance Summary (moved from standalone section) -->
-    <div class="summary-card-v5" style="min-height:auto;">
-      <div class="card-header">
-        <svg style="color:#3b82f6;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path d="M12 3v18M3 9l9-6 9 6M3 15l9 6 9-6"/>
-        </svg>
+        <svg style="color:#3b82f6;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 3v18M3 9l9-6 9 6M3 15l9 6 9-6"/></svg>
         <span>Net Balance</span>
       </div>
-      {% if balance_data %}
-      <p class="card-value" style="font-size:20px;margin:8px 0 6px;{% if total_balance >= 0 %}color:#10b981{% else %}color:#ef4444{% endif %};">
-        {% if total_balance >= 0 %}+{% endif %}₹{{ total_balance|floatformat:0 }}
+      <p style="font-size:11px;font-weight:600;color:#64748b;margin:2px 0 0;letter-spacing:0.02em;">Current Cycle {{ cycle_range_label }}</p>
+      <p class="card-value" style="{% if cycle_net > 0 %}color:#10b981;{% elif cycle_net < 0 %}color:#ef4444;{% else %}color:#94a3b8;{% endif %}">
+        {% if cycle_net > 0 %}+{% endif %}₹{{ cycle_net|floatformat:2 }}
       </p>
-      <div style="overflow-y:auto;max-height:80px;display:flex;flex-direction:column;gap:3px;">
-        {% for combo in balance_data %}
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;">
-          <span style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62%;line-height:1.4;">
-            {{ combo.source }} · {{ combo.account }}
-          </span>
-          <span style="font-weight:800;flex-shrink:0;margin-left:4px;{% if combo.balance >= 0 %}color:#10b981{% else %}color:#ef4444{% endif %};">
-            {% if combo.balance >= 0 %}+{% endif %}₹{{ combo.balance|floatformat:0 }}
-          </span>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="card-value" style="font-size:20px;margin:8px 0 4px;">₹0</p>
-      <span style="font-size:11px;color:#94a3b8;">No transactions yet</span>
-      {% endif %}
     </div>
   </section>
 
