@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.db import transaction
 from django.utils import timezone
 import calendar
@@ -823,16 +823,13 @@ def salary_dashboard(request):
             if salary_record:
                 processed_count += 1
 
-            # Cycle-scope the KPI tiles: only accumulate for employees that
-            # actually have a salary record in the target cycle. Employees
-            # with no record contribute a forecast `net` to the per-row
-            # table (that data still renders below), but including their
-            # forecast in Total Payout diverged from Expense Manager's
-            # Salary tile (which is [AUTO-SAL:%] posted expenses only) by
-            # ~2-3× on real data. Same rule applied to OT / Advance /
-            # Deductions so all four tiles agree on the "in-cycle" set.
+            # KPI accumulators for OT / Advance / Deductions stay scoped to
+            # employees with an actual SalaryUpdate record in the cycle.
+            # Total Payout (total_net) is NOT accumulated here anymore —
+            # it's computed once below from posted [AUTO-SAL:*] Transactions
+            # so it matches Expense Manager's "This Cycle → Salary" tile
+            # exactly (same query, same data source).
             if salary_record:
-                total_net += net
                 total_ded += ded
                 total_ot += ot
                 total_advance += advance
@@ -890,6 +887,24 @@ def salary_dashboard(request):
                 'pf_number': pf.pf_number if pf else '',
                 'esi_number': pf.esic_number if pf else '',
             })
+
+        # Total Payout = actual posted salary expense for the CURRENT cycle,
+        # taken from the same [AUTO-SAL:*] Transaction pool the Expense
+        # Manager "This Cycle → Salary" tile reads. Guarantees the two
+        # tiles show identical numbers regardless of which employees have
+        # SalaryUpdate rows yet. Uses the current cycle (26→25 window),
+        # not the month/year picker — matches Expense Mgr's cycle scope.
+        from finance.models import Transaction as _KpiTx
+        from accounts.cycle_utils import get_salary_cycle as _kpi_get_cycle
+        from accounts.date_utils import today_ist as _kpi_today
+        _kc = _kpi_get_cycle(_kpi_today())
+        total_net = float(
+            _KpiTx.objects
+            .filter(admin_id=admin_id, type='expense',
+                    reference__startswith='[AUTO-SAL:',
+                    date__gte=_kc['start'], date__lte=_kc['end'])
+            .aggregate(t=Sum('amount'))['t'] or 0
+        )
 
         return JsonResponse({
             'salaries': emp_list,
