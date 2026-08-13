@@ -349,23 +349,14 @@ def income_list(request):
     })
 
 
-def _build_salary_income_panel(user, admin_id, seed_site_names):
-    """Return (rows, cycle_dict) for the Salary Income side panel.
-
-    Rows: one dict per Income row where is_salary=True in the current
-    salary cycle. Each dict includes the expense-side salary total for
-    the same site+cycle (repeats across sibling rows of the same site —
-    that's expected). Sorted by site (case-insensitive) then date desc.
-    """
+def _salary_cycle_expense_totals(admin_id, cycle):
+    """{site_lower: {'display': str, 'total': Decimal}} — expense-side
+    salary sums per site for the given cycle. Same query pattern as
+    finance.services.salary_panel.build_salary_panel; keeps this the
+    single source of truth for the seed set."""
     from decimal import Decimal as _D
-    from accounts.cycle_utils import get_salary_cycle
-    from accounts.date_utils import today_ist
     from django.db.models import Sum
-    cycle = get_salary_cycle(today_ist())
-
-    # Per-site expense-side salary totals for the cycle. Same query the
-    # expense-side salary panel builder uses (finance.services.salary_panel).
-    exp_totals = {}
+    out = {}
     try:
         rows = (
             FinanceTransaction.objects
@@ -380,13 +371,49 @@ def _build_salary_income_panel(user, admin_id, seed_site_names):
             .annotate(total=Sum('amount'))
         )
         for r in rows:
-            key = (r['location_site'] or '').strip().lower()
-            if not key:
+            raw = (r['location_site'] or '').strip()
+            if not raw:
                 continue
-            exp_totals[key] = (exp_totals.get(key, _D('0')) + (r['total'] or _D('0')))
+            k = raw.lower()
+            b = out.get(k)
+            if b is None:
+                out[k] = {'display': raw, 'total': (r['total'] or _D('0'))}
+            else:
+                b['total'] += (r['total'] or _D('0'))
     except Exception:
-        exp_totals = {}
+        pass
+    # Fold display names to canonical Projects.Site casing when available.
+    try:
+        from projects.utils import sites_for_admin
+        for name in sites_for_admin(admin_id):
+            k = (name or '').strip().lower()
+            if k in out:
+                out[k]['display'] = (name or '').strip()
+    except Exception:
+        pass
+    return out
 
+
+def _build_salary_income_panel(user, admin_id, seed_site_names):
+    """Return (rows, cycle_dict) for the Salary Income side panel.
+
+    NEW SHAPE: one row per site that has ANY expense-side salary this
+    cycle. Sites with zero salary expense are omitted. The Income row
+    for that site is upserted 1:1 with the seeded panel row — either it
+    exists (edit-mode) or it doesn't (blank credit fields, id=None).
+    """
+    from decimal import Decimal as _D
+    from accounts.cycle_utils import get_salary_cycle
+    from accounts.date_utils import today_ist
+    cycle = get_salary_cycle(today_ist())
+
+    exp_totals = _salary_cycle_expense_totals(admin_id, cycle)
+
+    # Existing Income salary rows for this cycle, keyed by site (lower).
+    # Should be at most one per site under the upsert rule; if legacy
+    # duplicates exist, we pick the most recent and ignore the rest so
+    # the panel still renders one row per site.
+    existing = {}
     try:
         if is_admin_user(user):
             qs = Income.objects.filter(
@@ -398,27 +425,27 @@ def _build_salary_income_panel(user, admin_id, seed_site_names):
                 user=user, is_salary=True,
                 date__gte=cycle['start'], date__lte=cycle['end'],
             )
-        salary_rows_qs = list(qs.order_by('location_site', '-date', '-created_at'))
+        for i in qs.order_by('-date', '-created_at'):
+            k = (i.location_site or '').strip().lower()
+            if k and k not in existing:
+                existing[k] = i
     except Exception:
-        salary_rows_qs = []
+        existing = {}
 
     rows_out = []
-    for i in salary_rows_qs:
-        site = (i.location_site or '').strip()
-        key = site.lower()
-        total_amt = exp_totals.get(key, _D('0'))
+    for key, bucket in exp_totals.items():
+        salary = bucket['total'] or _D('0')
+        inc = existing.get(key)
+        credit = (inc.amount if inc else _D('0')) or _D('0')
         rows_out.append({
-            'id':           i.pk,
-            'date':         i.date,
-            'site':         site or 'OFFICE',
-            'total_amount': total_amt,
-            'from_account': i.from_account or '',
-            'amount':       i.amount,
-            'remarks':      i.remarks or '',
+            'id':           inc.pk if inc else None,
+            'site':         bucket['display'],
+            'from_account': (inc.from_account or '') if inc else '',
+            'credit':       credit,
+            'salary':       salary,
+            'balance':      credit - salary,
+            'remarks':      (inc.remarks or '') if inc else '',
         })
-    rows_out.sort(key=lambda r: ((r['site'] or '').lower(), r['date'] or cycle['start'].__class__.min), reverse=False)
-    # Reverse so date-desc within the site-asc primary sort. Two-pass:
-    rows_out.sort(key=lambda r: (r['date'] or cycle['start']), reverse=True)
     rows_out.sort(key=lambda r: (r['site'] or '').lower())
     return rows_out, cycle
 
@@ -832,14 +859,23 @@ def income_add(request):
     if request.method != 'POST':
         return redirect('income:list')
 
-    form = IncomeForm(request.user, request.POST)
     ajax = _is_ajax(request)
+    admin_id = get_admin_id(request.user)
+
+    # Salary Income upsert path — the panel POSTs is_salary=1 with a site
+    # that MUST be in this cycle's expense-side salary set. If an existing
+    # Income row for (admin_id, site, is_salary=True, date in cycle) is
+    # found, we UPDATE it instead of creating a new row.
+    if _parse_is_salary(request.POST):
+        return _salary_income_upsert(request, admin_id, ajax)
+
+    form = IncomeForm(request.user, request.POST)
 
     if form.is_valid():
         income = form.save(commit=False)
         income.user     = request.user
-        income.admin_id = get_admin_id(request.user)
-        income.is_salary = _parse_is_salary(request.POST)
+        income.admin_id = admin_id
+        income.is_salary = False
         income.location_site = _normalize_site_or_office(
             income.admin_id, income.location_site, request.user,
         )
@@ -870,6 +906,109 @@ def _parse_is_salary(post):
     return v in ('1', 'true', 'on', 'yes')
 
 
+def _salary_income_upsert(request, admin_id, ajax):
+    """One-row-per-site upsert for Salary Income panel writes.
+
+    Site MUST be in this cycle's expense-side salary set (server-side
+    re-validation of the seed set). Date defaults to cycle start.
+    If a matching (admin_id, site, is_salary=True, date in cycle) row
+    exists it is UPDATED; otherwise a new row is created.
+    """
+    from decimal import Decimal, InvalidOperation
+    from accounts.cycle_utils import get_salary_cycle
+    from accounts.date_utils import today_ist, validate_not_future
+    from django.core.exceptions import ValidationError
+
+    cycle = get_salary_cycle(today_ist())
+    exp_totals = _salary_cycle_expense_totals(admin_id, cycle)
+
+    raw_site = (request.POST.get('location_site') or '').strip()
+    site_key = raw_site.lower()
+    bucket = exp_totals.get(site_key)
+    if bucket is None:
+        msg = 'Site is not in this cycle’s salary expense set.'
+        if ajax:
+            return JsonResponse({'success': False, 'message': msg,
+                                 'errors': {'location_site': [msg]}}, status=400)
+        messages.error(request, msg)
+        return redirect('income:list')
+    site_display = bucket['display']
+
+    amount_raw = (request.POST.get('amount') or '').strip()
+    try:
+        amount = Decimal(amount_raw)
+    except (InvalidOperation, ValueError):
+        amount = None
+    if amount is None or amount <= 0:
+        msg = 'Credit Amount must be greater than zero.'
+        if ajax:
+            return JsonResponse({'success': False, 'message': msg,
+                                 'errors': {'amount': [msg]}}, status=400)
+        messages.error(request, msg)
+        return redirect('income:list')
+
+    from_account = (request.POST.get('from_account') or '').strip()[:200]
+    remarks      = (request.POST.get('remarks') or '').strip()[:500]
+
+    # Date: use POST value if provided and in-cycle, else cycle start.
+    date_raw = (request.POST.get('date') or '').strip()
+    row_date = cycle['start']
+    if date_raw:
+        try:
+            import datetime as _dt
+            parsed = _dt.datetime.strptime(date_raw, '%Y-%m-%d').date()
+            if cycle['start'] <= parsed <= cycle['end']:
+                row_date = parsed
+        except ValueError:
+            pass
+    try:
+        validate_not_future(row_date, 'Income date')
+    except ValidationError as e:
+        msg = str(e.message if hasattr(e, 'message') else e)
+        if ajax:
+            return JsonResponse({'success': False, 'message': msg,
+                                 'errors': {'date': [msg]}}, status=400)
+        messages.error(request, msg)
+        return redirect('income:list')
+
+    existing = (Income.objects
+                .filter(admin_id=admin_id, is_salary=True,
+                        location_site__iexact=site_display,
+                        date__gte=cycle['start'], date__lte=cycle['end'])
+                .order_by('-date', '-created_at')
+                .first())
+    if existing is None:
+        income = Income(
+            user=request.user,
+            admin_id=admin_id,
+            amount=amount,
+            date=row_date,
+            location_site=site_display,
+            from_account=from_account,
+            remarks=remarks,
+            income_type='SALARY',
+            is_salary=True,
+        )
+    else:
+        income = existing
+        income.amount        = amount
+        income.date          = row_date
+        income.location_site = site_display
+        income.from_account  = from_account
+        income.remarks       = remarks
+        income.is_salary     = True
+    income.save()
+    _ensure_location_site(admin_id, income.location_site, request.user)
+
+    if ajax:
+        d = _income_to_dict(income)
+        d['salary'] = str(bucket['total'])
+        d['balance'] = str((amount or Decimal('0')) - (bucket['total'] or Decimal('0')))
+        return JsonResponse({'success': True, 'income': d})
+    messages.success(request, f'Salary income saved for {site_display}.')
+    return redirect('income:list')
+
+
 @login_required
 def income_edit(request, pk):
     if is_admin_user(request.user):
@@ -881,8 +1020,16 @@ def income_edit(request, pk):
     if request.method != 'POST':
         return redirect('income:list')
 
-    form = IncomeForm(request.user, request.POST, instance=income)
     ajax = _is_ajax(request)
+
+    # Salary Income upsert path — reuse the create-side helper so both
+    # entry points share validation and one-per-site enforcement. The pk
+    # in the URL is honoured only when it matches the resolved upsert
+    # target; the helper's own query decides which row to update.
+    if _parse_is_salary(request.POST):
+        return _salary_income_upsert(request, get_admin_id(request.user), ajax)
+
+    form = IncomeForm(request.user, request.POST, instance=income)
 
     if form.is_valid():
         income = form.save(commit=False)

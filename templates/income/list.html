@@ -548,8 +548,11 @@
       vertical-align: middle; font-size: 12px;
     }
     .salary-income-panel table.sip-table td.num { text-align: right; font-weight: 700; }
-    .salary-income-panel table.sip-table td.num.credit { color: #10b981; }
-    .salary-income-panel table.sip-table td.num.total  { color: #ef4444; }
+    .salary-income-panel table.sip-table td.num.credit  { color: #10b981; }
+    .salary-income-panel table.sip-table td.num.total   { color: #ef4444; }
+    .salary-income-panel table.sip-table td.num.bal-pos { color: #10b981; }
+    .salary-income-panel table.sip-table td.num.bal-neg { color: #ef4444; }
+    .salary-income-panel table.sip-table td.num.bal-zero { color: #94a3b8; }
     .salary-income-panel .sip-empty {
       padding: 20px; text-align: center; color: #94a3b8; font-size: 12px;
     }
@@ -722,12 +725,13 @@
   </div><!-- /.income-main -->
 
   <!-- ═══════ Salary Income side panel ═══════
-       Mirrors the expense-side salary panel. Rows are Income.objects with
-       is_salary=True in the current salary cycle. Total Amount column is
-       read-only (expense-side salary total for the same site+cycle).
-       Site is a dropdown of canonical sites_for_admin sites. Inline CRUD
-       reuses income:add / income:edit / income:delete endpoints — the
-       is_salary flag on the POST body segregates writes. -->
+       One row per site that has ANY expense-side salary in the current
+       cycle. Rows are auto-seeded from expense-side [AUTO-SAL:*] sums;
+       there is NO + Add Row and NO Date column — Income.date defaults to
+       cycle start on save. Upsert semantics: at most one Income row per
+       (admin_id, site, is_salary=True) inside the cycle window. Delete
+       clears the credit entry; the seeded row stays visible with blank
+       From/Credit/Remarks and Balance = −Salary. -->
   <aside class="salary-income-panel" id="salaryIncomePanel"
          data-cycle-start="{{ salary_cycle_start|date:'Y-m-d' }}"
          data-cycle-end="{{ salary_cycle_end|date:'Y-m-d' }}">
@@ -737,11 +741,11 @@
       <table class="sip-table">
         <thead>
           <tr>
-            <th style="width:110px;">Date</th>
             <th>Site</th>
-            <th style="text-align:right;width:120px;">Total Amount</th>
             <th>From</th>
-            <th style="text-align:right;width:110px;">Credit Amount</th>
+            <th style="text-align:right;width:120px;">Credit Amount</th>
+            <th style="text-align:right;width:110px;">Salary</th>
+            <th style="text-align:right;width:120px;">Balance</th>
             <th>Remarks</th>
             <th style="text-align:center;width:110px;">Action</th>
           </tr>
@@ -749,37 +753,34 @@
         <tbody id="salaryIncomeTbody">
           {% for r in salary_panel_rows %}
           <tr class="sip-row"
-              data-income-id="{{ r.id }}"
-              data-date="{{ r.date|date:'Y-m-d' }}"
+              data-income-id="{{ r.id|default_if_none:'' }}"
               data-site="{{ r.site }}"
-              data-total="{{ r.total_amount|stringformat:'s' }}"
               data-from="{{ r.from_account }}"
-              data-amount="{{ r.amount|stringformat:'s' }}"
+              data-credit="{{ r.credit|stringformat:'s' }}"
+              data-salary="{{ r.salary|stringformat:'s' }}"
               data-remarks="{{ r.remarks }}">
-            <td class="cell-date">{{ r.date|date:"d M, Y" }}</td>
             <td class="cell-site">{{ r.site }}</td>
-            <td class="cell-total num total">₹{{ r.total_amount|floatformat:2 }}</td>
-            <td class="cell-from">{{ r.from_account|default:"-" }}</td>
-            <td class="cell-amount num credit">+₹{{ r.amount|floatformat:2 }}</td>
+            <td class="cell-from">{% if r.from_account %}{{ r.from_account }}{% else %}-{% endif %}</td>
+            <td class="cell-credit num credit">{% if r.credit %}+₹{{ r.credit|floatformat:2 }}{% else %}-{% endif %}</td>
+            <td class="cell-salary num total">₹{{ r.salary|floatformat:2 }}</td>
+            <td class="cell-balance num {% if r.balance > 0 %}bal-pos{% elif r.balance < 0 %}bal-neg{% else %}bal-zero{% endif %}">
+              {% if r.balance > 0 %}+{% endif %}₹{{ r.balance|floatformat:2 }}
+            </td>
             <td class="cell-remarks">{{ r.remarks|default:"-" }}</td>
             <td style="text-align:center;white-space:nowrap;">
               <button type="button" class="btn-action-mini edit sip-row-edit-btn">Edit</button>
+              {% if r.id %}
               <button type="button" class="btn-action-mini delete sip-row-del-btn">Del</button>
+              {% endif %}
             </td>
           </tr>
           {% empty %}
           <tr class="sip-empty-row">
-            <td colspan="7" class="sip-empty">No salary income entries in this cycle.</td>
+            <td colspan="7" class="sip-empty">No salary expenses recorded in this cycle. Add a salary run first.</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
-    </div>
-    <div class="sip-actions">
-      <button type="button" class="btn-action-mini edit sip-add-row-btn"
-              style="background:#0f172a;color:#fff;border-color:#0f172a;">
-        + Add Row
-      </button>
     </div>
   </aside>
   </div><!-- /.income-shell -->
@@ -1195,301 +1196,257 @@
 </script>
 
 <!-- ═══════ Salary Income side-panel behaviour ═══════
-     - Toggle body class + persist in localStorage (mirrors expense side).
-     - Inline CRUD (Edit / Del / + Add Row) hitting income:add / edit / delete
-       with is_salary=1 in the POST body.
-     - Site is a dropdown of canonical sites_for_admin sites (JS-populated).
-     - Total Amount is display-only, sourced from server-computed per-site
-       expense-side salary totals for the current cycle. -->
+     Seeded rows only — no + Add Row, no Date column. Each row shows
+     one site with an expense-side salary this cycle. Edit puts From /
+     Credit / Remarks into inputs; Save upserts a single Income row per
+     (admin_id, site, is_salary=True) inside the cycle window via
+     income:add or income:edit (server enforces the 1-per-site rule).
+     Delete clears the credit entry — the seeded row stays visible.
+     From input reuses the shared /income/api/autocomplete/ pool. -->
 <script>
 (function () {
-  var TOGGLE_KEY = 'spim.income.salaryPanelOpen';
+  var TOGGLE_KEY = "spim.income.salaryPanelOpen";
   var body = document.body;
-  var btn  = document.getElementById('toggleSalaryIncomePanel');
+  var btn  = document.getElementById("toggleSalaryIncomePanel");
   if (btn) {
     function applyToggle(open) {
-      body.classList.toggle('salary-income-panel-open', !!open);
-      btn.setAttribute('aria-pressed', open ? 'true' : 'false');
+      body.classList.toggle("salary-income-panel-open", !!open);
+      btn.setAttribute("aria-pressed", open ? "true" : "false");
     }
     var stored = null;
     try { stored = localStorage.getItem(TOGGLE_KEY); } catch (e) {}
-    applyToggle(stored === '1');
-    btn.addEventListener('click', function () {
-      var open = !body.classList.contains('salary-income-panel-open');
+    applyToggle(stored === "1");
+    btn.addEventListener("click", function () {
+      var open = !body.classList.contains("salary-income-panel-open");
       applyToggle(open);
-      try { localStorage.setItem(TOGGLE_KEY, open ? '1' : '0'); } catch (e) {}
+      try { localStorage.setItem(TOGGLE_KEY, open ? "1" : "0"); } catch (e) {}
     });
   }
 
-  var panel = document.getElementById('salaryIncomePanel');
+  var panel = document.getElementById("salaryIncomePanel");
   if (!panel) return;
 
   var CSRF = (function () {
-    var el = document.querySelector('#incInlineCsrf input[name="csrfmiddlewaretoken"]');
-    return el ? el.value : '';
+    var el = document.querySelector("#incInlineCsrf input[name=csrfmiddlewaretoken]");
+    return el ? el.value : "";
   })();
   var AUTOCOMPLETE_URL = "{% url 'income:autocomplete' %}";
   var ADD_URL          = "{% url 'income:add' %}";
-  function EDIT_URL(pk) { return '/income/' + pk + '/edit/'; }
-  function DEL_URL(pk)  { return '/income/' + pk + '/delete/'; }
-  var SITES = (function () { try { return {{ salary_sites_json|safe }}; } catch (e) { return []; } })();
-  var TODAY_ISO = (function () {
-    var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-  })();
-  // Snapshot of per-site expense-side salary totals for the cycle. Used
-  // to repaint the Total Amount cell after inline edits/adds without a
-  // page reload. Seeded from the server-rendered rows.
-  var TOTAL_BY_SITE = {};
-  Array.prototype.forEach.call(panel.querySelectorAll('.sip-row'), function (tr) {
-    var s = (tr.getAttribute('data-site') || '').toLowerCase();
-    if (s && !(s in TOTAL_BY_SITE)) {
-      TOTAL_BY_SITE[s] = parseFloat(tr.getAttribute('data-total') || '0') || 0;
-    }
-  });
+  function EDIT_URL(pk) { return "/income/" + pk + "/edit/"; }
+  function DEL_URL(pk)  { return "/income/" + pk + "/delete/"; }
 
   function esc(s) {
-    if (s === null || s === undefined) return '';
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-                    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    if (s === null || s === undefined) return "";
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+                    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
   }
-  function fmtDate(iso) {
-    if (!iso) return '-';
-    var p = iso.split('-'); if (p.length !== 3) return iso;
-    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return p[2] + ' ' + months[parseInt(p[1],10)-1] + ', ' + p[0];
+  function toNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+  function fmtCredit(a) {
+    var n = toNum(a);
+    if (n === 0) return "-";
+    return "+₹" + n.toFixed(2);
   }
-  function fmtAmt(a) {
-    var n = parseFloat(a); if (isNaN(n)) return '-';
-    return '+₹' + n.toFixed(2);
+  function fmtSalary(a) { return "₹" + toNum(a).toFixed(2); }
+  function fmtBalance(bal) {
+    var n = toNum(bal);
+    var sign = n > 0 ? "+" : "";
+    return sign + "₹" + n.toFixed(2);
   }
-  function fmtTotal(a) {
-    var n = parseFloat(a) || 0;
-    return '₹' + n.toFixed(2);
-  }
-  function totalFor(site) {
-    var k = (site || '').toLowerCase();
-    return TOTAL_BY_SITE[k] || 0;
+  function balClass(bal) {
+    var n = toNum(bal);
+    if (n > 0) return "bal-pos";
+    if (n < 0) return "bal-neg";
+    return "bal-zero";
   }
 
-  function buildEditRow(d) {
-    var opts = SITES.map(function (s) {
-      var sel = (s === d.site) ? ' selected' : '';
-      return '<option value="' + esc(s) + '"' + sel + '>' + esc(s) + '</option>';
-    }).join('');
-    return ''
-      + '<td><input type="date" class="sip-input sip-date" value="' + esc(d.date || TODAY_ISO) + '" max="' + TODAY_ISO + '"></td>'
-      + '<td><select class="sip-select sip-site"><option value="">— Select —</option>' + opts + '</select></td>'
-      + '<td class="cell-total num total">' + fmtTotal(totalFor(d.site)) + '</td>'
-      + '<td><div class="autocomplete-wrap">'
-      +   '<input type="text" class="sip-input sip-from" data-field="from_account" autocomplete="off" value="' + esc(d.from || '') + '" placeholder="From">'
-      +   '<div class="autocomplete-menu"></div>'
-      + '</div></td>'
-      + '<td><input type="number" step="0.01" min="0" class="sip-input sip-amount" value="' + esc(d.amount || '') + '" placeholder="0.00" style="text-align:right;"></td>'
-      + '<td><input type="text" class="sip-input sip-remarks" value="' + esc(d.remarks || '') + '" placeholder="Remarks"></td>'
-      + '<td style="text-align:center;white-space:nowrap;">'
-      +   '<button type="button" class="btn-action-mini edit sip-row-save-btn">Save</button>'
-      +   '<button type="button" class="btn-action-mini sip-row-cancel-btn">Cancel</button>'
-      + '</td>';
-  }
-  function buildReadRow(d) {
-    return ''
-      + '<td class="cell-date">' + esc(fmtDate(d.date)) + '</td>'
-      + '<td class="cell-site">' + esc(d.site || 'OFFICE') + '</td>'
-      + '<td class="cell-total num total">' + fmtTotal(totalFor(d.site)) + '</td>'
-      + '<td class="cell-from">' + (esc(d.from) || '-') + '</td>'
-      + '<td class="cell-amount num credit">' + fmtAmt(d.amount) + '</td>'
-      + '<td class="cell-remarks">' + (esc(d.remarks) || '-') + '</td>'
-      + '<td style="text-align:center;white-space:nowrap;">'
-      +   '<button type="button" class="btn-action-mini edit sip-row-edit-btn">Edit</button>'
-      +   '<button type="button" class="btn-action-mini delete sip-row-del-btn">Del</button>'
-      + '</td>';
-  }
   function snapshotRow(tr) {
     return {
-      id:      tr.getAttribute('data-income-id') || '',
-      date:    tr.getAttribute('data-date') || '',
-      site:    tr.getAttribute('data-site') || '',
-      from:    tr.getAttribute('data-from') || '',
-      amount:  tr.getAttribute('data-amount') || '',
-      remarks: tr.getAttribute('data-remarks') || '',
+      id:      tr.getAttribute("data-income-id") || "",
+      site:    tr.getAttribute("data-site") || "",
+      from:    tr.getAttribute("data-from") || "",
+      credit:  tr.getAttribute("data-credit") || "0",
+      salary:  tr.getAttribute("data-salary") || "0",
+      remarks: tr.getAttribute("data-remarks") || "",
     };
   }
   function writeRow(tr, d) {
-    tr.setAttribute('data-date', d.date || '');
-    tr.setAttribute('data-site', d.site || '');
-    tr.setAttribute('data-from', d.from || '');
-    tr.setAttribute('data-amount', d.amount || '');
-    tr.setAttribute('data-remarks', d.remarks || '');
-    if (d.id) tr.setAttribute('data-income-id', d.id);
+    tr.setAttribute("data-site", d.site || "");
+    tr.setAttribute("data-from", d.from || "");
+    tr.setAttribute("data-credit", d.credit || "0");
+    tr.setAttribute("data-remarks", d.remarks || "");
+    if (d.id) tr.setAttribute("data-income-id", d.id);
+  }
+  function buildEditRow(d) {
+    var creditVal = toNum(d.credit) > 0 ? toNum(d.credit).toFixed(2) : "";
+    return ""
+      + "<td class=\"cell-site\">" + esc(d.site) + "</td>"
+      + "<td><div class=\"autocomplete-wrap\">"
+      +   "<input type=\"text\" class=\"sip-input sip-from\" data-field=\"from_account\" autocomplete=\"off\" value=\"" + esc(d.from || "") + "\" placeholder=\"From\">"
+      +   "<div class=\"autocomplete-menu\"></div>"
+      + "</div></td>"
+      + "<td><input type=\"number\" step=\"0.01\" min=\"0\" class=\"sip-input sip-credit\" value=\"" + esc(creditVal) + "\" placeholder=\"0.00\" style=\"text-align:right;\"></td>"
+      + "<td class=\"cell-salary num total\">" + fmtSalary(d.salary) + "</td>"
+      + "<td class=\"cell-balance num " + balClass(toNum(d.credit) - toNum(d.salary)) + "\">" + fmtBalance(toNum(d.credit) - toNum(d.salary)) + "</td>"
+      + "<td><input type=\"text\" class=\"sip-input sip-remarks\" value=\"" + esc(d.remarks || "") + "\" placeholder=\"Remarks\"></td>"
+      + "<td style=\"text-align:center;white-space:nowrap;\">"
+      +   "<button type=\"button\" class=\"btn-action-mini edit sip-row-save-btn\">Save</button>"
+      +   "<button type=\"button\" class=\"btn-action-mini sip-row-cancel-btn\">Cancel</button>"
+      + "</td>";
+  }
+  function buildReadRow(d) {
+    var bal = toNum(d.credit) - toNum(d.salary);
+    var actions = "<button type=\"button\" class=\"btn-action-mini edit sip-row-edit-btn\">Edit</button>";
+    if (d.id) {
+      actions += "<button type=\"button\" class=\"btn-action-mini delete sip-row-del-btn\">Del</button>";
+    }
+    return ""
+      + "<td class=\"cell-site\">" + esc(d.site) + "</td>"
+      + "<td class=\"cell-from\">" + (esc(d.from) || "-") + "</td>"
+      + "<td class=\"cell-credit num credit\">" + fmtCredit(d.credit) + "</td>"
+      + "<td class=\"cell-salary num total\">" + fmtSalary(d.salary) + "</td>"
+      + "<td class=\"cell-balance num " + balClass(bal) + "\">" + fmtBalance(bal) + "</td>"
+      + "<td class=\"cell-remarks\">" + (esc(d.remarks) || "-") + "</td>"
+      + "<td style=\"text-align:center;white-space:nowrap;\">" + actions + "</td>";
   }
   function showRowError(tr, msg) {
     var next = tr.nextSibling;
-    if (next && next.classList && next.classList.contains('sip-row-error-tr')) next.remove();
-    var errTr = document.createElement('tr');
-    errTr.className = 'sip-row-error-tr';
-    errTr.innerHTML = '<td colspan="7" class="sip-row-error">' + esc(msg) + '</td>';
+    if (next && next.classList && next.classList.contains("sip-row-error-tr")) next.remove();
+    var errTr = document.createElement("tr");
+    errTr.className = "sip-row-error-tr";
+    errTr.innerHTML = "<td colspan=\"7\" class=\"sip-row-error\">" + esc(msg) + "</td>";
     tr.parentNode.insertBefore(errTr, tr.nextSibling);
   }
   function clearRowError(tr) {
     var next = tr.nextSibling;
-    if (next && next.classList && next.classList.contains('sip-row-error-tr')) next.remove();
+    if (next && next.classList && next.classList.contains("sip-row-error-tr")) next.remove();
   }
 
+  // Live balance update while editing Credit.
+  panel.addEventListener("input", function (e) {
+    var inp = e.target.closest(".sip-credit");
+    if (!inp) return;
+    var tr = inp.closest("tr"); if (!tr) return;
+    var salary = toNum(tr.getAttribute("data-salary"));
+    var bal = toNum(inp.value) - salary;
+    var cell = tr.querySelector(".cell-balance");
+    if (cell) {
+      cell.textContent = fmtBalance(bal);
+      cell.classList.remove("bal-pos","bal-neg","bal-zero");
+      cell.classList.add(balClass(bal));
+    }
+  });
+
   // Edit
-  panel.addEventListener('click', function (e) {
-    var btn = e.target.closest('.sip-row-edit-btn');
-    if (!btn) return;
-    var tr = btn.closest('.sip-row');
-    if (!tr) return;
+  panel.addEventListener("click", function (e) {
+    var b = e.target.closest(".sip-row-edit-btn");
+    if (!b) return;
+    var tr = b.closest(".sip-row"); if (!tr) return;
     tr._snapshot = snapshotRow(tr);
     tr.innerHTML = buildEditRow(tr._snapshot);
-    var dateIn = tr.querySelector('.sip-date'); if (dateIn) dateIn.focus();
+    var fromInp = tr.querySelector(".sip-from"); if (fromInp) fromInp.focus();
   });
 
   // Cancel
-  panel.addEventListener('click', function (e) {
-    var btn = e.target.closest('.sip-row-cancel-btn');
-    if (!btn) return;
-    var tr = btn.closest('tr');
-    if (!tr) return;
+  panel.addEventListener("click", function (e) {
+    var b = e.target.closest(".sip-row-cancel-btn");
+    if (!b) return;
+    var tr = b.closest("tr"); if (!tr) return;
     clearRowError(tr);
-    if (tr.classList.contains('sip-new-row')) {
-      tr.remove();
-      var tbody = document.getElementById('salaryIncomeTbody');
-      if (tbody && !tbody.querySelector('.sip-row') && !tbody.querySelector('.sip-empty-row')) {
-        var empty = document.createElement('tr');
-        empty.className = 'sip-empty-row';
-        empty.innerHTML = '<td colspan="7" class="sip-empty">No salary income entries in this cycle.</td>';
-        tbody.appendChild(empty);
-      }
-      return;
-    }
     if (tr._snapshot) tr.innerHTML = buildReadRow(tr._snapshot);
   });
 
-  // Live update Total cell when the Site dropdown changes mid-edit.
-  panel.addEventListener('change', function (e) {
-    var sel = e.target.closest('.sip-site');
-    if (!sel) return;
-    var tr = sel.closest('tr');
-    if (!tr) return;
-    var totalCell = tr.querySelector('.cell-total');
-    if (totalCell) totalCell.textContent = fmtTotal(totalFor(sel.value));
-  });
-
-  // Save
-  panel.addEventListener('click', function (e) {
-    var btn = e.target.closest('.sip-row-save-btn');
-    if (!btn) return;
-    var tr = btn.closest('tr'); if (!tr) return;
+  // Save (upsert)
+  panel.addEventListener("click", function (e) {
+    var b = e.target.closest(".sip-row-save-btn");
+    if (!b) return;
+    var tr = b.closest("tr"); if (!tr) return;
     clearRowError(tr);
-    var date    = (tr.querySelector('.sip-date') || {}).value || '';
-    var site    = (tr.querySelector('.sip-site') || {}).value || '';
-    var amount  = (tr.querySelector('.sip-amount') || {}).value || '';
-    var from    = (tr.querySelector('.sip-from') || {}).value || '';
-    var remarks = (tr.querySelector('.sip-remarks') || {}).value || '';
-    if (!date)   { showRowError(tr, 'Date is required.'); return; }
-    if (!site)   { showRowError(tr, 'Site is required.'); return; }
-    if (!amount || parseFloat(amount) <= 0) {
-      showRowError(tr, 'Credit Amount must be greater than zero.'); return;
+    var site    = tr.getAttribute("data-site") || "";
+    var credit  = (tr.querySelector(".sip-credit")  || {}).value || "";
+    var from    = (tr.querySelector(".sip-from")    || {}).value || "";
+    var remarks = (tr.querySelector(".sip-remarks") || {}).value || "";
+    if (!credit || parseFloat(credit) <= 0) {
+      showRowError(tr, "Credit Amount must be greater than zero."); return;
     }
-    var id  = tr.getAttribute('data-income-id') || '';
+    var id  = tr.getAttribute("data-income-id") || "";
     var url = id ? EDIT_URL(id) : ADD_URL;
     var body = new URLSearchParams();
-    body.set('date', date);
-    body.set('amount', amount);
-    body.set('from_account', from);
-    body.set('to_account', '');
-    body.set('remarks', remarks);
-    body.set('location_site', site);
-    body.set('payment_mode', '');
-    body.set('income_type', 'SALARY');
-    body.set('payment_by', '');
-    body.set('description', '');
-    body.set('is_salary', '1');
-    btn.disabled = true;
+    body.set("amount", credit);
+    body.set("from_account", from);
+    body.set("to_account", "");
+    body.set("remarks", remarks);
+    body.set("location_site", site);
+    body.set("payment_mode", "");
+    body.set("income_type", "SALARY");
+    body.set("payment_by", "");
+    body.set("description", "");
+    body.set("is_salary", "1");
+    b.disabled = true;
     fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-CSRFToken': CSRF,
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "X-Requested-With": "XMLHttpRequest",
+        "X-CSRFToken": CSRF,
+        "Content-Type": "application/x-www-form-urlencoded",
       },
       body: body.toString(),
     }).then(function (resp) {
-      return resp.json().then(function (j) { return { ok: resp.ok, j: j }; }).catch(function () { return { ok: resp.ok, j: {} }; });
+      return resp.json().then(function (j) { return { ok: resp.ok, j: j }; })
+                        .catch(function () { return { ok: resp.ok, j: {} }; });
     }).then(function (r) {
       if (!r.ok || !r.j.success) {
-        showRowError(tr, (r.j && r.j.message) || 'Save failed.');
-        btn.disabled = false; return;
+        showRowError(tr, (r.j && r.j.message) || "Save failed.");
+        b.disabled = false; return;
       }
       var inc = r.j.income || {};
+      var salary = (r.j.income && r.j.income.salary) || tr.getAttribute("data-salary") || "0";
       var d = {
         id:      inc.id || id,
-        date:    inc.date || date,
-        site:    inc.location || site,
+        site:    site,
         from:    inc.from_account || from,
-        amount:  inc.amount || amount,
+        credit:  inc.amount || credit,
+        salary:  salary,
         remarks: inc.remarks || remarks,
       };
       writeRow(tr, d);
-      tr.classList.remove('sip-new-row');
-      tr.classList.add('sip-row');
       tr.innerHTML = buildReadRow(d);
-      var tbody = document.getElementById('salaryIncomeTbody');
-      var empty = tbody && tbody.querySelector('.sip-empty-row');
-      if (empty) empty.remove();
     }).catch(function () {
-      showRowError(tr, 'Network error — please retry.');
-      btn.disabled = false;
+      showRowError(tr, "Network error — please retry.");
+      b.disabled = false;
     });
   });
 
-  // Delete
-  panel.addEventListener('click', function (e) {
-    var btn = e.target.closest('.sip-row-del-btn');
-    if (!btn) return;
-    var tr = btn.closest('.sip-row'); if (!tr) return;
-    var id = tr.getAttribute('data-income-id');
-    if (!id) { tr.remove(); return; }
-    if (!confirm('Delete this salary income entry?')) return;
-    btn.disabled = true;
+  // Delete — clears the credit entry but leaves the seeded row visible.
+  panel.addEventListener("click", function (e) {
+    var b = e.target.closest(".sip-row-del-btn");
+    if (!b) return;
+    var tr = b.closest(".sip-row"); if (!tr) return;
+    var id = tr.getAttribute("data-income-id");
+    if (!id) return;
+    if (!confirm("Clear this salary income entry?")) return;
+    b.disabled = true;
     fetch(DEL_URL(id), {
-      method: 'POST',
-      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': CSRF },
+      method: "POST",
+      headers: { "X-Requested-With": "XMLHttpRequest", "X-CSRFToken": CSRF },
     }).then(function (resp) {
       if (resp.ok || resp.status === 302) {
-        tr.remove();
-        var tbody = document.getElementById('salaryIncomeTbody');
-        if (tbody && !tbody.querySelector('.sip-row')) {
-          var empty = document.createElement('tr');
-          empty.className = 'sip-empty-row';
-          empty.innerHTML = '<td colspan="7" class="sip-empty">No salary income entries in this cycle.</td>';
-          tbody.appendChild(empty);
-        }
+        var d = {
+          id:      "",
+          site:    tr.getAttribute("data-site") || "",
+          from:    "",
+          credit:  "0",
+          salary:  tr.getAttribute("data-salary") || "0",
+          remarks: "",
+        };
+        tr.removeAttribute("data-income-id");
+        writeRow(tr, d);
+        tr.innerHTML = buildReadRow(d);
       } else {
-        btn.disabled = false; alert('Delete failed.');
+        b.disabled = false; alert("Delete failed.");
       }
     }).catch(function () {
-      btn.disabled = false; alert('Network error — please retry.');
+      b.disabled = false; alert("Network error — please retry.");
     });
-  });
-
-  // + Add Row
-  panel.addEventListener('click', function (e) {
-    var btn = e.target.closest('.sip-add-row-btn');
-    if (!btn) return;
-    var tbody = document.getElementById('salaryIncomeTbody');
-    if (!tbody) return;
-    if (tbody.querySelector('.sip-new-row')) return;
-    var empty = tbody.querySelector('.sip-empty-row');
-    if (empty) empty.remove();
-    var tr = document.createElement('tr');
-    tr.className = 'sip-new-row';
-    tr.innerHTML = buildEditRow({ date: TODAY_ISO });
-    tbody.appendChild(tr);
-    var dateIn = tr.querySelector('.sip-date'); if (dateIn) dateIn.focus();
   });
 
   // From autocomplete (shared endpoint — same pool as regular income From).
@@ -1497,35 +1454,35 @@
   var acDebounce = null;
   var acActiveInput = null;
   var acActiveIdx = -1;
-  function acKey(field, q) { return field + '|' + (q||'').toLowerCase(); }
+  function acKey(field, q) { return field + "|" + (q||"").toLowerCase(); }
   function fetchSuggestions(field, q) {
     var key = acKey(field, q);
     if (acCache.has(key)) return Promise.resolve(acCache.get(key));
-    return fetch(AUTOCOMPLETE_URL + '?field=' + encodeURIComponent(field) + '&q=' + encodeURIComponent(q), {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    return fetch(AUTOCOMPLETE_URL + "?field=" + encodeURIComponent(field) + "&q=" + encodeURIComponent(q), {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
     }).then(function (r) { return r.ok ? r.json() : { suggestions: [] }; })
       .then(function (j) { var list = j.suggestions || []; acCache.set(key, list); return list; })
       .catch(function () { return []; });
   }
   function renderMenu(input, suggestions) {
-    var wrap = input.closest('.autocomplete-wrap'); if (!wrap) return;
-    var menu = wrap.querySelector('.autocomplete-menu'); if (!menu) return;
-    if (!suggestions.length) { menu.classList.remove('open'); menu.innerHTML = ''; return; }
+    var wrap = input.closest(".autocomplete-wrap"); if (!wrap) return;
+    var menu = wrap.querySelector(".autocomplete-menu"); if (!menu) return;
+    if (!suggestions.length) { menu.classList.remove("open"); menu.innerHTML = ""; return; }
     menu.innerHTML = suggestions.map(function (s, i) {
-      return '<div class="autocomplete-item" data-value="' + esc(s.value) + '" data-idx="' + i + '"><span>' + esc(s.value) + '</span><span class="count">×' + s.count + '</span></div>';
-    }).join('');
-    menu.classList.add('open');
+      return "<div class=\"autocomplete-item\" data-value=\"" + esc(s.value) + "\" data-idx=\"" + i + "\"><span>" + esc(s.value) + "</span><span class=\"count\">×" + s.count + "</span></div>";
+    }).join("");
+    menu.classList.add("open");
     acActiveIdx = -1;
   }
   function closeMenu(input) {
-    var wrap = input.closest('.autocomplete-wrap'); if (!wrap) return;
-    var menu = wrap.querySelector('.autocomplete-menu'); if (menu) menu.classList.remove('open');
+    var wrap = input.closest(".autocomplete-wrap"); if (!wrap) return;
+    var menu = wrap.querySelector(".autocomplete-menu"); if (menu) menu.classList.remove("open");
   }
-  panel.addEventListener('input', function (e) {
-    var inp = e.target.closest('.sip-from'); if (!inp) return;
+  panel.addEventListener("input", function (e) {
+    var inp = e.target.closest(".sip-from"); if (!inp) return;
     acActiveInput = inp;
-    var field = inp.getAttribute('data-field') || 'from_account';
-    var q = inp.value || '';
+    var field = inp.getAttribute("data-field") || "from_account";
+    var q = inp.value || "";
     clearTimeout(acDebounce);
     acDebounce = setTimeout(function () {
       fetchSuggestions(field, q).then(function (list) {
@@ -1533,46 +1490,46 @@
       });
     }, 180);
   });
-  panel.addEventListener('focus', function (e) {
-    var inp = e.target.closest && e.target.closest('.sip-from'); if (!inp) return;
+  panel.addEventListener("focus", function (e) {
+    var inp = e.target.closest && e.target.closest(".sip-from"); if (!inp) return;
     acActiveInput = inp;
-    fetchSuggestions('from_account', inp.value || '').then(function (list) {
+    fetchSuggestions("from_account", inp.value || "").then(function (list) {
       if (acActiveInput === inp) renderMenu(inp, list);
     });
   }, true);
-  panel.addEventListener('click', function (e) {
-    var item = e.target.closest('.autocomplete-item');
+  panel.addEventListener("click", function (e) {
+    var item = e.target.closest(".autocomplete-item");
     if (item) {
       e.preventDefault();
-      var wrap = item.closest('.autocomplete-wrap');
-      var input = wrap ? wrap.querySelector('input') : null;
-      if (input) { input.value = item.getAttribute('data-value') || ''; closeMenu(input); }
+      var wrap = item.closest(".autocomplete-wrap");
+      var input = wrap ? wrap.querySelector("input") : null;
+      if (input) { input.value = item.getAttribute("data-value") || ""; closeMenu(input); }
       return;
     }
-    panel.querySelectorAll('.autocomplete-menu.open').forEach(function (m) { m.classList.remove('open'); });
+    panel.querySelectorAll(".autocomplete-menu.open").forEach(function (m) { m.classList.remove("open"); });
   });
-  panel.addEventListener('keydown', function (e) {
-    var inp = e.target.closest('.sip-from'); if (!inp) return;
-    var wrap = inp.closest('.autocomplete-wrap');
-    var menu = wrap ? wrap.querySelector('.autocomplete-menu') : null;
-    if (!menu || !menu.classList.contains('open')) return;
-    var items = Array.prototype.slice.call(menu.querySelectorAll('.autocomplete-item'));
+  panel.addEventListener("keydown", function (e) {
+    var inp = e.target.closest(".sip-from"); if (!inp) return;
+    var wrap = inp.closest(".autocomplete-wrap");
+    var menu = wrap ? wrap.querySelector(".autocomplete-menu") : null;
+    if (!menu || !menu.classList.contains("open")) return;
+    var items = Array.prototype.slice.call(menu.querySelectorAll(".autocomplete-item"));
     if (!items.length) return;
-    if (e.key === 'ArrowDown') {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       acActiveIdx = Math.min(items.length - 1, acActiveIdx + 1);
-      items.forEach(function (it, i) { it.classList.toggle('active', i === acActiveIdx); });
-    } else if (e.key === 'ArrowUp') {
+      items.forEach(function (it, i) { it.classList.toggle("active", i === acActiveIdx); });
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
       acActiveIdx = Math.max(0, acActiveIdx - 1);
-      items.forEach(function (it, i) { it.classList.toggle('active', i === acActiveIdx); });
-    } else if (e.key === 'Enter') {
+      items.forEach(function (it, i) { it.classList.toggle("active", i === acActiveIdx); });
+    } else if (e.key === "Enter") {
       if (acActiveIdx >= 0) {
         e.preventDefault();
-        inp.value = items[acActiveIdx].getAttribute('data-value') || '';
+        inp.value = items[acActiveIdx].getAttribute("data-value") || "";
         closeMenu(inp);
       }
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       closeMenu(inp);
     }
   });
