@@ -2320,17 +2320,17 @@
       const dateCell = row.querySelector('.cell-date');
       if (dateCell) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}" max="{{ today_ist_iso }}">`;
 
-      // Credit From / Credit To cells -> proper <select> dropdowns with an
-      // explicit "+ Add new..." sentinel option. Selecting that sentinel
-      // swaps the <select> for a text input so the user can type a value
-      // that doesn't yet exist (no model changes — stored in the existing
-      // payment_by / vendor CharField columns). Typed values are added to
-      // the in-page cache (CreditOptions) on Save so the next Edit shows
-      // them in the dropdown.
+      // Credit / From / To are sourced from the Income module for this
+      // site + date — NEVER editable from an expense row (new or edit).
+      // Render plain "—" during edit so column alignment holds; the
+      // matching Income row (if any) shows on its own read-only line
+      // after the page reloads.
       const fromCell = row.querySelector('.cell-from');
-      if (fromCell) fromCell.innerHTML = buildCreditSelect('from', row.dataset.paymentBy || '');
+      if (fromCell) fromCell.textContent = '—';
       const toCell = row.querySelector('.cell-to');
-      if (toCell) toCell.innerHTML = buildCreditSelect('to', row.dataset.vendor || '');
+      if (toCell) toCell.textContent = '—';
+      const creditCell = row.querySelector('.credit');
+      if (creditCell) creditCell.textContent = '—';
 
       // Category cells -> numeric inputs (only the matching category gets the amount)
       row.querySelectorAll('.cat-cell').forEach(function (td) {
@@ -2449,11 +2449,16 @@
       const dateCell = row.querySelector('.cell-date');
       if (dateCell) dateCell.textContent = fmtDateDisplay(vals.date);
 
-      // Credit From / Credit To — back to plain text in view mode.
+      // Credit / From / To — always "—" in view mode after save.
+      // These three cells reflect Income module data (rendered on
+      // their own read-only Income rows after page reload), never
+      // per-expense-row values.
+      const creditCell = row.querySelector('.credit');
+      if (creditCell) creditCell.textContent = '—';
       const fromCell = row.querySelector('.cell-from');
-      if (fromCell) fromCell.textContent = row.dataset.paymentBy || '-';
+      if (fromCell) fromCell.textContent = '—';
       const toCell = row.querySelector('.cell-to');
-      if (toCell) toCell.textContent = row.dataset.vendor || '-';
+      if (toCell) toCell.textContent = '—';
 
       // Re-paint every category cell — only the chosen one shows the amount.
       const chosenCat = (vals.cat === 'fuel') ? 'diesel'
@@ -2640,34 +2645,15 @@
           newRow.dataset.incomeSource    = '';
           newRow.dataset.categoryId      = '';
           // Defensive: wipe any leftover cell content from a prior open.
+          // Credit / From / To are read-only placeholders sourced from
+          // the Income module — reset to "—" and let enterRowEdit leave
+          // them alone.
           newRow.querySelectorAll('.cat-cell').forEach(td => { td.innerHTML = ''; });
           const _dC = newRow.querySelector('.cell-date');    if (_dC) _dC.innerHTML = '';
           const _rC = newRow.querySelector('.cell-remarks'); if (_rC) _rC.innerHTML = '';
-          const _fC = newRow.querySelector('.cell-from');    if (_fC) _fC.textContent = '-';
-          const _tC = newRow.querySelector('.cell-to');      if (_tC) _tC.textContent = '-';
-          // Credit cell shows the REMAINING balance for this site (total
-          // credit from income − total debits already recorded). Read from
-          // the card's data-totals JSON; fall back to data-site-credit.
-          const card = panel.closest('.expense-card-v5');
-          let remaining = null;
-          if (card) {
-            try {
-              const totals = JSON.parse(card.dataset.totals || '{}');
-              const credit = parseFloat(totals.credit) || 0;
-              const debit  = parseFloat(totals.debit)  || 0;
-              remaining = credit - debit;
-            } catch (_) {}
-            if (remaining === null) {
-              const fallback = parseFloat(card.dataset.siteCredit);
-              if (!isNaN(fallback)) remaining = fallback;
-            }
-          }
-          const newCreditCell = newRow.querySelector('.credit');
-          if (newCreditCell && remaining !== null) {
-            const sign = remaining >= 0 ? '+' : '-';
-            const fmt = Math.abs(remaining).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            newCreditCell.textContent = sign + '₹' + fmt;
-          }
+          const _fC = newRow.querySelector('.cell-from');    if (_fC) _fC.textContent = '—';
+          const _tC = newRow.querySelector('.cell-to');      if (_tC) _tC.textContent = '—';
+          const _cC = newRow.querySelector('.credit');       if (_cC) _cC.textContent = '—';
           enterRowEdit(newRow);
           // Pre-fill location_site from the panel's site name so the saved
           // row stays linked to the same card group.
