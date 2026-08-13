@@ -367,9 +367,35 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
             reverse=True,
         )
         # Attach per-card Credit table rows (current cycle, non-salary
-        # Income only). Empty list when the site has no qualifying rows;
-        # template hides the Credit table in that case.
+        # Income only). Empty list when the site has no qualifying rows.
         g['income_rows'] = income_rows_by_site.get(g['site_key'], [])
+        # Merged row stream for the single-table card layout. Rows are
+        # sorted date ASC; on the same date Income rows sort BEFORE
+        # Expense rows (income-first reads naturally — credit lands
+        # before the debits it's drawn against). Each entry is a dict
+        # with 'kind' ('income'|'expense'), 'date', and either the
+        # Income fields directly or the Transaction 'obj' for expense
+        # rows so the template can access every t.* field it needs.
+        _combined = []
+        for _inc in g['income_rows']:
+            _combined.append({
+                'kind':         'income',
+                'date':         _inc['date'],
+                'amount':       _inc['amount'],
+                'from_account': _inc['from_account'],
+                'to_account':   _inc['to_account'],
+            })
+        for _t in g['transactions']:
+            _combined.append({
+                'kind': 'expense',
+                'date': _t.date,
+                'obj':  _t,
+            })
+        _combined.sort(key=lambda r: (
+            r['date'] or _dt.date.min,
+            0 if r['kind'] == 'income' else 1,
+        ))
+        g['card_rows'] = _combined
         # Per-site cycle breakdown — fed to the card via data-monthly so
         # the card's cycle dropdown can repaint Credit/Debit/Balance tiles
         # without a round-trip. Key kept as 'YYYY-MM' (the cycle END month)

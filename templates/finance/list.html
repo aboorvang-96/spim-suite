@@ -735,23 +735,25 @@
         border-bottom: 2px solid #e2e8f0 !important; text-align: left !important;
         white-space: nowrap !important;
       }
+      /* Visual grouping: the Credit header sits above (From, To) — a thin
+         band on top mimics the Excel "merged cell" look without merging. */
+      .site-detail-table th.credit-group,
+      .site-detail-table th.from-sub,
+      .site-detail-table th.to-sub {
+        background: #ecfdf5 !important; color: #047857 !important;
+        border-bottom: 1px solid #a7f3d0 !important;
+      }
+      .site-detail-table th.credit-band {
+        text-align: center !important;
+        background: #d1fae5 !important; color: #065f46 !important;
+        font-weight: 900 !important; padding: 4px 10px !important;
+        border-bottom: 1px solid #6ee7b7 !important;
+      }
       .site-detail-table td {
         padding: 8px 10px !important; border-bottom: 1px solid #f1f5f9 !important;
         color: #334155 !important; vertical-align: middle !important;
       }
-      /* Read-only Credit table (per-row Income entries for site+cycle). */
-      .credit-detail-table thead th {
-        background: #ecfdf5 !important; color: #047857 !important;
-        border-bottom: 1px solid #a7f3d0 !important;
-      }
-      .credit-detail-table td.credit-amount {
-        background: #f0fdf4 !important; color: #059669 !important;
-        font-weight: 700 !important; text-align: right !important;
-      }
-      .detail-divider {
-        height: 8px !important; background: transparent !important;
-        border-bottom: 1px solid #e2e8f0 !important;
-      }
+      .site-detail-table td.credit { background: #f0fdf4 !important; color: #059669 !important; font-weight: 700 !important; }
       .site-detail-table td.debit  { color: #ef4444 !important; font-weight: 700 !important; text-align: right !important; }
       .site-detail-table td.num    { text-align: right !important; }
       .site-detail-actions {
@@ -781,6 +783,15 @@
       .site-month-hidden { display: none !important; }
       /* Wide expansion for the active site card: span all grid columns. */
       .expense-card-v5.is-expanded { grid-column: 1 / -1 !important; }
+      /* Inline-edit From / To combobox inputs (Credit From / To columns) */
+      .site-detail-table tr.is-editing td.cell-from,
+      .site-detail-table tr.is-editing td.cell-to { background: #fffbeb !important; }
+      .site-row-input.from-input,
+      .site-row-input.to-input { text-align: left !important; color: #334155 !important; }
+      /* Read-only Income rows interleaved with expense rows — no hover
+         cue, cells outside Credit/From/To render as muted em-dashes. */
+      .site-detail-table tr.income-detail-row td { color: #334155 !important; }
+      .site-detail-table tr.income-detail-row td.credit { text-align: right !important; }
       /* Debit/category header band — mirrors the credit-band styling. */
       .site-detail-table th.cat-band {
         text-align: center !important;
@@ -1019,38 +1030,19 @@
                              monthly selector now and also filters the rows
                              below via the card-month-picker change handler. -->
                         <div style="overflow-x:auto;">
-                            {% if group.income_rows %}
-                            <table class="site-detail-table credit-detail-table">
-                                <thead>
-                                    <tr>
-                                        <th>Date</th>
-                                        <th style="text-align:right;">Credit</th>
-                                        <th>From</th>
-                                        <th>To</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for inc in group.income_rows %}
-                                    <tr class="credit-detail-row">
-                                        <td>{{ inc.date|date:"d M, Y" }}</td>
-                                        <td class="credit-amount">+₹{{ inc.amount|floatformat:2 }}</td>
-                                        <td>{{ inc.from_account|default:"" }}</td>
-                                        <td>{{ inc.to_account|default:"" }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                            <div class="detail-divider"></div>
-                            {% endif %}
                             <table class="site-detail-table">
                                 <thead>
                                     <tr>
                                         <th rowspan="2" style="vertical-align:bottom;">Date</th>
+                                        <th class="credit-band" colspan="3">Credit (from Income — read only)</th>
                                         <th class="cat-band" colspan="6">Debit (₹) — Category</th>
                                         <th rowspan="2" style="vertical-align:bottom;">Remarks</th>
                                         <th rowspan="2" style="vertical-align:bottom;text-align:center;">Action</th>
                                     </tr>
                                     <tr>
+                                        <th class="credit-group" style="text-align:right;">Credit</th>
+                                        <th class="from-sub">From</th>
+                                        <th class="to-sub">To</th>
                                         <th class="cat-sub">Food</th>
                                         <th class="cat-sub">Room</th>
                                         <th class="cat-sub">Diesel</th>
@@ -1060,8 +1052,30 @@
                                     </tr>
                                 </thead>
                                 <tbody class="site-detail-tbody">
-                                    {% for t in group.transactions %}
-                                    {% with cat=t.expense_category|default_if_none:''|lower %}
+                                    {% for row in group.card_rows %}
+                                    {% if row.kind == 'income' %}
+                                    {# Income row — read-only. Populates Credit/From/To only.
+                                       No data-* attrs, no JS hooks — inline edit must
+                                       never bind to this row. Other 8 cells render as
+                                       muted em-dashes so column alignment holds. #}
+                                    <tr class="income-detail-row"
+                                        data-month="{{ row.date|date:'Y-m' }}"
+                                        data-date="{{ row.date|date:'Y-m-d' }}">
+                                        <td>{{ row.date|date:"d M, Y" }}</td>
+                                        <td class="credit">+₹{{ row.amount|floatformat:2 }}</td>
+                                        <td>{{ row.from_account|default:"" }}</td>
+                                        <td>{{ row.to_account|default:"" }}</td>
+                                        <td>—</td>
+                                        <td>—</td>
+                                        <td>—</td>
+                                        <td>—</td>
+                                        <td>—</td>
+                                        <td>—</td>
+                                        <td>—</td>
+                                        <td style="text-align:center;">—</td>
+                                    </tr>
+                                    {% else %}
+                                    {% with t=row.obj cat=row.obj.expense_category|default_if_none:''|lower %}
                                     <tr class="account-detail-row site-month-row"
                                         data-month="{{ t.date|date:'Y-m' }}"
                                         data-pk="{{ t.pk }}"
@@ -1078,6 +1092,9 @@
                                         data-income-source="{{ t.income_source|default_if_none:'' }}"
                                         data-description="{{ t.description|default_if_none:'' }}">
                                         <td class="cell-date" data-readmode>{{ t.date|date:"d M, Y" }}</td>
+                                        <td class="credit">—</td>
+                                        <td class="cell-from">—</td>
+                                        <td class="cell-to">—</td>
                                         <td class="cat-cell" data-cat="food">{% if cat == 'food' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
                                         <td class="cat-cell" data-cat="room">{% if cat == 'room' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
                                         <td class="cat-cell" data-cat="diesel">{% if cat == 'diesel' or cat == 'fuel' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
@@ -1094,13 +1111,17 @@
                                         </td>
                                     </tr>
                                     {% endwith %}
+                                    {% endif %}
                                     {% empty %}
-                                    <tr class="empty-row"><td colspan="9" style="text-align:center;color:#94a3b8;padding:20px;">No expenses yet for this site.</td></tr>
+                                    <tr class="empty-row"><td colspan="12" style="text-align:center;color:#94a3b8;padding:20px;">No entries yet for this site.</td></tr>
                                     {% endfor %}
                                     <!-- Inline new-row template — clicking + Add opens an editable empty row. -->
                                     <tr class="account-detail-row site-new-row" hidden
                                         data-site-name="{{ group.site }}">
                                         <td class="cell-date"></td>
+                                        <td class="credit">—</td>
+                                        <td class="cell-from">-</td>
+                                        <td class="cell-to">-</td>
                                         <td class="cat-cell" data-cat="food"></td>
                                         <td class="cat-cell" data-cat="room"></td>
                                         <td class="cat-cell" data-cat="diesel"></td>
