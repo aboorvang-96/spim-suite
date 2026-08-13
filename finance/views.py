@@ -748,20 +748,31 @@ def transaction_list(request):
      today_default_active, cycle_start, cycle_end, cycle_label) = \
         _apply_expense_filters(request, admin_id)
 
-    # Total Expenses card = grand total across ALL history for this tenant
-    # (unchanged — the top card is a historic anchor, not scope-narrowed).
+    # Total Expenses / Balance Summary — cycle-scoped to the SAME window
+    # (get_salary_cycle(today_ist())) as the This-Cycle split below and
+    # as the Income Manager KPI tiles. Keeps every currency KPI across
+    # the suite on the same 26→25 payroll cycle so numbers agree.
+    from accounts.cycle_utils import get_salary_cycle as _kpi_get_cycle
+    from accounts.date_utils import today_ist as _kpi_today
+    _kpi_cycle = _kpi_get_cycle(_kpi_today())
+    _kpi_start, _kpi_end = _kpi_cycle['start'], _kpi_cycle['end']
     total_expense = (
         Transaction.objects
-        .filter(admin_id=admin_id, type='expense')
+        .filter(admin_id=admin_id, type='expense',
+                date__gte=_kpi_start, date__lte=_kpi_end)
         .aggregate(t=Sum('amount'))['t'] or 0
     )
 
-    # Total Income across the same tenant — feeds the Balance Summary box
-    # so its numbers stay consistent with the Total Expenses card above.
+    # Total Income (same cycle window) — feeds the Balance Summary box so
+    # its numbers stay consistent with the Total Expenses card above.
     # Defensive: a transient Income-side schema mismatch falls back to 0.
     try:
         from income.models import Income as _Income
-        total_income = _Income.objects.filter(admin_id=admin_id).aggregate(t=Sum('amount'))['t'] or 0
+        total_income = (
+            _Income.objects
+            .filter(admin_id=admin_id, date__gte=_kpi_start, date__lte=_kpi_end)
+            .aggregate(t=Sum('amount'))['t'] or 0
+        )
     except Exception:
         total_income = 0
     net_balance = (total_income or 0) - (total_expense or 0)

@@ -823,10 +823,19 @@ def salary_dashboard(request):
             if salary_record:
                 processed_count += 1
 
-            total_net += net
-            total_ded += ded
-            total_ot += ot
-            total_advance += advance
+            # Cycle-scope the KPI tiles: only accumulate for employees that
+            # actually have a salary record in the target cycle. Employees
+            # with no record contribute a forecast `net` to the per-row
+            # table (that data still renders below), but including their
+            # forecast in Total Payout diverged from Expense Manager's
+            # Salary tile (which is [AUTO-SAL:%] posted expenses only) by
+            # ~2-3× on real data. Same rule applied to OT / Advance /
+            # Deductions so all four tiles agree on the "in-cycle" set.
+            if salary_record:
+                total_net += net
+                total_ded += ded
+                total_ot += ot
+                total_advance += advance
 
             food_allowance = float(salary_record.food_allowance if salary_record else 0)
             food_usage     = float(salary_record.food_usage if salary_record else 0)
