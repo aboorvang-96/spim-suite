@@ -759,22 +759,32 @@ def compute_cycle_salary_total(admin_id, cycle_start, cycle_end):
 
 
 def compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end):
-    """Per-site salary accrual for a cycle, sourced from AttendanceRecord.
+    """Per-site salary accrual for a cycle. Sum-matches compute_cycle_salary_total.
 
-    Iterates every AttendanceRecord for the tenant in the cycle window,
-    computes each day's payable amount via compute_daily_salary_for_attendance,
-    and groups by working-site (attendance.site_utils.resolve_working_site).
+    Pass 1: iterate every AttendanceRecord for the tenant in the cycle
+    window, compute each day's payable amount via
+    compute_daily_salary_for_attendance, group by working-site
+    (attendance.site_utils.resolve_working_site — OFFICE fallback for
+    unresolved).
+
+    Pass 2: for each Employee (includes vehicles — Employee.is_vehicle
+    rows), compute the KPI-side expected net
+    (earn + OT − advance − deduction, matching compute_cycle_salary_total)
+    and route any residual not captured by attendance rows to the OFFICE
+    bucket. Residual covers:
+      * no-attendance base_salary fallback (KPI credits basic_salary
+        when AttendanceRecord.exists() is False for that employee)
+      * per-employee OT / advance / deduction adjustments (never
+        per-day, so attendance iteration can't attribute them)
+    Without this pass, vehicles like TN74AZ3259 with no attendance
+    rows would drop out of the panel even though the KPI credits them.
+
     Returns dict[site_name -> list[dict]] where each row is
-    {'date': date, 'amount': Decimal}.
-
-    Same computation path as compute_cycle_salary_total's earnings component
-    (both funnel through the shared weight table + 26→25 divisor), just
-    split per site so the Expense Manager's Salary Expenses side panel can
-    render one bucket per working-site.
+    {'date': date, 'amount': Decimal}. Panel builder aggregates.
     """
     from collections import defaultdict
     from attendance.models import AttendanceRecord
-    from attendance.site_utils import resolve_working_site
+    from attendance.site_utils import resolve_working_site, OFFICE_SITE_NAME
 
     today = datetime.date.today()
     upper = cycle_end if cycle_end <= today else today
@@ -789,6 +799,7 @@ def compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end):
     )
 
     by_site = defaultdict(list)
+    attended_by_emp = defaultdict(lambda: Decimal('0'))
     for att in qs:
         # Defensive Sunday rule: mirror _compute_attendance_breakdown so a
         # future-Sunday holiday row leaking past date__lte=today never
@@ -798,8 +809,51 @@ def compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end):
         amt = compute_daily_salary_for_attendance(att)
         if amt <= 0:
             continue
-        site = resolve_working_site(att)
+        site = resolve_working_site(att) or OFFICE_SITE_NAME
         by_site[site].append({'date': att.date, 'amount': amt})
+        attended_by_emp[att.employee_id] += amt
+
+    # ---- Pass 2: reconcile per-employee residual → OFFICE ----
+    target_date = cycle_end.replace(day=1)
+    office_residual = Decimal('0')
+    expected_total = Decimal('0')
+    for e in Employee.objects.filter(admin_id=admin_id):
+        salary_record = e.salary_history.filter(
+            month__year=target_date.year, month__month=target_date.month,
+        ).first()
+        gross_base = Decimal(str(salary_record.basic_salary if salary_record else (e.base_salary or 0)))
+        ot         = Decimal(str(salary_record.ot_allowance    if salary_record else 0))
+        advance    = Decimal(str(salary_record.advance_pay     if salary_record else 0))
+        ded        = Decimal(str(salary_record.total_deduction if salary_record else 0))
+        try:
+            earn_dec, _ = _compute_attendance_breakdown(e, target_date, gross_base)
+        except Exception:
+            earn_dec = gross_base
+        expected = earn_dec + ot - advance - ded
+        expected_total += expected
+        residual = expected - attended_by_emp.get(e.id, Decimal('0'))
+        if residual != 0:
+            office_residual += residual
+
+    if office_residual != 0:
+        by_site[OFFICE_SITE_NAME].append({'date': cycle_end, 'amount': office_residual})
+
+    # Parity check vs KPI — logs a WARNING on divergence, never raises.
+    try:
+        panel_total = sum(
+            (entry['amount'] or Decimal('0'))
+            for entries in by_site.values() for entry in entries
+        )
+        if abs(panel_total - expected_total) > Decimal('1.00'):
+            import logging
+            logging.getLogger(__name__).warning(
+                "salary panel parity: panel=%s kpi=%s delta=%s cycle=%s..%s admin=%s",
+                panel_total, expected_total, panel_total - expected_total,
+                cycle_start, cycle_end, admin_id,
+            )
+    except Exception:
+        pass
+
     return dict(by_site)
 
 

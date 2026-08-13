@@ -388,37 +388,37 @@ def income_list(request):
 
 def _salary_cycle_expense_totals(admin_id, cycle):
     """{site_lower: {'display': str, 'total': Decimal}} — expense-side
-    salary sums per site for the given cycle. Same query pattern as
-    finance.services.salary_panel.build_salary_panel; keeps this the
-    single source of truth for the seed set."""
+    salary sums per site for the given cycle.
+
+    Sourced from employees.views.compute_cycle_salary_by_site so the
+    Salary Income side panel seeds off the SAME numbers the Expense
+    Manager's Salary Expenses side panel renders (both derived from
+    AttendanceRecord + KPI residual reconciliation). Previously this
+    read Transaction[AUTO-SAL:%] rows, which excluded pre-CUTOVER
+    attendance and unresolved-site rows — leaving the income panel
+    ~460k short of the Salary Manager Total Payout for cycle
+    26 Jul → 25 Aug 2026."""
     from decimal import Decimal as _D
-    from django.db.models import Sum
+    from employees.views import compute_cycle_salary_by_site
+
     out = {}
     try:
-        rows = (
-            FinanceTransaction.objects
-            .filter(
-                admin_id=admin_id,
-                type='expense',
-                reference__startswith='[AUTO-SAL:',
-                date__gte=cycle['start'],
-                date__lte=cycle['end'],
-            )
-            .values('location_site')
-            .annotate(total=Sum('amount'))
-        )
-        for r in rows:
-            raw = (r['location_site'] or '').strip()
-            if not raw:
-                continue
-            k = raw.lower()
-            b = out.get(k)
-            if b is None:
-                out[k] = {'display': raw, 'total': (r['total'] or _D('0'))}
-            else:
-                b['total'] += (r['total'] or _D('0'))
+        by_site = compute_cycle_salary_by_site(admin_id, cycle['start'], cycle['end'])
     except Exception:
-        pass
+        by_site = {}
+    for raw_site, entries in by_site.items():
+        raw = (raw_site or '').strip()
+        if not raw:
+            continue
+        k = raw.lower()
+        total = _D('0')
+        for e in entries:
+            total += (e['amount'] or _D('0'))
+        b = out.get(k)
+        if b is None:
+            out[k] = {'display': raw, 'total': total}
+        else:
+            b['total'] += total
     # Fold display names to canonical Projects.Site casing when available.
     try:
         from projects.utils import sites_for_admin
