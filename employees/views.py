@@ -777,13 +777,13 @@ def compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end):
     from attendance.site_utils import resolve_working_site
 
     today = datetime.date.today()
+    upper = cycle_end if cycle_end <= today else today
     qs = (
         AttendanceRecord.objects
         .filter(
             employee__admin_id=admin_id,
             date__gte=cycle_start,
-            date__lte=cycle_end,
-            date__lte=today,
+            date__lte=upper,
         )
         .select_related('employee', 'site_ref')
     )
