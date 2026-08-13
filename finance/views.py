@@ -213,10 +213,23 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
     site_disp   = {}
     income_dates = {}
     credit_by_cycle = {}
+    # Per-card Credit table rows — Income entries filtered to the CURRENT
+    # cycle and is_salary=False. Keyed by site_key so we can splice into
+    # each group dict after grouping. Salary-income rows live in the
+    # separate Salary Income panel on /income/ and must not appear here.
+    income_rows_by_site = {}
+    try:
+        _current_cycle = get_salary_cycle(today_ist())
+        _cy_start = _current_cycle['start']
+        _cy_end   = _current_cycle['end']
+    except Exception:
+        _cy_start = None
+        _cy_end   = None
     try:
         from income.models import Income
         income_qs = Income.objects.filter(admin_id=admin_id).only(
-            'amount', 'location_site', 'date',
+            'id', 'amount', 'location_site', 'date',
+            'from_account', 'to_account', 'is_salary',
         )
         for i in income_qs:
             key, disp = _site_key_display(i.location_site)
@@ -230,6 +243,19 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
                 prev = income_dates.get(key)
                 if prev is None or i.date > prev:
                     income_dates[key] = i.date
+            # Per-card Credit table row — current cycle, non-salary only.
+            if (
+                not i.is_salary
+                and i.date and _cy_start and _cy_end
+                and _cy_start <= i.date <= _cy_end
+            ):
+                income_rows_by_site.setdefault(key, []).append({
+                    'id':           i.id,
+                    'date':         i.date,
+                    'amount':       i.amount or _D('0'),
+                    'from_account': (i.from_account or ''),
+                    'to_account':   (i.to_account or ''),
+                })
     except Exception:
         # Income table unavailable (e.g. migration not yet applied). Render
         # the Expense page with zero credit rather than 500-ing.
@@ -237,6 +263,14 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
         site_disp   = {}
         income_dates = {}
         credit_by_cycle = {}
+        income_rows_by_site = {}
+
+    # Stable ordering per card: date asc, id asc. Drop id after sort — the
+    # template only needs the four visible fields.
+    for _lst in income_rows_by_site.values():
+        _lst.sort(key=lambda r: (r['date'], r['id']))
+        for _r in _lst:
+            _r.pop('id', None)
 
     debit_by_cycle = {}
     groups = {}
@@ -332,6 +366,10 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
             key=lambda x: (x.date or _dt.date.min),
             reverse=True,
         )
+        # Attach per-card Credit table rows (current cycle, non-salary
+        # Income only). Empty list when the site has no qualifying rows;
+        # template hides the Credit table in that case.
+        g['income_rows'] = income_rows_by_site.get(g['site_key'], [])
         # Per-site cycle breakdown — fed to the card via data-monthly so
         # the card's cycle dropdown can repaint Credit/Debit/Balance tiles
         # without a round-trip. Key kept as 'YYYY-MM' (the cycle END month)
