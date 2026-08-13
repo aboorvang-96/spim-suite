@@ -748,20 +748,35 @@ def transaction_list(request):
      today_default_active, cycle_start, cycle_end, cycle_label) = \
         _apply_expense_filters(request, admin_id)
 
-    # Total Expenses / Balance Summary — cycle-scoped to the SAME window
-    # (get_salary_cycle(today_ist())) as the This-Cycle split below and
-    # as the Income Manager KPI tiles. Keeps every currency KPI across
-    # the suite on the same 26→25 payroll cycle so numbers agree.
+    # KPI window — canonical 26→25 cycle, same helper as Income Manager
+    # and Salary Management.
     from accounts.cycle_utils import get_salary_cycle as _kpi_get_cycle
     from accounts.date_utils import today_ist as _kpi_today
     _kpi_cycle = _kpi_get_cycle(_kpi_today())
     _kpi_start, _kpi_end = _kpi_cycle['start'], _kpi_cycle['end']
-    total_expense = (
+
+    # This-cycle NON-salary Transaction sum (still Transaction-based —
+    # non-salary expenses are only ever recorded as Transactions).
+    total_non_salary_expense = (
         Transaction.objects
         .filter(admin_id=admin_id, type='expense',
                 date__gte=_kpi_start, date__lte=_kpi_end)
+        .exclude(reference__startswith=AUTO_SAL_PREFIX)
         .aggregate(t=Sum('amount'))['t'] or 0
     )
+
+    # This-cycle SALARY total — recomputed from AttendanceRecord via the
+    # shared employees.views helper so the tile matches the Salary Report
+    # PDF and Salary Management's Total Payout. The [AUTO-SAL:*]
+    # Transaction rows are incomplete for pre-cutover attendance and must
+    # not be used for KPIs.
+    from employees.views import compute_cycle_salary_total as _kpi_cycle_salary
+    total_salary_expense = float(_kpi_cycle_salary(admin_id, _kpi_start, _kpi_end))
+
+    # Total Expenses = non-salary Transactions + true cycle salary accrual.
+    # Avoids the double-count / under-count that would occur if we summed
+    # every Transaction (which includes incomplete AUTO-SAL rows).
+    total_expense = float(total_non_salary_expense or 0) + total_salary_expense
 
     # Total Income (same cycle window) — feeds the Balance Summary box so
     # its numbers stay consistent with the Total Expenses card above.
@@ -775,14 +790,7 @@ def transaction_list(request):
         )
     except Exception:
         total_income = 0
-    net_balance = (total_income or 0) - (total_expense or 0)
-
-    # This-cycle split — salary vs non-salary. The cycle window is
-    # already applied to `qs`; split by the AUTO-SAL marker prefix.
-    salary_qs     = qs.filter(reference__startswith=AUTO_SAL_PREFIX)
-    non_salary_qs = qs.exclude(reference__startswith=AUTO_SAL_PREFIX)
-    total_salary_expense     = salary_qs.aggregate(t=Sum('amount'))['t'] or 0
-    total_non_salary_expense = non_salary_qs.aggregate(t=Sum('amount'))['t'] or 0
+    net_balance = float(total_income or 0) - total_expense
 
     balance_combos = _balance_by_combo_expense(request.user)
     # Keyed by lower-case (source, account) so lookup is case-insensitive.

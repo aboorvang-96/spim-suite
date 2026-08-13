@@ -723,6 +723,41 @@ def salary_management(request, pk):
     })
 
 
+def compute_cycle_salary_total(admin_id, cycle_start, cycle_end):
+    """Actual salary accrual for a cycle, matching the Salary Report PDF.
+
+    Iterates every Employee for the tenant, computes per-employee
+    `attendance_earnings + ot - advance - ded` (identical formula to
+    salary_report_download / _render_salary_pdf) and returns the Decimal
+    sum. This is the SINGLE SOURCE OF TRUTH for cycle salary totals
+    across the suite — Salary Management's Total Payout tile AND Expense
+    Manager's "This Cycle → Salary" tile both consume this so their
+    numbers always agree with the PDF report.
+
+    Reads AttendanceRecord directly via _compute_attendance_breakdown
+    (NOT [AUTO-SAL:*] Transaction rows), which is why it stays correct
+    even for attendance predating the AUTO-SAL live-sync cutover.
+    """
+    from decimal import Decimal
+    target_date = cycle_end.replace(day=1)
+    queryset = Employee.objects.filter(admin_id=admin_id)
+    total = Decimal('0')
+    for e in queryset:
+        salary_record = e.salary_history.filter(
+            month__year=target_date.year, month__month=target_date.month,
+        ).first()
+        gross_base = Decimal(str(salary_record.basic_salary if salary_record else (e.base_salary or 0)))
+        ot         = Decimal(str(salary_record.ot_allowance    if salary_record else 0))
+        advance    = Decimal(str(salary_record.advance_pay     if salary_record else 0))
+        ded        = Decimal(str(salary_record.total_deduction if salary_record else 0))
+        try:
+            earn_dec, _ = _compute_attendance_breakdown(e, target_date, gross_base)
+        except Exception:
+            earn_dec = gross_base
+        total += (earn_dec + ot - advance - ded)
+    return total
+
+
 @login_required
 def salary_dashboard(request):
     """
@@ -888,23 +923,16 @@ def salary_dashboard(request):
                 'esi_number': pf.esic_number if pf else '',
             })
 
-        # Total Payout = actual posted salary expense for the CURRENT cycle,
-        # taken from the same [AUTO-SAL:*] Transaction pool the Expense
-        # Manager "This Cycle → Salary" tile reads. Guarantees the two
-        # tiles show identical numbers regardless of which employees have
-        # SalaryUpdate rows yet. Uses the current cycle (26→25 window),
-        # not the month/year picker — matches Expense Mgr's cycle scope.
-        from finance.models import Transaction as _KpiTx
+        # Total Payout = actual cycle salary accrual — recomputed from
+        # AttendanceRecord (same source as the Salary Report PDF) so the
+        # KPI never drifts from what the PDF prints. The [AUTO-SAL:*]
+        # Transaction pool used previously was incomplete for attendance
+        # entered before the live-sync cutover. Cycle window comes from
+        # get_salary_cycle(today_ist()) — the canonical 26→25 helper.
         from accounts.cycle_utils import get_salary_cycle as _kpi_get_cycle
         from accounts.date_utils import today_ist as _kpi_today
         _kc = _kpi_get_cycle(_kpi_today())
-        total_net = float(
-            _KpiTx.objects
-            .filter(admin_id=admin_id, type='expense',
-                    reference__startswith='[AUTO-SAL:',
-                    date__gte=_kc['start'], date__lte=_kc['end'])
-            .aggregate(t=Sum('amount'))['t'] or 0
-        )
+        total_net = float(compute_cycle_salary_total(admin_id, _kc['start'], _kc['end']))
 
         return JsonResponse({
             'salaries': emp_list,

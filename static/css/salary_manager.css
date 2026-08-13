@@ -129,18 +129,18 @@
 .salary-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     white-space: nowrap;
 }
 
 .salary-table thead th {
     background: #1e293b;
-    padding: 0.875rem 1rem;
+    padding: 0.5rem 0.75rem;
     text-align: left;
     font-weight: 600;
     color: #fff;
     text-transform: uppercase;
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     letter-spacing: 0.05em;
     position: sticky;
     top: 0;
@@ -148,7 +148,7 @@
 }
 
 .salary-table tbody td {
-    padding: 0.875rem 1rem;
+    padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--slate-100);
     color: var(--slate-700);
     vertical-align: middle;

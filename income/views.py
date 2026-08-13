@@ -314,12 +314,20 @@ def income_list(request):
         .filter(admin_id=admin_id, date__gte=salary_cycle['start'], date__lte=salary_cycle['end'])
         .aggregate(s=_KSum('amount'))['s'] or _KD('0')
     )
-    _cycle_debits = (
+    # Total Debits = non-salary expense Transactions in cycle PLUS the
+    # true attendance-based salary accrual (via employees helper). Must
+    # NOT sum every Transaction — [AUTO-SAL:*] rows are incomplete for
+    # pre-cutover attendance and would undercount cycle payroll.
+    _non_salary_debit = (
         FinanceTransaction.objects
         .filter(admin_id=admin_id, type='expense',
                 date__gte=salary_cycle['start'], date__lte=salary_cycle['end'])
+        .exclude(reference__startswith='[AUTO-SAL:')
         .aggregate(s=_KSum('amount'))['s'] or _KD('0')
     )
+    from employees.views import compute_cycle_salary_total as _kpi_cycle_salary
+    _cycle_salary = _kpi_cycle_salary(admin_id, salary_cycle['start'], salary_cycle['end'])
+    _cycle_debits = (_non_salary_debit or _KD('0')) + _cycle_salary
     _cycle_net = _cycle_credits - _cycle_debits
     _cycle_range_label = '{} - {} {}'.format(
         salary_cycle['start'].strftime('%d %b'),
