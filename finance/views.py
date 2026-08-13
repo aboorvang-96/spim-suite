@@ -755,15 +755,14 @@ def transaction_list(request):
     _kpi_cycle = _kpi_get_cycle(_kpi_today())
     _kpi_start, _kpi_end = _kpi_cycle['start'], _kpi_cycle['end']
 
-    # This-cycle NON-salary Transaction sum (still Transaction-based —
-    # non-salary expenses are only ever recorded as Transactions).
-    total_non_salary_expense = (
-        Transaction.objects
-        .filter(admin_id=admin_id, type='expense',
-                date__gte=_kpi_start, date__lte=_kpi_end)
-        .exclude(reference__startswith=AUTO_SAL_PREFIX)
-        .aggregate(t=Sum('amount'))['t'] or 0
-    )
+    # This-cycle split — salary vs non-salary. The cycle window is
+    # already applied to `qs`; split by the AUTO-SAL marker prefix.
+    # Both querysets are ALSO consumed downstream (site cards / inline
+    # list uses `non_salary_qs` via non_salary_display_qs), so keep them
+    # as querysets and derive the aggregate from the same query.
+    salary_qs     = qs.filter(reference__startswith=AUTO_SAL_PREFIX)
+    non_salary_qs = qs.exclude(reference__startswith=AUTO_SAL_PREFIX)
+    total_non_salary_expense = non_salary_qs.aggregate(t=Sum('amount'))['t'] or 0
 
     # This-cycle SALARY total — recomputed from AttendanceRecord via the
     # shared employees.views helper so the tile matches the Salary Report
