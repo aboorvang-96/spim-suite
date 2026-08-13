@@ -758,6 +758,51 @@ def compute_cycle_salary_total(admin_id, cycle_start, cycle_end):
     return total
 
 
+def compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end):
+    """Per-site salary accrual for a cycle, sourced from AttendanceRecord.
+
+    Iterates every AttendanceRecord for the tenant in the cycle window,
+    computes each day's payable amount via compute_daily_salary_for_attendance,
+    and groups by working-site (attendance.site_utils.resolve_working_site).
+    Returns dict[site_name -> list[dict]] where each row is
+    {'date': date, 'amount': Decimal}.
+
+    Same computation path as compute_cycle_salary_total's earnings component
+    (both funnel through the shared weight table + 26→25 divisor), just
+    split per site so the Expense Manager's Salary Expenses side panel can
+    render one bucket per working-site.
+    """
+    from collections import defaultdict
+    from attendance.models import AttendanceRecord
+    from attendance.site_utils import resolve_working_site
+
+    today = datetime.date.today()
+    qs = (
+        AttendanceRecord.objects
+        .filter(
+            employee__admin_id=admin_id,
+            date__gte=cycle_start,
+            date__lte=cycle_end,
+            date__lte=today,
+        )
+        .select_related('employee', 'site_ref')
+    )
+
+    by_site = defaultdict(list)
+    for att in qs:
+        # Defensive Sunday rule: mirror _compute_attendance_breakdown so a
+        # future-Sunday holiday row leaking past date__lte=today never
+        # credits pay in the panel either.
+        if att.date and att.date > today and att.date.isoweekday() == 7:
+            continue
+        amt = compute_daily_salary_for_attendance(att)
+        if amt <= 0:
+            continue
+        site = resolve_working_site(att)
+        by_site[site].append({'date': att.date, 'amount': amt})
+    return dict(by_site)
+
+
 @login_required
 def salary_dashboard(request):
     """
