@@ -1,0 +1,5 @@
+# Tell GitHub to detect this as Python, not HTML
+*.html linguist-detectable=false
+*.css linguist-detectable=false
+*.js linguist-detectable=false
+*.py linguist-detectable=true linguist-language=Python
