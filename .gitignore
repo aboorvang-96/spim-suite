@@ -52,3 +52,26 @@ staticfiles/
 .DS_Store
 ```
 .env
+# Never commit these accidentally
+*.sqlite3
+*.xlsx
+*.pdf
+*.png
+*.jpg
+*.bat
+*.zip
+*.pptx
+cookies.txt
+error*.txt
+*.log
+CLAUDE.md
+AGENTS.md
+.claude/
+staticfiles/
+seed_org1_logins.py
+seed_production_data.py
+*credentials*
+*secret*
+*password*
+*login*
+*backup*
