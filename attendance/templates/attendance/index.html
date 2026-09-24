@@ -766,7 +766,17 @@ function syncRecordsToServer(records) {
                 + data.failures.length + ' failed: ' + lines.join('; ');
         showAlert('attAlert', msg, 'error');
     })
-    .catch(function() {});
+    // Surface network / CSRF / 500 failures. Previously swallowed silently,
+    // which made admin edits appear to succeed locally while the DB never
+    // received the write — the "edit didn't stick" mystery.
+    .catch(function(err) {
+        showAlert(
+            'attAlert',
+            'Save failed to reach server (' + (err && err.message ? err.message : 'network error')
+                + '). Your changes are not yet in the database — please retry.',
+            'error'
+        );
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -1852,6 +1862,16 @@ function applyAttendanceLocks() {
         if (existing && !editAttendanceMode) {
             lockRow(tr, existing.status);
         } else {
+            // Prefill the dropdown from the existing DB status BEFORE unlock.
+            // Regression this closes: previously the <select> stayed on its
+            // rendered default ("-- Select Status --", value=""), and
+            // saveBulkAttendance's `if (!status) return` silently dropped the
+            // row from the payload. Admins ticked a row, clicked Save, and
+            // watched their edit vanish with no error surfaced.
+            var selEl = tr.querySelector('.row-status');
+            if (selEl && existing && STATUS_OPTIONS.indexOf(existing.status) >= 0) {
+                selEl.value = existing.status;
+            }
             unlockRow(tr);
         }
     });
@@ -2089,7 +2109,22 @@ function saveBulkAttendance() {
             remarks:     tr.querySelector('.row-remarks').value.trim(),
         });
     });
-    syncRecordsToServer(serverRecords);
+    // Warn when the client-side !status / !date filter dropped every selected
+    // row (e.g. admin ticked a row in edit mode but never picked a status). Was
+    // silent before, so the UX read "0 saved" without explaining why.
+    var checkedRowCount = rows.length;
+    if (checkedRowCount > 0 && serverRecords.length < checkedRowCount) {
+        var dropped = checkedRowCount - serverRecords.length;
+        showAlert(
+            'attAlert',
+            dropped + ' selected row(s) skipped — status is missing. '
+                + 'Pick a status from the dropdown and try again.',
+            'error'
+        );
+    }
+    if (serverRecords.length > 0) {
+        syncRecordsToServer(serverRecords);
+    }
 
     showAlert('attAlert', 'Saved ' + saved + ' record(s) successfully', 'success');
     // Lock saved rows immediately so they show as already-marked
@@ -2225,7 +2260,24 @@ function deleteAttendance(idx) {
                 pk:    toDelete.empPk || '',
                 date:  toDelete.date,
             })
-        }).catch(function() {});
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data && data.success === false) {
+                showAlert('attAlert', 'Delete failed: ' + (data.error || 'unknown error'), 'error');
+            }
+        })
+        // Was silently swallowed — a failed delete would clear the row from
+        // localStorage while the DB still had it, so the row would return on
+        // next page load and the admin thought "delete didn't work".
+        .catch(function(err) {
+            showAlert(
+                'attAlert',
+                'Delete failed to reach server (' + (err && err.message ? err.message : 'network error')
+                    + '). The DB still has this record — please retry.',
+                'error'
+            );
+        });
     }
 }
 

@@ -173,11 +173,18 @@ def save_attendance(request):
                 'error':      '; '.join(e.messages),
             })
             continue
+        # Only treat status as authoritative when the payload actually
+        # carries it. Previously, a partial update (e.g. remarks-only) that
+        # omitted `status` fell through the `or 'Present'` default and
+        # SILENTLY OVERWROTE the row to Present — the "edit didn't stick /
+        # got flipped to Present" bug class. When absent, we skip the write
+        # so update_or_create leaves the existing status intact.
+        status_in_payload = 'status' in record and record.get('status') is not None
         raw_status = (record.get('status') or 'Present').lower()
         model_status = _STATUS_MAP.get(raw_status, 'present')
         # Inbound compat shim: legacy 'absent' → 'no_week_off'. Logged so we
         # can track APK-rollout adoption and remove the mapping later.
-        if raw_status == 'absent':
+        if status_in_payload and raw_status == 'absent':
             _log.warning(
                 "attendance.save_attendance coerced legacy status='absent' "
                 "to 'no_week_off' emp_id=%s date=%s admin_id=%s",
@@ -217,10 +224,14 @@ def save_attendance(request):
 
         defaults = {
             'admin_id':   admin_id,
-            'status':     model_status,
             'source':     'admin',
             'created_by': request.user,
         }
+        # Only overwrite status when the payload explicitly carries it —
+        # otherwise a partial (remarks-only, machine-only) update would
+        # clobber the saved status back to 'present'.
+        if status_in_payload:
+            defaults['status'] = model_status
         if site_val:
             defaults['site'] = site_val
         if working_site_val:

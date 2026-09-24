@@ -99,6 +99,17 @@ class Employee(models.Model):
 
     class Meta:
         ordering = ['name']
+        # DB-level guard: prevents the SPIM020 collision recurring where two
+        # Employee rows shared employee_id under one admin_id, splitting
+        # AttendanceRecord writes across pks. Backfill migration 0016 asserts
+        # no dupes before AddConstraint runs.
+        constraints = [
+            models.UniqueConstraint(
+                fields=['admin_id', 'employee_id'],
+                condition=~models.Q(employee_id=''),
+                name='uniq_employee_id_per_admin',
+            ),
+        ]
 
     def __str__(self):
         return self.name
