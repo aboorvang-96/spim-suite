@@ -573,6 +573,33 @@ async function addMasterValue(kind) {
     /* Employee data for Remove-Employee modal (all employees, unfiltered) */
     const SPIM_EMPLOYEES = [{% for emp in all_employees %}{"id":{{ emp.pk }},"name":"{{ emp.name|escapejs }}","empId":"{{ emp.employee_id|escapejs }}","role":"{{ emp.designation|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}];
 </script>
+{# One-shot prefill for the Add Employee modal when a prior submission failed
+   server-side validation. Populated by the view after a redirect. #}
+{{ add_prefill|json_script:"spim-add-prefill" }}
+<script>
+    const SPIM_ADD_PREFILL = (function(){
+        const el = document.getElementById('spim-add-prefill');
+        if (!el) return null;
+        try { return JSON.parse(el.textContent); } catch (e) { return null; }
+    })();
+    if (SPIM_ADD_PREFILL) {
+        document.addEventListener('DOMContentLoaded', function () {
+            const form = document.querySelector('form[action$="/employees/add/"]');
+            if (form) {
+                Object.entries(SPIM_ADD_PREFILL).forEach(function ([name, value]) {
+                    const field = form.querySelector('[name="' + name + '"]');
+                    if (!field) return;
+                    if (field.type === 'checkbox') {
+                        field.checked = Boolean(value);
+                    } else {
+                        field.value = value;
+                    }
+                });
+            }
+            if (typeof openModal === 'function') openModal('addEmployeeModal');
+        });
+    }
+</script>
 <script>
     function openModal(id) {
         document.getElementById(id).classList.add('open');

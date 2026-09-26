@@ -207,6 +207,8 @@ def employee_list(request):
     # Split into people vs vehicles for the two-section Master layout. Both
     # inherit Employee.Meta.ordering = ['name']; the split is purely visual.
     qs = qs.select_related('bank_details', 'pf_details')
+    # One-shot prefill for the Add Employee modal after a validation error.
+    add_prefill = request.session.pop('add_employee_prefill', None)
     return render(request, 'employees/list.html', {
         'employees':           qs.filter(is_vehicle=False),
         'vehicles':            qs.filter(is_vehicle=True),
@@ -224,17 +226,18 @@ def employee_list(request):
         'master_levels':       _dedup_sorted(level_pool),
         'master_locations':    _dedup_sorted(loc_pool),
         'master_sites':        _dedup_sorted(site_pool),
+        'add_prefill':         add_prefill,
     })
 
 
 @login_required
 def add_employee(request):
     if request.method == 'POST':
-        form = EmployeeForm(request.POST)
+        admin_id = get_admin_id(request.user)
+        form = EmployeeForm(request.POST, admin_id=admin_id)
         if form.is_valid():
             employee = form.save(commit=False)
             employee.created_by = request.user
-            admin_id = get_admin_id(request.user)
             employee.admin_id = admin_id
 
             # Auto-generate Employee ID if blank, ensure uniqueness
@@ -286,9 +289,20 @@ def add_employee(request):
 
             return redirect('employees:list')
         else:
+            # Preserve typed values across the redirect so HR doesn't have to
+            # re-enter name/role/etc. after a friendly validation error.
+            prefill = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+            request.session['add_employee_prefill'] = prefill
             for field, errors in form.errors.items():
                 for error in errors:
-                    messages.error(request, f"{field.capitalize()}: {error}")
+                    # employee_id validation already produces a fully-formed
+                    # human sentence — showing it raw avoids the ugly
+                    # "Employee_id: ..." prefix.
+                    if field == 'employee_id':
+                        messages.error(request, str(error))
+                    else:
+                        label = field.replace('_', ' ').capitalize()
+                        messages.error(request, f"{label}: {error}")
             return redirect('employees:list')
     else:
         return redirect('employees:list')
@@ -302,7 +316,7 @@ def edit_employee(request, pk):
     original_level      = (employee.level or '').strip().lower()
     original_job_role   = employee.job_role_id
     if request.method == 'POST':
-        form = EmployeeForm(request.POST, instance=employee)
+        form = EmployeeForm(request.POST, instance=employee, admin_id=get_admin_id(request.user))
         if form.is_valid():
             new_emp_id = (form.cleaned_data.get('employee_id') or '').strip()
             if new_emp_id and new_emp_id != original_emp_id:

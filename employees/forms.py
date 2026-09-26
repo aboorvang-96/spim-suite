@@ -1,9 +1,13 @@
 from django import forms
 from .models import Employee, BankDetail, PFDetail, SalaryUpdate
+from .utils import normalize_employee_id
 
 
 class EmployeeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
+        # admin_id must be passed for create (no instance.admin_id yet); for
+        # edit we fall back to the instance's own admin_id.
+        self._admin_id = kwargs.pop('admin_id', None)
         super().__init__(*args, **kwargs)
         for field in [
             'employee_id', 'mobile_app_password', 'department', 'fixed_allowance',
@@ -13,7 +17,36 @@ class EmployeeForm(forms.ModelForm):
                 self.fields[field].required = False
 
     def clean_employee_id(self):
-        return (self.cleaned_data.get('employee_id') or '').strip()
+        raw = self.cleaned_data.get('employee_id') or ''
+        normalized = normalize_employee_id(raw)
+        if not normalized:
+            # Blank ID is allowed — the view auto-generates one.
+            return ''
+
+        admin_id = self._admin_id or getattr(self.instance, 'admin_id', None)
+        if not admin_id:
+            return normalized
+
+        qs = Employee.objects.filter(admin_id=admin_id, employee_id=normalized)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        conflict = qs.first()
+        if conflict:
+            conflict_name = conflict.name or f"employee #{conflict.pk}"
+            raw_stripped = str(raw).strip()
+            if raw_stripped != normalized:
+                msg = (
+                    f"You entered '{raw_stripped}', which we normalize to "
+                    f"'{normalized}'. That ID is already assigned to "
+                    f"{conflict_name}. Pick a different ID."
+                )
+            else:
+                msg = (
+                    f"Employee ID '{normalized}' is already assigned to "
+                    f"{conflict_name}. Pick a different ID."
+                )
+            raise forms.ValidationError(msg)
+        return normalized
 
     class Meta:
         model = Employee
