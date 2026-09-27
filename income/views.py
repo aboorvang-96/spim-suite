@@ -435,22 +435,29 @@ def _salary_cycle_expense_totals(admin_id, cycle):
 def _build_salary_income_panel(user, admin_id, seed_site_names):
     """Return (rows, cycle_dict) for the Salary Income side panel.
 
-    NEW SHAPE: one row per site that has ANY expense-side salary this
-    cycle. Sites with zero salary expense are omitted. The Income row
-    for that site is upserted 1:1 with the seeded panel row — either it
-    exists (edit-mode) or it doesn't (blank credit fields, id=None).
+    Site set: the SAME shared seed the expense cards + expense salary panel
+    use (via `finance.services.cycle_sites.sites_for_cycle` — passed in by
+    the caller as `seed_site_names`). Guarantees Income cards + Income
+    salary panel + Expense cards + Expense salary panel are all 1:1 for
+    a given cycle, and picks up the 2026-10-26 canonical-only cutover
+    transitively.
+
+    Every seed site gets a row, whether or not an Income salary row has
+    been entered yet. The salary column pulls from
+    `_salary_cycle_expense_totals` for that site; sites without salary
+    show ₹0.
     """
     from decimal import Decimal as _D
     from accounts.cycle_utils import get_salary_cycle
     from accounts.date_utils import today_ist
+    from projects.utils import client_site_label
     cycle = get_salary_cycle(today_ist())
 
     exp_totals = _salary_cycle_expense_totals(admin_id, cycle)
 
     # Existing Income salary rows for this cycle, keyed by site (lower).
-    # Should be at most one per site under the upsert rule; if legacy
-    # duplicates exist, we pick the most recent and ignore the rest so
-    # the panel still renders one row per site.
+    # Should be at most one per site under the upsert rule; legacy
+    # duplicates: pick the most recent and ignore the rest.
     existing = {}
     try:
         if is_admin_user(user):
@@ -470,21 +477,46 @@ def _build_salary_income_panel(user, admin_id, seed_site_names):
     except Exception:
         existing = {}
 
+    # Driver = shared seed (parity with cards). Fold in any orphan
+    # salary-only sites the seed happens to miss (defence in depth).
+    driver = []
+    seen = set()
+    for name in (seed_site_names or []):
+        n = (name or '').strip()
+        if not n:
+            continue
+        k = n.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        driver.append((k, n))
+    for k, bucket in exp_totals.items():
+        if k in seen:
+            continue
+        seen.add(k)
+        driver.append((k, bucket['display']))
+
     rows_out = []
-    for key, bucket in exp_totals.items():
-        salary = bucket['total'] or _D('0')
+    for key, site_name in driver:
+        bucket = exp_totals.get(key)
+        salary = (bucket['total'] if bucket else _D('0')) or _D('0')
         inc = existing.get(key)
         credit = (inc.amount if inc else _D('0')) or _D('0')
+        try:
+            label = client_site_label(admin_id, site_name) or site_name
+        except Exception:
+            label = site_name
         rows_out.append({
             'id':           inc.pk if inc else None,
-            'site':         bucket['display'],
+            'site':         site_name,   # bare name — used by JS/data-attrs
+            'label':        label,       # "CLIENT / SITE" display
             'from_account': (inc.from_account or '') if inc else '',
             'credit':       credit,
             'salary':       salary,
             'balance':      credit - salary,
             'remarks':      (inc.remarks or '') if inc else '',
         })
-    rows_out.sort(key=lambda r: (r['site'] or '').lower())
+    rows_out.sort(key=lambda r: (r['label'] or r['site'] or '').lower())
     return rows_out, cycle
 
 
@@ -788,12 +820,27 @@ def _group_incomes_by_site(incomes, user, seed_names=None):
     current_month = today.strftime('%Y-%m')
     month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
+    # Client / Site display label per group — matches expense-card headers.
+    # Uses the shared client_site_label helper; grouping still keys by bare
+    # site_name (data-attrs/JS untouched).
+    try:
+        from projects.utils import client_site_label as _cs_label
+    except Exception:
+        _cs_label = None
+
     for g in groups.values():
         g['balance'] = g['credit'] - g['debit']
         g['transactions'].sort(
             key=lambda x: (x.date or _dt.date.min),
             reverse=True,
         )
+        if _cs_label and g.get('site_key'):
+            try:
+                g['label'] = _cs_label(admin_id, g['site']) or g['site']
+            except Exception:
+                g['label'] = g['site']
+        else:
+            g['label'] = g['site']
         # Per-site monthly breakdown — fed to the card via data-monthly so
         # the card's month dropdown can repaint the Credit/Debit/Balance
         # tiles without a round-trip.

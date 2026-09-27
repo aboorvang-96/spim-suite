@@ -602,7 +602,7 @@
                    onchange="onIncomeSiteCheckboxChange(this)"
                    style="width:18px;height:18px;accent-color:#dc2626;cursor:pointer;">
           </label>
-          <h3 class="site-card-title">{{ group.site }}</h3>
+          <h3 class="site-card-title">{{ group.label|default:group.site }}</h3>
           <select class="card-month-picker" title="View totals for a specific month">
             <option value="all">All Months</option>
             {% for m in group.month_options %}
@@ -736,7 +736,7 @@
               data-credit="{{ r.credit|stringformat:'s' }}"
               data-salary="{{ r.salary|stringformat:'s' }}"
               data-remarks="{{ r.remarks }}">
-            <td class="cell-site">{{ r.site }}</td>
+            <td class="cell-site">{{ r.label|default:r.site }}</td>
             <td class="cell-from">{% if r.from_account %}{{ r.from_account }}{% else %}-{% endif %}</td>
             <td class="cell-credit num credit">{% if r.credit %}+₹{{ r.credit|floatformat:2 }}{% else %}-{% endif %}</td>
             <td class="cell-salary num total">₹{{ r.salary|floatformat:2 }}</td>
