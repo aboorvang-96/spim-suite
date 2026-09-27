@@ -257,6 +257,60 @@
 .cal-none     { background: #f8fafc; border-color: #e2e8f0; color: #94a3b8; }
 .cal-today    { box-shadow: 0 0 0 2px #667eea; }
 
+/* Drawer inline-edit states — cells are clickable to toggle selection,
+   selected cells get a bold ring + check overlay, pending-change cells
+   render dashed with an asterisk so unsaved edits are visually distinct
+   from saved statuses. Future dates are locked and non-interactive. */
+.cal-day.cal-editable { cursor: pointer; position: relative; }
+.cal-day.cal-editable:hover { filter: brightness(0.97); }
+.cal-day.cal-locked   { cursor: not-allowed; opacity: 0.45; }
+.cal-day.cal-selected {
+    box-shadow: 0 0 0 2px #4f46e5, 0 0 0 4px rgba(79,70,229,0.20);
+    position: relative;
+}
+.cal-day.cal-selected::after {
+    content: '\2713'; position: absolute; top: 2px; right: 4px;
+    font-size: 0.72rem; font-weight: 800; color: #4f46e5; line-height: 1;
+}
+.cal-day.cal-pending {
+    border-style: dashed !important; border-width: 2px !important;
+    outline: 1px dashed rgba(79,70,229,0.35); outline-offset: -4px;
+}
+.cal-day.cal-pending::before {
+    content: '*'; position: absolute; top: 2px; left: 5px;
+    font-size: 0.85rem; font-weight: 900; color: #b45309; line-height: 1;
+}
+
+/* Drawer bulk-edit toolbar */
+.drawer-edit-bar {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    padding: 0.55rem 0.65rem; margin: 0 0 0.6rem;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px;
+}
+.drawer-edit-bar .deb-spacer { flex: 1 1 auto; }
+.drawer-edit-bar .deb-pending {
+    font-size: 0.72rem; font-weight: 700; color: #b45309;
+    background: #fef3c7; border: 1px solid #fcd34d;
+    padding: 0.2rem 0.55rem; border-radius: 999px;
+}
+.drawer-edit-bar .deb-btn {
+    background: #fff; border: 1px solid #cbd5e1; color: #334155;
+    font-size: 0.75rem; font-weight: 600; padding: 0.35rem 0.7rem;
+    border-radius: 6px; cursor: pointer; transition: background 0.1s;
+}
+.drawer-edit-bar .deb-btn:hover:not(:disabled) { background: #eef2ff; color: #4f46e5; }
+.drawer-edit-bar .deb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.drawer-edit-bar .deb-btn.primary {
+    background: #4f46e5; color: #fff; border-color: #4f46e5;
+}
+.drawer-edit-bar .deb-btn.primary:hover:not(:disabled) { background: #4338ca; color: #fff; }
+.drawer-edit-bar .deb-mark-caret { font-size: 0.6rem; margin-left: 0.3rem; opacity: 0.8; }
+.drawer-edit-bar .mark-menu .info-note {
+    padding: 0.45rem 0.65rem; background: #f1f5f9; color: #475569;
+    font-size: 0.68rem; font-weight: 500; line-height: 1.35;
+    border-top: 1px solid #e2e8f0;
+}
+
 .cal-total {
     margin-top: 0.6rem; text-align: right;
     font-size: 0.8rem; font-weight: 700; color: #059669;
@@ -558,12 +612,40 @@
 
     <div class="drawer-cycle-bar">
         <label>Attendance Cycle (26 → 25):</label>
-        <select id="drawerCycleSelect" class="form-select" style="max-width:230px; font-size:0.8rem;" onchange="renderDrawerContent()"></select>
+        <select id="drawerCycleSelect" class="form-select" style="max-width:230px; font-size:0.8rem;" onchange="onDrawerCycleChange(this)"></select>
     </div>
 
     <div class="drawer-body">
         <!-- KPI Row -->
         <div class="emp-kpi-row" id="drawerKpis"></div>
+
+        <!-- Bulk edit toolbar (inline attendance marking) -->
+        <div class="drawer-edit-bar" id="drawerEditBar">
+            <div class="mark-wrap">
+                <button type="button" class="deb-btn" id="drawerMarkBtn"
+                        onclick="toggleDrawerMarkMenu(event)" disabled>
+                    Mark as<span class="deb-mark-caret">&#x25BE;</span>
+                </button>
+                <div class="mark-menu" id="drawerMarkMenu">
+                    <button type="button" onclick="applyDrawerMark('Present')">Present</button>
+                    <button type="button" onclick="applyDrawerMark('Leave')">Leave</button>
+                    <button type="button" onclick="applyDrawerMark('Half Day')">Half Day</button>
+                    <button type="button" onclick="applyDrawerMark('Weekly Off')">Weekly Off</button>
+                    <button type="button" onclick="applyDrawerMark('Holiday')">Holiday</button>
+                    <div class="info-note">
+                        Marking Present here won't set a work site. Use the
+                        main page to record site details.
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="deb-btn" id="drawerClearBtn"
+                    onclick="clearDrawerSelection()" disabled>Clear Selection</button>
+            <span class="deb-spacer"></span>
+            <span class="deb-pending hidden" id="drawerPendingInd">0 pending</span>
+            <button type="button" class="deb-btn primary" id="drawerSaveBtn"
+                    onclick="saveDrawerChanges()" disabled>Save Changes</button>
+        </div>
+        <div id="drawerEditAlert"></div>
 
         <!-- Calendar -->
         <div class="cal-section">
@@ -719,6 +801,21 @@ let drawerEmpId       = null;
 let drawerEmpData     = null;
 let editAttendanceMode = false;
 var _serverMinDate = null; // Earliest date fetched from server (for cache-skip logic)
+
+/* Server IST "today" — used by the drawer's future-date lock so a
+   client with a skewed clock can't mark tomorrow's attendance. Falls
+   back to the browser's date only if the context processor is missing. */
+const TODAY_ISO = "{{ today_ist_iso }}" || new Date().toISOString().split('T')[0];
+
+/* Drawer inline-edit state.
+   drawerSelectedDates — dates currently selected for the next Mark action.
+   drawerPendingChanges — dateStr → new UI status (before Save).
+   drawerBaseRecords    — dateStr → the full DB row snapshot from the last
+                          load, used on Save to preserve site/machine/etc
+                          the drawer UI doesn't expose. */
+let drawerSelectedDates  = new Set();
+let drawerPendingChanges = {};
+let drawerBaseRecords    = {};
 
 /* ═══════════════════════════════════════════════
    INIT
@@ -2451,13 +2548,24 @@ function openEmpDrawer(empId, empName, baseSalary, salaryType) {
     const sType = salaryType || 'base_salary';
     drawerEmpData = { empId, empName, baseSalary: parseFloat(baseSalary) || 0, salaryType: sType };
 
+    // Fresh drawer session — no leftover selection or pending edits from
+    // a previous employee.
+    drawerSelectedDates  = new Set();
+    drawerPendingChanges = {};
+    drawerBaseRecords    = {};
+
     const isDaily = sType === 'daily_basis';
     document.getElementById('drawerEmpName').textContent = empId + ' / ' + empName;
     document.getElementById('drawerEmpMeta').textContent =
         (isDaily ? 'Daily Salary' : 'Base Salary') + ': ₹' + (drawerEmpData.baseSalary).toLocaleString('en-IN');
 
     buildCycleOptions();
+    // Track the currently-rendered cycle so a cancelled cycle-switch can
+    // revert the <select> to what's actually on screen.
+    const cycSel = document.getElementById('drawerCycleSelect');
+    cycSel._lastValue = cycSel.value;
     renderDrawerContent();
+    updateDrawerEditBar();
 
     document.getElementById('empDrawerOverlay').classList.add('open');
     document.getElementById('empDrawer').classList.add('open');
@@ -2465,10 +2573,39 @@ function openEmpDrawer(empId, empName, baseSalary, salaryType) {
 }
 
 function closeEmpDrawer() {
+    // Warn about unsaved pending edits before dismissing the drawer.
+    const pendingCount = Object.keys(drawerPendingChanges).length;
+    if (pendingCount > 0 &&
+        !confirm('You have ' + pendingCount + ' unsaved change(s). Discard them?')) {
+        return;
+    }
     document.getElementById('empDrawerOverlay').classList.remove('open');
     document.getElementById('empDrawer').classList.remove('open');
     drawerEmpId   = null;
     drawerEmpData = null;
+    drawerSelectedDates  = new Set();
+    drawerPendingChanges = {};
+    drawerBaseRecords    = {};
+    const menu = document.getElementById('drawerMarkMenu');
+    if (menu) menu.classList.remove('open');
+}
+
+/* Cycle-switch guard — prompts if there are unsaved pending edits before
+   switching, since pending edits belong to the currently-loaded cycle. */
+function onDrawerCycleChange(sel) {
+    const pendingCount = Object.keys(drawerPendingChanges).length;
+    if (pendingCount > 0) {
+        if (!confirm('You have ' + pendingCount + ' unsaved change(s). Discard them?')) {
+            // Revert the select to whatever cycle is currently rendered.
+            if (typeof sel._lastValue !== 'undefined') sel.value = sel._lastValue;
+            return;
+        }
+    }
+    drawerSelectedDates  = new Set();
+    drawerPendingChanges = {};
+    sel._lastValue = sel.value;
+    renderDrawerContent();
+    updateDrawerEditBar();
 }
 
 /* Cycle divisor = FULL calendar days in the cycle window (inclusive).
@@ -2582,13 +2719,27 @@ function _renderDrawerContentInner(cycle) {
     if (!drawerEmpData) return;
     const { empId, empName, baseSalary, salaryType } = drawerEmpData;
     const isDaily  = salaryType === 'daily_basis';
-    const records  = loadAttendance().filter(r => r.empId === empId && r.date >= cycle.start && r.date <= cycle.end);
-    const recMap   = {};
-    records.forEach(r => recMap[r.date] = r);
+    const rawRecords = loadAttendance().filter(r => r.empId === empId && r.date >= cycle.start && r.date <= cycle.end);
 
-    // ── KPIs ──
+    // Snapshot the FULL DB rows for this cycle window so a later Save can
+    // preserve fields the drawer UI doesn't expose (site, machine, work
+    // details, client/site FKs). Keyed by date.
+    drawerBaseRecords = {};
+    rawRecords.forEach(r => { drawerBaseRecords[r.date] = r; });
+
+    // Merge pending edits into a display map — pending status wins over
+    // saved status so the calendar reflects the admin's in-progress work.
+    const recMap = {};
+    rawRecords.forEach(r => { recMap[r.date] = Object.assign({}, r); });
+    Object.keys(drawerPendingChanges).forEach(function(d) {
+        const base = drawerBaseRecords[d] || { empId, empName, date: d };
+        recMap[d] = Object.assign({}, base, { status: drawerPendingChanges[d], _pending: true });
+    });
+
+    // ── KPIs ── — counts reflect the merged (pending) view so the tiles
+    // give live feedback while HR is picking statuses.
     const kpiCounts = { Present:0, Leave:0, Holiday:0, 'Weekly Off':0, 'Half Day':0, Sunday:0 };
-    records.forEach(r => { if (kpiCounts[r.status] !== undefined) kpiCounts[r.status]++; });
+    Object.values(recMap).forEach(r => { if (kpiCounts[r.status] !== undefined) kpiCounts[r.status]++; });
 
     // ── Calendar (with status + salary inside each cell) ──
     const calEl    = document.getElementById('drawerCal');
@@ -2625,12 +2776,27 @@ function _renderDrawerContentInner(cycle) {
     const firstDow = start.getDay();
     for (let b = 0; b < firstDow; b++) calHtml += '<div class="cal-day cal-empty"></div>';
 
+    // Cells past IST-today are locked (non-selectable); everything else
+    // is editable via click. `isFuture` is compared as ISO strings against
+    // TODAY_ISO so a clock-skewed browser can't unlock tomorrow.
     let cur = new Date(start);
     while (cur <= end) {
-        const ds      = dateToStr(cur);
-        const dow     = cur.getDay();
-        const isToday = (ds === today);
-        const rec     = recMap[ds];
+        const ds       = dateToStr(cur);
+        const dow      = cur.getDay();
+        const isToday  = (ds === today);
+        const isFuture = (ds > TODAY_ISO);
+        const rec      = recMap[ds];
+        const isPending = !!(rec && rec._pending);
+        const isSelected = drawerSelectedDates.has(ds);
+
+        const stateCls = [];
+        if (isToday)    stateCls.push('cal-today');
+        if (isFuture)   stateCls.push('cal-locked');
+        else            stateCls.push('cal-editable');
+        if (isSelected) stateCls.push('cal-selected');
+        if (isPending)  stateCls.push('cal-pending');
+
+        const clickAttr = isFuture ? '' : ` onclick="toggleDrawerCellSelect('${ds}')"`;
 
         let cls, statusLbl;
         if (rec) {
@@ -2652,7 +2818,7 @@ function _renderDrawerContentInner(cycle) {
             const salaryLine = (baseSalary > 0 && earned > 0)
                 ? '₹' + earned.toLocaleString('en-IN', {maximumFractionDigits: 0})
                 : '';
-            calHtml += `<div class="cal-day ${cls}${isToday ? ' cal-today' : ''}">
+            calHtml += `<div class="cal-day ${cls} ${stateCls.join(' ')}" data-date="${ds}"${clickAttr}>
                 <div class="dn">${cur.getDate()}</div>
                 <div class="ds">${statusLbl}</div>
                 ${salaryLine ? `<div class="dc">${salaryLine}</div>` : ''}
@@ -2661,7 +2827,7 @@ function _renderDrawerContentInner(cycle) {
             // Sundays behave like every other day — no auto "Sunday" label
             // for empty cells. Any date without an AttendanceRecord renders
             // as an unmarked '-' cell.
-            calHtml += `<div class="cal-day cal-none${isToday ? ' cal-today' : ''}">
+            calHtml += `<div class="cal-day cal-none ${stateCls.join(' ')}" data-date="${ds}"${clickAttr}>
                 <div class="dn">${cur.getDate()}</div>
                 <div class="ds">-</div>
             </div>`;
@@ -2670,9 +2836,11 @@ function _renderDrawerContentInner(cycle) {
     }
     calEl.innerHTML = calHtml;
 
-    // Authoritative cycle total — uses the same formula as the salary
-    // module so the figure here always matches the payslip for this cycle.
-    const totalEarned = computeCycleEarnings(records, baseSalary, cycleDays, salaryType);
+    // Authoritative cycle total — same formula as the salary module so
+    // the figure matches the payslip. Uses the merged (pending-aware)
+    // record set so unsaved edits show up in the footer immediately.
+    const mergedRecords = Object.values(recMap);
+    const totalEarned = computeCycleEarnings(mergedRecords, baseSalary, cycleDays, salaryType);
     if (baseSalary > 0 && totalEarned > 0) {
         totalEl.textContent = 'Cycle Total Earned: ₹' +
             totalEarned.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -2680,6 +2848,221 @@ function _renderDrawerContentInner(cycle) {
     } else {
         totalEl.classList.add('hidden');
     }
+}
+
+/* ═══════════════════════════════════════════════
+   DRAWER INLINE ATTENDANCE MARKING
+   Click a calendar cell to toggle its selection, then use the Mark-as
+   dropdown to apply a status. Applied statuses render as "pending"
+   (dashed border + asterisk) until Save Changes is clicked. Future
+   dates (server IST today) are non-selectable.
+═══════════════════════════════════════════════ */
+function toggleDrawerCellSelect(dateStr) {
+    if (!dateStr || dateStr > TODAY_ISO) return; // future-date guard
+    if (drawerSelectedDates.has(dateStr)) drawerSelectedDates.delete(dateStr);
+    else                                  drawerSelectedDates.add(dateStr);
+    // Repaint just the selection ring without rebuilding the whole
+    // calendar — cheaper and keeps scroll position.
+    const cell = document.querySelector('#drawerCal .cal-day[data-date="' + dateStr + '"]');
+    if (cell) cell.classList.toggle('cal-selected', drawerSelectedDates.has(dateStr));
+    updateDrawerEditBar();
+}
+
+function toggleDrawerMarkMenu(ev) {
+    if (ev) ev.stopPropagation();
+    const menu = document.getElementById('drawerMarkMenu');
+    if (!menu) return;
+    if (document.getElementById('drawerMarkBtn').disabled) return;
+    menu.classList.toggle('open');
+}
+
+/* Close the Mark-as menu when clicking outside it. */
+document.addEventListener('click', function(ev) {
+    const menu = document.getElementById('drawerMarkMenu');
+    if (!menu || !menu.classList.contains('open')) return;
+    if (ev.target.closest('#drawerMarkMenu') || ev.target.closest('#drawerMarkBtn')) return;
+    menu.classList.remove('open');
+});
+
+function applyDrawerMark(status) {
+    document.getElementById('drawerMarkMenu').classList.remove('open');
+    if (drawerSelectedDates.size === 0) return;
+    drawerSelectedDates.forEach(function(d) {
+        drawerPendingChanges[d] = status;
+    });
+    drawerSelectedDates = new Set();
+    renderDrawerContent();
+    updateDrawerEditBar();
+}
+
+function clearDrawerSelection() {
+    drawerSelectedDates = new Set();
+    // Repaint just to remove the selection rings.
+    document.querySelectorAll('#drawerCal .cal-day.cal-selected')
+        .forEach(el => el.classList.remove('cal-selected'));
+    updateDrawerEditBar();
+}
+
+function updateDrawerEditBar() {
+    const selCount     = drawerSelectedDates.size;
+    const pendingCount = Object.keys(drawerPendingChanges).length;
+    const markBtn  = document.getElementById('drawerMarkBtn');
+    const clearBtn = document.getElementById('drawerClearBtn');
+    const saveBtn  = document.getElementById('drawerSaveBtn');
+    const pendInd  = document.getElementById('drawerPendingInd');
+    if (markBtn)  markBtn.disabled  = selCount === 0;
+    if (clearBtn) clearBtn.disabled = selCount === 0;
+    if (saveBtn) {
+        saveBtn.disabled = pendingCount === 0;
+        saveBtn.textContent = pendingCount > 0
+            ? 'Save Changes (' + pendingCount + ')'
+            : 'Save Changes';
+    }
+    if (pendInd) {
+        if (pendingCount > 0) {
+            pendInd.textContent = pendingCount + ' pending';
+            pendInd.classList.remove('hidden');
+        } else {
+            pendInd.classList.add('hidden');
+        }
+    }
+}
+
+/* Force-refetch the current cycle from the server, bypassing the
+   _serverMinDate short-circuit in ensureServerDataFetched — used after
+   a Save so the drawer picks up the DB-authoritative rows (with backend
+   backfill / display remap applied) instead of the client-side echo. */
+function _drawerRefetchCycle(cycle, cb) {
+    const url = '/attendance/load/?date_from=' + encodeURIComponent(cycle.start)
+              + '&date_to='   + encodeURIComponent(cycle.end);
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        let existing = loadAttendance();
+        existing = existing.filter(function(r) {
+            return !(r.date >= cycle.start && r.date <= cycle.end);
+        });
+        (data.records || []).forEach(function(r) {
+            const hrs = r.status === 'Present' ? '8.00' : (r.status === 'Half Day' ? '4.00' : '0.00');
+            existing.push({
+                empId: r.empId,
+                empPk: r.empPk ? String(r.empPk) : '',
+                empName: r.empName || '',
+                mainLocation: '',
+                site:        r.site        || '',
+                workingSite: r.workingSite || '',
+                machineId:   r.machineId   || null,
+                machineName: r.machineName || '',
+                workDetails: r.workDetails || '',
+                clientId:        r.clientId        || null,
+                siteId:          r.siteId          || null,
+                clientSiteLabel: r.clientSiteLabel || '',
+                date: r.date, status: r.status,
+                remarks: r.remarks || '',
+                remarksLocked: !!r.remarksLocked,
+                hours: hrs, baseSalary: 0
+            });
+        });
+        localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(existing));
+        cb && cb();
+    })
+    .catch(function() { cb && cb(); });
+}
+
+function saveDrawerChanges() {
+    if (!drawerEmpData) return;
+    const pending = drawerPendingChanges;
+    if (Object.keys(pending).length === 0) return;
+
+    const empId = drawerEmpData.empId;
+    // Resolve empPk from any base row we already have (all rows for one
+    // employee share the same pk). Fallback to an employees[] lookup so
+    // brand-new dates (no existing AttendanceRecord) still send a pk.
+    let empPk = '';
+    for (const d in drawerBaseRecords) {
+        if (drawerBaseRecords[d].empPk) { empPk = drawerBaseRecords[d].empPk; break; }
+    }
+    if (!empPk) {
+        const emp = loadEmployees().find(e => e.id === empId);
+        if (emp && emp.pk) empPk = String(emp.pk);
+    }
+
+    // Build the payload — status is the edit; site / machineId / workDetails
+    // / clientId / siteId are copied from the base record so the endpoint's
+    // "presence = authoritative" rule preserves them. Remarks are omitted
+    // entirely so the endpoint's remarks_locked logic can't clobber a
+    // previously-locked remark.
+    const records = Object.keys(pending).map(function(d) {
+        const base = drawerBaseRecords[d] || {};
+        return {
+            empId:       empId,
+            pk:          empPk,
+            date:        d,
+            status:      pending[d],
+            site:        base.site        || '',
+            clientId:    base.clientId    || null,
+            siteId:      base.siteId      || null,
+            machineId:   base.machineId   || null,
+            workDetails: base.workDetails || ''
+        };
+    });
+
+    const saveBtn = document.getElementById('drawerSaveBtn');
+    const prevLabel = saveBtn ? saveBtn.textContent : '';
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+    fetch('/attendance/save/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(records)
+    })
+    .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, data: j }; }); })
+    .then(function(resp) {
+        const data = resp.data || {};
+        if (!resp.ok || data.success === false) {
+            const msg = data.error || 'Save failed. Please retry.';
+            showAlert('drawerEditAlert', msg, 'error');
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = prevLabel; }
+            return;
+        }
+        if (Array.isArray(data.failures) && data.failures.length) {
+            const lines = data.failures.map(function(f) {
+                const eid = f.employeeId || ('row ' + (f.rowIndex + 1));
+                return eid + ' — ' + (f.error || 'save failed');
+            });
+            showAlert('drawerEditAlert',
+                (data.saved || 0) + ' saved, ' + data.failures.length
+                    + ' failed: ' + lines.join('; '),
+                'error');
+            // Keep pending edits visible so HR can retry.
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = prevLabel; }
+            return;
+        }
+        // Full success — clear pending, refetch this cycle, re-render.
+        drawerPendingChanges = {};
+        drawerSelectedDates  = new Set();
+        const sel    = document.getElementById('drawerCycleSelect');
+        const cycles = getCycles();
+        const cycle  = cycles[parseInt(sel.value) || 0];
+        _drawerRefetchCycle(cycle, function() {
+            _renderDrawerContentInner(cycle);
+            updateDrawerEditBar();
+            showAlert('drawerEditAlert',
+                (data.saved || records.length) + ' record(s) saved.', 'success');
+        });
+    })
+    .catch(function(err) {
+        showAlert('drawerEditAlert',
+            'Save failed to reach server ('
+                + (err && err.message ? err.message : 'network error')
+                + '). Your changes remain pending — please retry.',
+            'error');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = prevLabel; }
+    });
 }
 
 /* ═══════════════════════════════════════════════
