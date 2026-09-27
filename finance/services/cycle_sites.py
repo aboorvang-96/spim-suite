@@ -43,40 +43,29 @@ def sites_for_cycle(admin_id, cycle_start, cycle_end,
             continue
         canonical.setdefault(n2.lower(), n2)
 
-    # 2. Widen with any Transaction.location_site distincts inside the
-    #    cycle window (catches legacy expense rows).
+    # 2. Widen with any non-salary Transaction.location_site distincts
+    #    inside the cycle window (legacy expense rows).
     if cycle_start and cycle_end:
-        cycle_txn_sites = (
+        non_salary_txn_sites = (
             Transaction.objects
             .filter(admin_id=admin_id, type='expense',
                     date__gte=cycle_start, date__lte=cycle_end)
+            .exclude(reference__startswith='[AUTO-SAL:')
             .exclude(location_site__isnull=True).exclude(location_site='')
             .values_list('location_site', flat=True).distinct()
         )
-        for n in cycle_txn_sites:
+        for n in non_salary_txn_sites:
             if not n:
                 continue
             k = (n or '').strip().lower()
             if k and k not in canonical:
                 canonical[k] = n.strip()
 
-    # 3. Widen with salary-active sites in the cycle (Attendance-derived —
-    #    surfaces pre-CUTOVER salary sites the two sources above miss).
-    try:
-        from employees.views import compute_cycle_salary_by_site
-        by_site = compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end)
-        for raw_site in by_site.keys():
-            n = (raw_site or '').strip()
-            if not n:
-                continue
-            k = n.lower()
-            if k not in canonical:
-                canonical[k] = n
-    except Exception:
-        pass
-
-    # 4. ModuleHiddenSite filter — the tenant may have hidden a site
-    #    from the expense module explicitly.
+    # 3. Apply ModuleHiddenSite filter to the non-salary universe ONLY.
+    #    A tenant may have bulk-deleted expenses for a site and hidden
+    #    it from this module — respect that for legacy/non-salary data.
+    #    Salary-active sites (steps 4 + 5) override the hide-list because
+    #    real money paid in-cycle must always be visible in the UI.
     if module in ('expense', 'income'):
         try:
             from finance.models import ModuleHiddenSite
@@ -92,6 +81,42 @@ def sites_for_cycle(admin_id, cycle_start, cycle_end,
                         del canonical[k]
         except Exception:
             pass
+
+    # 4. Widen with distinct location_site values from [AUTO-SAL:*]
+    #    Transaction rows in the cycle. Per-spec: this is the primary
+    #    salary-site signal — any site with real payroll booked in-cycle
+    #    must be visible in cards + panel, hide-list notwithstanding.
+    if cycle_start and cycle_end:
+        auto_sal_sites = (
+            Transaction.objects
+            .filter(admin_id=admin_id, type='expense',
+                    reference__startswith='[AUTO-SAL:',
+                    date__gte=cycle_start, date__lte=cycle_end)
+            .exclude(location_site__isnull=True).exclude(location_site='')
+            .values_list('location_site', flat=True).distinct()
+        )
+        for n in auto_sal_sites:
+            if not n:
+                continue
+            k = (n or '').strip().lower()
+            if k and k not in canonical:
+                canonical[k] = n.strip()
+
+    # 5. Widen with salary-active sites in the cycle (Attendance-derived —
+    #    surfaces pre-CUTOVER salary sites that never emitted AUTO-SAL
+    #    Transaction rows). Also overrides the hide-list.
+    try:
+        from employees.views import compute_cycle_salary_by_site
+        by_site = compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end)
+        for raw_site in by_site.keys():
+            n = (raw_site or '').strip()
+            if not n:
+                continue
+            k = n.lower()
+            if k not in canonical:
+                canonical[k] = n
+    except Exception:
+        pass
 
     # 5. Resolve each site_name to a Client/Site label dict.
     out = []
