@@ -16,19 +16,17 @@ from decimal import Decimal
 
 
 def build_salary_panel(admin_id, cycle_start, cycle_end, seed_site_names=None):
-    """Return list[dict] — one entry per site in the expense-card seed.
+    """Return list[dict] — one entry per site in the shared cycle-sites union.
 
-    Parity rule: `seed_site_names` MUST be the identical list the caller
-    passed to `_group_expenses_by_site` for the on-screen expense cards
-    (i.e. the result of `get_expense_card_seed(...)`). The panel then
-    shows 1:1 the same site set, in the same order, with the same labels.
-    Sites without any salary in the cycle appear with total = ₹0 and
-    rows = []. Orphan sites (AUTO-SAL data for a site NOT in the seed —
-    rare, legacy only) are appended at the end with label '— / <site>'.
+    Single code path: driver is `finance.services.cycle_sites.sites_for_cycle`,
+    the same helper that seeds the expense cards. Cards and panel therefore
+    render the identical site set for the same cycle. When the caller passes
+    `seed_site_names` (a pre-narrowed list, e.g. after selected_sites
+    filtering), the panel restricts to that intersection so filtered card
+    views stay 1:1 with the panel.
 
-    Falls back to `client_sites_for_admin(admin_id)` when seed is None,
-    purely as a safety net for legacy callers; new callers must pass the
-    seed.
+    Sites without any salary in the cycle appear with total = ₹0, rows = [].
+    Ordering: alphabetical by label.
 
     Shape:
         [
@@ -43,11 +41,11 @@ def build_salary_panel(admin_id, cycle_start, cycle_end, seed_site_names=None):
         ]
     """
     from employees.views import compute_cycle_salary_by_site
-    from projects.utils import client_site_label
+    from finance.services.cycle_sites import sites_for_cycle
 
+    # Per-site salary totals (Attendance-derived — includes pre-CUTOVER data).
     by_site = compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end)
 
-    # totals_by_key[site_name_lower] = {'total': Decimal, 'rows_by_date': {date: Decimal}}
     totals_by_key = {}
     for raw_site, entries in by_site.items():
         raw = (raw_site or '').strip()
@@ -56,7 +54,7 @@ def build_salary_panel(admin_id, cycle_start, cycle_end, seed_site_names=None):
         key = raw.lower()
         bucket = totals_by_key.setdefault(
             key,
-            {'site': raw, 'total': Decimal('0'), 'rows_by_date': {}},
+            {'total': Decimal('0'), 'rows_by_date': {}},
         )
         for entry in entries:
             amount = entry['amount'] or Decimal('0')
@@ -69,44 +67,26 @@ def build_salary_panel(admin_id, cycle_start, cycle_end, seed_site_names=None):
         rows.sort(key=lambda r: (r['date'] or cycle_start), reverse=True)
         return rows
 
-    # Driver list: prefer the seed the caller already computed for the
-    # expense cards (guarantees 1:1 parity). Fall back to the all-time
-    # canonical list only when no seed was passed.
-    if seed_site_names is None:
-        from projects.utils import client_sites_for_admin
-        driver = [
-            (cs['site_name'], cs['label'])
-            for cs in client_sites_for_admin(admin_id)
-        ]
-    else:
-        driver = []
-        seen = set()
-        for name in seed_site_names:
-            n = (name or '').strip()
-            if not n:
-                continue
-            k = n.lower()
-            if k in seen:
-                continue
-            seen.add(k)
-            try:
-                label = client_site_label(admin_id, n) or n
-            except Exception:
-                label = n
-            driver.append((n, label))
+    # Shared driver — same union the expense cards render.
+    driver = sites_for_cycle(admin_id, cycle_start, cycle_end, module='expense')
+
+    # Optional intersection with the caller's pre-narrowed seed (e.g. when
+    # the user has applied a site filter). Keeps panel and cards 1:1.
+    if seed_site_names is not None:
+        allowed = {(n or '').strip().lower() for n in seed_site_names if n}
+        driver = [d for d in driver if d['site_name'].lower() in allowed]
 
     out = []
-    consumed = set()
-    for site_name, label in driver:
-        key = site_name.lower()
-        consumed.add(key)
-        bucket = totals_by_key.get(key)
+    for entry in driver:
+        site_name = entry['site_name']
+        label     = entry['label']
+        bucket    = totals_by_key.get(site_name.lower())
         if bucket is not None:
             total = bucket['total']
-            rows = _finalize_rows(bucket['rows_by_date'])
+            rows  = _finalize_rows(bucket['rows_by_date'])
         else:
             total = Decimal('0')
-            rows = []
+            rows  = []
         out.append({
             'label': label,
             'site':  site_name,
@@ -114,26 +94,5 @@ def build_salary_panel(admin_id, cycle_start, cycle_end, seed_site_names=None):
             'rows':  rows,
         })
 
-    # Orphan AUTO-SAL totals (site not in the expense-card seed). Keep
-    # visible for audit, tagged with the '— / <site>' fallback.
-    orphans = []
-    for key, bucket in totals_by_key.items():
-        if key in consumed:
-            continue
-        site_name = bucket['site']
-        try:
-            label = client_site_label(admin_id, site_name)
-        except Exception:
-            label = f"— / {site_name}"
-        orphans.append({
-            'label': label,
-            'site':  site_name,
-            'total': bucket['total'],
-            'rows':  _finalize_rows(bucket['rows_by_date']),
-        })
-    orphans.sort(key=lambda b: b['label'].lower())
-
-    # Sort main rows alphabetically by label so the panel reads consistently;
-    # orphan rows tail after, also sorted.
     out.sort(key=lambda b: b['label'].lower())
-    return out + orphans
+    return out

@@ -52,7 +52,8 @@ def get_active_site_names(admin_id, restrict_today=False, today=None, module=Non
 
 
 def get_expense_card_seed(admin_id, selected_sites=None, restrict_today=False,
-                          today=None, cycle_start=None, cycle_end=None):
+                          today=None, cycle_start=None, cycle_end=None,
+                          include_salary_sites=False):
     """Single source of truth for the site-card seed list rendered on
     /expenses/ AND /income/.
 
@@ -63,14 +64,14 @@ def get_expense_card_seed(admin_id, selected_sites=None, restrict_today=False,
         return the intersection with the canonical universe (case-
         insensitive), falling back to the raw picked names when the
         picks aren't in the universe.
-      * Otherwise, return the module='expense' universe (module hide
-        list applied), widened with any Transaction.location_site
-        distincts in the [cycle_start, cycle_end] window when both are
-        supplied. This is what keeps salary-only sites on the card grid.
+      * Otherwise, return the cycle-scoped Client/Site universe.
+        When `include_salary_sites=True` (Expense Manager path), the
+        shared `finance.services.cycle_sites.sites_for_cycle` union is
+        used — it also surfaces salary-only sites so the cards match
+        the Salary Expenses panel 1:1. Income keeps the legacy union
+        (default False) to avoid inheriting salary-only rows.
 
-    Mirrors the inline logic that used to live in
-    finance.views.transaction_list; extracted so income.views.income_list
-    can call it verbatim and cannot drift.
+    Returns list[str] of site_name for backward compatibility.
     """
     from finance.models import Transaction
 
@@ -79,6 +80,18 @@ def get_expense_card_seed(admin_id, selected_sites=None, restrict_today=False,
         wanted = {s.lower() for s in selected_sites}
         seed = [n for n in universe if n.lower() in wanted]
         return seed if seed else list(selected_sites)
+
+    if include_salary_sites and cycle_start and cycle_end:
+        from finance.services.cycle_sites import sites_for_cycle
+        return [
+            d['site_name']
+            for d in sites_for_cycle(
+                admin_id, cycle_start, cycle_end,
+                restrict_today=restrict_today,
+                today=today,
+                module='expense',
+            )
+        ]
 
     seed = get_active_site_names(
         admin_id,

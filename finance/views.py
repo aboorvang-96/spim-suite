@@ -915,6 +915,7 @@ def transaction_list(request):
         today=timezone.localdate() if today_default_active else None,
         cycle_start=cycle_start,
         cycle_end=cycle_end,
+        include_salary_sites=True,
     )
 
     # Group the filtered transactions by Account (legacy) and Site (new
