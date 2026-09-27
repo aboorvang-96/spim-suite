@@ -15,14 +15,20 @@ site cards use so both surfaces agree.
 from decimal import Decimal
 
 
-def build_salary_panel(admin_id, cycle_start, cycle_end):
-    """Return list[dict] — one entry per Client/Site pair for the tenant.
+def build_salary_panel(admin_id, cycle_start, cycle_end, seed_site_names=None):
+    """Return list[dict] — one entry per site in the expense-card seed.
 
-    Parity rule: driver list is `projects.utils.client_sites_for_admin` so
-    the panel shows the SAME set of rows as the Expense site cards. Sites
-    with zero salary in the cycle still appear (total = ₹0, rows = []).
-    Orphan sites (in AUTO-SAL/attendance data but not in the canonical
-    list) are appended at the end with label '— / <site>'.
+    Parity rule: `seed_site_names` MUST be the identical list the caller
+    passed to `_group_expenses_by_site` for the on-screen expense cards
+    (i.e. the result of `get_expense_card_seed(...)`). The panel then
+    shows 1:1 the same site set, in the same order, with the same labels.
+    Sites without any salary in the cycle appear with total = ₹0 and
+    rows = []. Orphan sites (AUTO-SAL data for a site NOT in the seed —
+    rare, legacy only) are appended at the end with label '— / <site>'.
+
+    Falls back to `client_sites_for_admin(admin_id)` when seed is None,
+    purely as a safety net for legacy callers; new callers must pass the
+    seed.
 
     Shape:
         [
@@ -35,12 +41,9 @@ def build_salary_panel(admin_id, cycle_start, cycle_end):
           },
           ...
         ]
-
-    Rows inside each site are ONE per date, summed across employees, sorted
-    date-descending. Sort order of sites: alphabetical by label.
     """
     from employees.views import compute_cycle_salary_by_site
-    from projects.utils import client_sites_for_admin, client_site_label
+    from projects.utils import client_site_label
 
     by_site = compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end)
 
@@ -66,15 +69,38 @@ def build_salary_panel(admin_id, cycle_start, cycle_end):
         rows.sort(key=lambda r: (r['date'] or cycle_start), reverse=True)
         return rows
 
+    # Driver list: prefer the seed the caller already computed for the
+    # expense cards (guarantees 1:1 parity). Fall back to the all-time
+    # canonical list only when no seed was passed.
+    if seed_site_names is None:
+        from projects.utils import client_sites_for_admin
+        driver = [
+            (cs['site_name'], cs['label'])
+            for cs in client_sites_for_admin(admin_id)
+        ]
+    else:
+        driver = []
+        seen = set()
+        for name in seed_site_names:
+            n = (name or '').strip()
+            if not n:
+                continue
+            k = n.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            try:
+                label = client_site_label(admin_id, n) or n
+            except Exception:
+                label = n
+            driver.append((n, label))
+
     out = []
     consumed = set()
-
-    # Driver: canonical Client/Site list — same source expense cards use.
-    for cs in client_sites_for_admin(admin_id):
-        site_name = cs['site_name']
+    for site_name, label in driver:
         key = site_name.lower()
-        bucket = totals_by_key.get(key)
         consumed.add(key)
+        bucket = totals_by_key.get(key)
         if bucket is not None:
             total = bucket['total']
             rows = _finalize_rows(bucket['rows_by_date'])
@@ -82,14 +108,15 @@ def build_salary_panel(admin_id, cycle_start, cycle_end):
             total = Decimal('0')
             rows = []
         out.append({
-            'label': cs['label'],
+            'label': label,
             'site':  site_name,
             'total': total,
             'rows':  rows,
         })
 
-    # Orphans: attendance/AUTO-SAL sites with no canonical match. Do not
-    # drop silently — surface with '— / <site>' fallback label.
+    # Orphan AUTO-SAL totals (site not in the expense-card seed). Keep
+    # visible for audit, tagged with the '— / <site>' fallback.
+    orphans = []
     for key, bucket in totals_by_key.items():
         if key in consumed:
             continue
@@ -98,12 +125,15 @@ def build_salary_panel(admin_id, cycle_start, cycle_end):
             label = client_site_label(admin_id, site_name)
         except Exception:
             label = f"— / {site_name}"
-        out.append({
+        orphans.append({
             'label': label,
             'site':  site_name,
             'total': bucket['total'],
             'rows':  _finalize_rows(bucket['rows_by_date']),
         })
+    orphans.sort(key=lambda b: b['label'].lower())
 
+    # Sort main rows alphabetically by label so the panel reads consistently;
+    # orphan rows tail after, also sorted.
     out.sort(key=lambda b: b['label'].lower())
-    return out
+    return out + orphans

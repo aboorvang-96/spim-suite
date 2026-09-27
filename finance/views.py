@@ -976,7 +976,10 @@ def transaction_list(request):
     # per-date entries. Scoped to the active cycle so the panel matches
     # the top summary card.
     from finance.services.salary_panel import build_salary_panel
-    salary_panel = build_salary_panel(admin_id, cycle_start, cycle_end)
+    salary_panel = build_salary_panel(
+        admin_id, cycle_start, cycle_end,
+        seed_site_names=seed_site_names,
+    )
 
     # Available cycles for the top filter dropdown AND every per-card
     # cycle picker (they share the same list).
