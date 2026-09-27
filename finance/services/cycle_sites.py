@@ -21,12 +21,34 @@ Returns list[dict] sorted alphabetically by label:
       'label': 'UNIT 1 & 2 SPECTRO / KKNPP', 'site_id': 42}, ...]
 """
 
+from datetime import date
+
 from finance.models import Transaction
+
+
+# Cutover for canonical-only Attendance+Projects site enumeration.
+# Salary written from this cycle onward MUST resolve to a canonical site
+# via attendance.signals._resolve_working_site (whose OFFICE fallback is
+# itself a per-tenant Projects.Site). If a card is missing while its
+# salary shows in the KPI tile after this date, that's a data-hygiene
+# gap in _resolve_working_site — investigate the attendance write path,
+# do NOT widen the enumerator to hide the orphan.
+SITES_CYCLE_CANONICAL_ONLY_FROM = date(2026, 10, 26)
 
 
 def sites_for_cycle(admin_id, cycle_start, cycle_end,
                     restrict_today=False, today=None, module='expense'):
-    """Cycle-scoped Client/Site universe for the expense page."""
+    """Cycle-scoped Client/Site universe for the expense / income pages.
+
+    Two behavior modes:
+      * Legacy (cycle_start < SITES_CYCLE_CANONICAL_ONLY_FROM): union of
+        canonical base ∪ Transaction.location_site distincts ∪ AUTO-SAL
+        distincts ∪ attendance-derived salary sites. Widens preserve
+        visibility of pre-cutover orphan salary sites.
+      * Canonical (cycle_start >= SITES_CYCLE_CANONICAL_ONLY_FROM):
+        canonical base ONLY, ModuleHiddenSite hide-list still applied.
+        Every widen is skipped so orphans stay loud in Django admin.
+    """
     from projects.utils import sites_for_admin, client_site_label
 
     # 1. Canonical base — cycle-scoped attendance ∪ active Projects.Site.
@@ -42,6 +64,26 @@ def sites_for_cycle(admin_id, cycle_start, cycle_end,
         if not n2:
             continue
         canonical.setdefault(n2.lower(), n2)
+
+    # Canonical-only mode — apply hide-list and return early. All widens
+    # are intentionally skipped from the cutover cycle onward.
+    if cycle_start and cycle_start >= SITES_CYCLE_CANONICAL_ONLY_FROM:
+        if module in ('expense', 'income'):
+            try:
+                from finance.models import ModuleHiddenSite
+                hidden = {
+                    (h or '').strip().lower()
+                    for h in ModuleHiddenSite.objects
+                        .filter(admin_id=admin_id, module=module)
+                        .values_list('site_name', flat=True)
+                }
+                if hidden:
+                    for k in list(canonical.keys()):
+                        if k in hidden:
+                            del canonical[k]
+            except Exception:
+                pass
+        return _resolve_labels(admin_id, canonical, client_site_label)
 
     # 2. Widen with any non-salary Transaction.location_site distincts
     #    inside the cycle window (legacy expense rows).
@@ -118,7 +160,14 @@ def sites_for_cycle(admin_id, cycle_start, cycle_end,
     except Exception:
         pass
 
-    # 5. Resolve each site_name to a Client/Site label dict.
+    # 6. Resolve each site_name to a Client/Site label dict.
+    return _resolve_labels(admin_id, canonical, client_site_label)
+
+
+def _resolve_labels(admin_id, canonical, client_site_label):
+    """Turn {lower_name: display_name} into the public list-of-dicts shape.
+    Extracted so both the legacy union path and the canonical-only cutover
+    path emit identical output."""
     out = []
     for site_name in canonical.values():
         try:
@@ -137,6 +186,5 @@ def sites_for_cycle(admin_id, cycle_start, cycle_end,
             'label':       label,
             'site_id':     site_id,
         })
-
     out.sort(key=lambda d: d['label'].lower())
     return out

@@ -283,6 +283,7 @@ def income_list(request):
         today=_tz_seed.localdate(),
         cycle_start=_cycle['start'],
         cycle_end=_cycle['end'],
+        include_salary_sites=True,
     )
 
     accounts_grouped = _group_incomes_by_account(incomes_list)
