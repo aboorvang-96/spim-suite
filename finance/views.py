@@ -443,6 +443,19 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
         # Per-site accent for the card border (Issue 4 — color palette).
         g['color_index'] = _site_color_index(g['site'])
 
+    # Attach "CLIENT / SITE" display label per group. Grouping still keys by
+    # site_name (unique per admin, so equivalent to a (client, site) pair).
+    try:
+        from projects.utils import client_site_label as _cs_label
+        for g in groups.values():
+            if g['site_key']:
+                g['label'] = _cs_label(admin_id, g['site'])
+            else:
+                g['label'] = g['site']
+    except Exception:
+        for g in groups.values():
+            g['label'] = g['site']
+
     return sorted(
         groups.values(),
         key=lambda g: (g['latest_date'] or _dt.date.min),
@@ -841,20 +854,6 @@ def transaction_list(request):
     # every Transaction (which includes incomplete AUTO-SAL rows).
     total_expense = float(total_non_salary_expense or 0) + total_salary_expense
 
-    # Total Income (same cycle window) — feeds the Balance Summary box so
-    # its numbers stay consistent with the Total Expenses card above.
-    # Defensive: a transient Income-side schema mismatch falls back to 0.
-    try:
-        from income.models import Income as _Income
-        total_income = (
-            _Income.objects
-            .filter(admin_id=admin_id, date__gte=_kpi_start, date__lte=_kpi_end)
-            .aggregate(t=Sum('amount'))['t'] or 0
-        )
-    except Exception:
-        total_income = 0
-    net_balance = float(total_income or 0) - total_expense
-
     balance_combos = _balance_by_combo_expense(request.user)
     # Keyed by lower-case (source, account) so lookup is case-insensitive.
     combo_map = {(c['source'].lower(), c['account'].lower()): c for c in balance_combos}
@@ -964,7 +963,12 @@ def transaction_list(request):
     account_options  = [{'value': n, 'display': n} for n in _acct_names if n]
     source_options   = [{'value': n, 'display': n} for n in _src_names if n]
     category_options = [{'value': str(c.pk), 'display': c.name} for c in _cat_qs]
-    site_ms_options  = [{'value': s['name'], 'display': s['name']} for s in site_options]
+    # Site filter dropdown labels — show "CLIENT / SITE" but submit by site_name.
+    from projects.utils import client_site_label as _cs_label
+    site_ms_options  = [
+        {'value': s['name'], 'display': _cs_label(admin_id, s['name']) or s['name']}
+        for s in site_options
+    ]
     if has_unassigned:
         site_ms_options.append({'value': 'UNASSIGNED', 'display': '— Unassigned —'})
 
@@ -986,8 +990,6 @@ def transaction_list(request):
         'accounts_grouped':    accounts_grouped,
         'sites_grouped':       sites_grouped,
         'total_expense':       total_expense,
-        'total_income':        total_income,
-        'net_balance':         net_balance,
         # Cycle-scoped totals (top "This Cycle" card).
         'total_salary_expense':     total_salary_expense,
         'total_non_salary_expense': total_non_salary_expense,

@@ -96,6 +96,117 @@ def sites_for_admin(admin_id, restrict_attendance_to=None):
     return sorted(canonical.values(), key=lambda s: s.lower())
 
 
+def client_sites_for_admin(admin_id):
+    """Client/Site rich list for a tenant.
+
+    Union source:
+      * projects.Site rows (join to ProjectClient) — active only, source of
+        truth for casing.
+      * Orphan site names from attendance.AttendanceRecord (site CharField
+        or site_ref.name) that don't have a matching projects.Site row —
+        client_name defaults to '—', site_id None.
+
+    Case-insensitive dedup on site_name; Projects.Site casing wins. Sorted
+    by label. Returns:
+        [{'client_name': str, 'site_name': str, 'label': 'CLIENT / SITE',
+          'site_id': int|None}, ...]
+    """
+    from .models import Site as ProjSite
+
+    canonical = {}   # site_name_lower → dict
+
+    try:
+        rows = (
+            ProjSite.objects
+            .filter(admin_id=admin_id, is_active=True)
+            .select_related('client')
+            .values('id', 'name', 'client__name')
+        )
+        for r in rows:
+            name = (r['name'] or '').strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in canonical:
+                continue
+            client_name = (r['client__name'] or '—').strip() or '—'
+            canonical[key] = {
+                'client_name': client_name,
+                'site_name':   name,
+                'label':       f"{client_name} / {name}",
+                'site_id':     r['id'],
+            }
+    except Exception:
+        pass
+
+    try:
+        from attendance.models import AttendanceRecord
+        att = AttendanceRecord.objects.filter(admin_id=admin_id)
+        raw_names = set()
+        for n in (
+            att.exclude(site__isnull=True).exclude(site='')
+               .values_list('site', flat=True).distinct()
+        ):
+            if n:
+                raw_names.add(n.strip())
+        for n in (
+            att.filter(site_ref__isnull=False)
+               .values_list('site_ref__name', flat=True).distinct()
+        ):
+            if n:
+                raw_names.add(n.strip())
+        for name in raw_names:
+            if not name:
+                continue
+            key = name.lower()
+            if key in canonical:
+                continue
+            canonical[key] = {
+                'client_name': '—',
+                'site_name':   name,
+                'label':       f"— / {name}",
+                'site_id':     None,
+            }
+    except Exception:
+        pass
+
+    return sorted(canonical.values(), key=lambda d: d['label'].lower())
+
+
+def client_site_label(admin_id, site_name):
+    """Return 'CLIENT / SITE' display label for a bare site_name.
+
+    Lookup is case-insensitive against projects.Site rows for this admin.
+    Because Site.name is unique per (admin_id, name), one match at most.
+    Fallback: '— / SITE' when no Projects.Site row exists.
+    """
+    name = (site_name or '').strip()
+    if not name:
+        return ''
+    try:
+        from .models import Site as ProjSite
+        matches = list(
+            ProjSite.objects
+            .filter(admin_id=admin_id, name__iexact=name)
+            .select_related('client')
+            .values_list('client__name', 'name')[:2]
+        )
+        if len(matches) > 1:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "client_site_label: multiple Site rows for admin=%s name=%r",
+                admin_id, name,
+            )
+            return f"Multiple / {name}"
+        if matches:
+            client_name = (matches[0][0] or '—').strip() or '—'
+            display     = (matches[0][1] or name).strip()
+            return f"{client_name} / {display}"
+    except Exception:
+        pass
+    return f"— / {name}"
+
+
 def bump_work_detail_suggestion(admin_id, text, user):
     """
     Insert or increment a WorkDetailSuggestion row for `text`.

@@ -72,6 +72,13 @@ def build_salary_panel(admin_id, cycle_start, cycle_end):
             d = entry['date']
             b['rows_by_date'][d] = b['rows_by_date'].get(d, Decimal('0')) + amount
 
+    # Enrich each site with a "CLIENT / SITE" display label so the panel
+    # matches the Expense card headers. Falls back to bare site on error.
+    try:
+        from projects.utils import client_site_label as _cs_label
+    except Exception:
+        _cs_label = None
+
     for b in buckets.values():
         rows = [
             {'date': d, 'amount': amt}
@@ -80,5 +87,9 @@ def build_salary_panel(admin_id, cycle_start, cycle_end):
         rows.sort(key=lambda r: (r['date'] or cycle_start), reverse=True)
         b['rows'] = rows
         del b['rows_by_date']
+        try:
+            b['label'] = _cs_label(admin_id, b['site']) if _cs_label else b['site']
+        except Exception:
+            b['label'] = b['site']
 
     return sorted(buckets.values(), key=lambda b: b['site'].lower())
