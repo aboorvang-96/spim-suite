@@ -343,14 +343,19 @@
 
 /* Bulk-mark dropdown (Mark Present / Leave / Holiday) — sits inside the
    bulk-toolbar. Visual style matches .dl-menu so the page has one
-   consistent dropdown vocabulary. */
+   consistent dropdown vocabulary.
+
+   Positioning: `position: fixed` (not absolute) so the menu escapes the
+   drawer's `overflow: hidden` clip-box — an absolute child inside the
+   drawer was being cut off at the drawer's left edge. Concrete top/left
+   are set in JS from the trigger button's bounding rect. */
 .mark-wrap { position: relative; display: inline-block; }
 .mark-caret { font-size: 0.6rem; margin-left: 0.2rem; opacity: 0.75; }
 .mark-menu {
-    display: none; position: absolute; right: 0; top: calc(100% + 4px);
+    display: none; position: fixed; top: 0; left: 0;
     background: #fff; border: 1px solid #e2e8f0; border-radius: 7px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-    min-width: 168px; z-index: 920; overflow: hidden;
+    min-width: 168px; z-index: 1200; overflow: hidden;
 }
 .mark-menu.open { display: block; }
 .mark-menu button {
@@ -2871,18 +2876,57 @@ function toggleDrawerCellSelect(dateStr) {
 function toggleDrawerMarkMenu(ev) {
     if (ev) ev.stopPropagation();
     const menu = document.getElementById('drawerMarkMenu');
-    if (!menu) return;
-    if (document.getElementById('drawerMarkBtn').disabled) return;
-    menu.classList.toggle('open');
+    const btn  = document.getElementById('drawerMarkBtn');
+    if (!menu || !btn) return;
+    if (btn.disabled) return;
+    const willOpen = !menu.classList.contains('open');
+    menu.classList.toggle('open', willOpen);
+    if (willOpen) positionDrawerMarkMenu();
 }
 
-/* Close the Mark-as menu when clicking outside it. */
+/* Anchor the fixed-positioned menu to the trigger button. Uses viewport
+   coordinates (getBoundingClientRect) since the menu is position:fixed,
+   which is what lets it escape the drawer's `overflow: hidden` clip. */
+function positionDrawerMarkMenu() {
+    const menu = document.getElementById('drawerMarkMenu');
+    const btn  = document.getElementById('drawerMarkBtn');
+    if (!menu || !btn) return;
+    const rect = btn.getBoundingClientRect();
+    const menuW = menu.offsetWidth || 180;
+    // Prefer opening downward from the button's left edge. If that would
+    // spill off the right of the viewport, right-align to the button's
+    // right edge instead. If below would spill vertically, open upward.
+    let left = rect.left;
+    if (left + menuW > window.innerWidth - 6) {
+        left = Math.max(6, rect.right - menuW);
+    }
+    let top = rect.bottom + 4;
+    const menuH = menu.offsetHeight || 220;
+    if (top + menuH > window.innerHeight - 6) {
+        top = Math.max(6, rect.top - menuH - 4);
+    }
+    menu.style.left = left + 'px';
+    menu.style.top  = top  + 'px';
+}
+
+/* Close the Mark-as menu when clicking outside it, and reposition (or
+   close, whichever is simpler) if the drawer body scrolls or the window
+   resizes — otherwise the fixed-positioned menu would drift away from
+   the button once its viewport coords change. */
 document.addEventListener('click', function(ev) {
     const menu = document.getElementById('drawerMarkMenu');
     if (!menu || !menu.classList.contains('open')) return;
     if (ev.target.closest('#drawerMarkMenu') || ev.target.closest('#drawerMarkBtn')) return;
     menu.classList.remove('open');
 });
+window.addEventListener('resize', function() {
+    const menu = document.getElementById('drawerMarkMenu');
+    if (menu && menu.classList.contains('open')) positionDrawerMarkMenu();
+});
+document.addEventListener('scroll', function(ev) {
+    const menu = document.getElementById('drawerMarkMenu');
+    if (menu && menu.classList.contains('open')) menu.classList.remove('open');
+}, true);
 
 function applyDrawerMark(status) {
     document.getElementById('drawerMarkMenu').classList.remove('open');
