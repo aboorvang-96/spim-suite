@@ -16,80 +16,94 @@ from decimal import Decimal
 
 
 def build_salary_panel(admin_id, cycle_start, cycle_end):
-    """Return list[dict] — one entry per site with salary rows this cycle.
+    """Return list[dict] — one entry per Client/Site pair for the tenant.
+
+    Parity rule: driver list is `projects.utils.client_sites_for_admin` so
+    the panel shows the SAME set of rows as the Expense site cards. Sites
+    with zero salary in the cycle still appear (total = ₹0, rows = []).
+    Orphan sites (in AUTO-SAL/attendance data but not in the canonical
+    list) are appended at the end with label '— / <site>'.
 
     Shape:
         [
           {
-            'site':   'RAGURAM',
+            'label':  'UNIT 1 & 2 SPECTRO / KKNPP',
+            'site':   'KKNPP',
             'total':  Decimal('39000.00'),
-            'rows':   [
-              {'date': date(2026, 8, 4), 'amount': Decimal('12000')},
-              ...
-            ],
+            'rows':   [{'date': date(2026, 8, 4),
+                        'amount': Decimal('12000')}, ...],
           },
           ...
         ]
 
-    Sites with zero salary rows in the cycle are omitted. Sites are
-    sorted alphabetically (case-insensitive). Rows inside each site are
-    ONE per date with amounts summed across every employee/salary row
-    for that (site, date), sorted date-descending. A single day with 25
-    employees renders as a single row, not 25.
+    Rows inside each site are ONE per date, summed across employees, sorted
+    date-descending. Sort order of sites: alphabetical by label.
     """
     from employees.views import compute_cycle_salary_by_site
+    from projects.utils import client_sites_for_admin, client_site_label
 
     by_site = compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end)
 
-    # Canonical display casing per site — Projects.Site casing wins.
-    canonical = {}   # lower → display
-    try:
-        from projects.utils import sites_for_admin
-        for name in sites_for_admin(admin_id):
-            canonical.setdefault(name.strip().lower(), name.strip())
-    except Exception:
-        pass
-
-    # Bucket: lower_key → {'site': display, 'total': Decimal,
-    #                      'rows_by_date': {date: Decimal}}.
-    # Row-per-date bucket is a dict here so two spellings of the same
-    # site on the same day still collapse to a single row after the
-    # case-insensitive fold.
-    buckets = {}
+    # totals_by_key[site_name_lower] = {'total': Decimal, 'rows_by_date': {date: Decimal}}
+    totals_by_key = {}
     for raw_site, entries in by_site.items():
         raw = (raw_site or '').strip()
         if not raw:
             continue
         key = raw.lower()
-        display = canonical.get(key, raw)
-        b = buckets.get(key)
-        if b is None:
-            b = {'site': display, 'total': Decimal('0'), 'rows_by_date': {}}
-            buckets[key] = b
+        bucket = totals_by_key.setdefault(
+            key,
+            {'site': raw, 'total': Decimal('0'), 'rows_by_date': {}},
+        )
         for entry in entries:
             amount = entry['amount'] or Decimal('0')
-            b['total'] += amount
+            bucket['total'] += amount
             d = entry['date']
-            b['rows_by_date'][d] = b['rows_by_date'].get(d, Decimal('0')) + amount
+            bucket['rows_by_date'][d] = bucket['rows_by_date'].get(d, Decimal('0')) + amount
 
-    # Enrich each site with a "CLIENT / SITE" display label so the panel
-    # matches the Expense card headers. Falls back to bare site on error.
-    try:
-        from projects.utils import client_site_label as _cs_label
-    except Exception:
-        _cs_label = None
-
-    for b in buckets.values():
-        rows = [
-            {'date': d, 'amount': amt}
-            for d, amt in b['rows_by_date'].items()
-        ]
+    def _finalize_rows(rows_by_date):
+        rows = [{'date': d, 'amount': amt} for d, amt in rows_by_date.items()]
         rows.sort(key=lambda r: (r['date'] or cycle_start), reverse=True)
-        b['rows'] = rows
-        del b['rows_by_date']
-        try:
-            b['label'] = _cs_label(admin_id, b['site']) if _cs_label else b['site']
-        except Exception:
-            b['label'] = b['site']
+        return rows
 
-    return sorted(buckets.values(), key=lambda b: b['site'].lower())
+    out = []
+    consumed = set()
+
+    # Driver: canonical Client/Site list — same source expense cards use.
+    for cs in client_sites_for_admin(admin_id):
+        site_name = cs['site_name']
+        key = site_name.lower()
+        bucket = totals_by_key.get(key)
+        consumed.add(key)
+        if bucket is not None:
+            total = bucket['total']
+            rows = _finalize_rows(bucket['rows_by_date'])
+        else:
+            total = Decimal('0')
+            rows = []
+        out.append({
+            'label': cs['label'],
+            'site':  site_name,
+            'total': total,
+            'rows':  rows,
+        })
+
+    # Orphans: attendance/AUTO-SAL sites with no canonical match. Do not
+    # drop silently — surface with '— / <site>' fallback label.
+    for key, bucket in totals_by_key.items():
+        if key in consumed:
+            continue
+        site_name = bucket['site']
+        try:
+            label = client_site_label(admin_id, site_name)
+        except Exception:
+            label = f"— / {site_name}"
+        out.append({
+            'label': label,
+            'site':  site_name,
+            'total': bucket['total'],
+            'rows':  _finalize_rows(bucket['rows_by_date']),
+        })
+
+    out.sort(key=lambda b: b['label'].lower())
+    return out

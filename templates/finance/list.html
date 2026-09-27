@@ -1153,9 +1153,10 @@
                 {% for site in salary_panel %}
                 <tr class="salary-site-row" data-idx="{{ forloop.counter0 }}"
                     aria-expanded="false"
-                    onclick="toggleSalaryDates({{ forloop.counter0 }})">
+                    {% if site.rows %}onclick="toggleSalaryDates({{ forloop.counter0 }})"{% endif %}
+                    {% if not site.rows %}style="cursor:default;"{% endif %}>
                     <td class="site-col">
-                        <span class="disc" data-disc>▶</span>{{ site.label|default:site.site }}
+                        {% if site.rows %}<span class="disc" data-disc>▶</span>{% else %}<span class="disc" style="visibility:hidden;">▶</span>{% endif %}{{ site.label|default:site.site }}
                     </td>
                     <td class="date-col">{{ cycle_start|date:"d/m/y" }} – {{ cycle_end|date:"d/m/y" }}</td>
                     <td class="amount-col">₹{{ site.total|floatformat:2 }}</td>
