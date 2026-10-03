@@ -19,13 +19,13 @@
 
 {% block header_actions %}
 <div class="flex gap-2">
-    <button type="button" id="downloadPdfBtn" class="btn btn-outline btn-sm bg-white" title="Download salary report as PDF">
+    <button type="button" id="downloadPdfBtn" class="btn btn-outline btn-sm bg-white" title="Download employees salary report as PDF">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-        Download PDF
+        Download Employees PDF
     </button>
-    <button type="button" id="downloadExcelBtn" class="btn btn-outline btn-sm bg-white" title="Download salary report as Excel">
+    <button type="button" id="downloadExcelBtn" class="btn btn-outline btn-sm bg-white" title="Download employees salary report as Excel">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        Download Excel
+        Download Employees Excel
     </button>
     <button onclick="generateBulkZip()" class="btn btn-primary btn-sm">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
@@ -70,6 +70,7 @@
                           style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:4px;border:1px solid #cbd5e1;border-radius:50%;font-size:9px;font-weight:800;color:#64748b;cursor:help;vertical-align:middle;">?</span>
                 </span>
                 <span class="stat-value" id="st-net">₹0</span>
+                <span id="st-net-split" style="display:block;font-size:0.7rem;color:#64748b;margin-top:2px;">Employees: ₹0.00 · Vehicles: ₹0.00</span>
             </div>
         </div>
         <div class="stat-card">
@@ -573,6 +574,9 @@
     function updateStats(stats) {
         document.getElementById('st-total').innerText = stats.total_employees;
         document.getElementById('st-net').innerText = '₹' + stats.total_net_payable.toLocaleString();
+        const _inr2 = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const _splitEl = document.getElementById('st-net-split');
+        if (_splitEl) _splitEl.innerText = 'Employees: ' + _inr2(stats.total_payout_employees) + ' · Vehicles: ' + _inr2(stats.total_payout_vehicles);
         document.getElementById('st-ot').innerText = '₹' + stats.total_ot.toLocaleString();
         document.getElementById('st-adv').innerText = '₹' + stats.total_advance.toLocaleString();
         document.getElementById('st-ded').innerText = '₹' + stats.total_deductions.toLocaleString();
@@ -635,13 +639,21 @@
     }
 
     // Full-width group-header row spanning all 10 columns.
-    function buildGroupHeader(label) {
+    function buildGroupHeader(label, actionsHtml) {
+        const cell = actionsHtml
+            ? `<div style="display:flex; align-items:center; justify-content:space-between;"><span>${label}</span><span style="display:inline-flex; gap:6px; text-transform:none; letter-spacing:0;">${actionsHtml}</span></div>`
+            : label;
         return `
                 <tr class="salary-group-header">
-                    <td colspan="10" style="background:#e2e8f0; color:#0f172a; font-weight:800; letter-spacing:0.02em; padding:0.55rem 1rem; text-transform:uppercase; font-size:0.78rem;">${label}</td>
+                    <td colspan="10" style="background:#e2e8f0; color:#0f172a; font-weight:800; letter-spacing:0.02em; padding:0.55rem 1rem; text-transform:uppercase; font-size:0.78rem;">${cell}</td>
                 </tr>
             `;
     }
+
+    const _VEH_BTN_STYLE = 'padding:2px 8px; font-size:0.7rem; font-weight:600; background:transparent; border:1px solid #94a3b8; border-radius:4px; color:#334155; cursor:pointer;';
+    const _VEH_BTNS = `
+        <button type="button" style="${_VEH_BTN_STYLE}" onclick="downloadVehiclesReport('pdf')" title="Download vehicles salary report as PDF">Download PDF</button>
+        <button type="button" style="${_VEH_BTN_STYLE}" onclick="downloadVehiclesReport('xlsx')" title="Download vehicles salary report as Excel">Download Excel</button>`;
 
     function renderTable() {
         const tbody = document.getElementById('salary-tbody');
@@ -665,7 +677,7 @@
 
         // Vehicles header hidden entirely when there are no vehicles.
         if (vehicles.length) {
-            html += buildGroupHeader('Vehicles');
+            html += buildGroupHeader('Vehicles', _VEH_BTNS);
             vehicles.forEach(s => { html += buildSalaryRow(s); });
         }
 
@@ -1055,6 +1067,32 @@
     function generateExcel() {
         console.log('[salary report] generateExcel fired');
         _downloadSalaryReport('xlsx');
+    }
+
+    function downloadVehiclesReport(fmt) {
+        const getVal = (id) => {
+            const el = document.getElementById(id);
+            return el ? (el.value || '') : '';
+        };
+        const params = new URLSearchParams({
+            month:    getVal('f-month'),
+            year:     getVal('f-year'),
+            search:   getVal('f-search'),
+            location: getVal('f-location'),
+            site:     getVal('f-site'),
+            bank:     getVal('f-bank'),
+        });
+        const base = fmt === 'pdf'
+            ? "{% url 'employees:salary_download_vehicles_pdf' %}"
+            : "{% url 'employees:salary_download_vehicles_xlsx' %}";
+        const link = document.createElement('a');
+        link.href = base + '?' + params.toString();
+        link.download = '';
+        link.rel = 'noopener';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function() { if (link.parentNode) link.parentNode.removeChild(link); }, 0);
     }
 
     function _downloadSalaryReport(fmt) {

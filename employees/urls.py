@@ -28,6 +28,8 @@ urlpatterns = [
     path('<int:pk>/pf/', views.pf_details, name='add_step3_pf'),
     path('salary/dashboard/', views.salary_dashboard, name='salary_dashboard'),
     path('salary/report/download/', views.salary_report_download, name='salary_report_download'),
+    path('salary/report/vehicles/pdf/', views.salary_download_vehicles_pdf, name='salary_download_vehicles_pdf'),
+    path('salary/report/vehicles/xlsx/', views.salary_download_vehicles_xlsx, name='salary_download_vehicles_xlsx'),
     path('manage/ajax/', views.manage_ajax, name='manage_ajax'),
 
     path('<int:pk>/salary/', views.salary_management, name='process_salary'),

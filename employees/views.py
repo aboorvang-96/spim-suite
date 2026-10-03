@@ -737,7 +737,7 @@ def salary_management(request, pk):
     })
 
 
-def compute_cycle_salary_total(admin_id, cycle_start, cycle_end):
+def compute_cycle_salary_total(admin_id, cycle_start, cycle_end, is_vehicle=None):
     """Actual salary accrual for a cycle, matching the Salary Report PDF.
 
     Iterates every Employee for the tenant, computes per-employee
@@ -755,6 +755,8 @@ def compute_cycle_salary_total(admin_id, cycle_start, cycle_end):
     from decimal import Decimal
     target_date = cycle_end.replace(day=1)
     queryset = Employee.objects.filter(admin_id=admin_id)
+    if is_vehicle is not None:
+        queryset = queryset.filter(is_vehicle=is_vehicle)
     total = Decimal('0')
     for e in queryset:
         salary_record = e.salary_history.filter(
@@ -1046,6 +1048,8 @@ def salary_dashboard(request):
         from accounts.date_utils import today_ist as _kpi_today
         _kc = _kpi_get_cycle(_kpi_today())
         total_net = float(compute_cycle_salary_total(admin_id, _kc['start'], _kc['end']))
+        total_net_employees = float(compute_cycle_salary_total(admin_id, _kc['start'], _kc['end'], is_vehicle=False))
+        total_net_vehicles = float(compute_cycle_salary_total(admin_id, _kc['start'], _kc['end'], is_vehicle=True))
 
         return JsonResponse({
             'salaries': emp_list,
@@ -1053,6 +1057,8 @@ def salary_dashboard(request):
                 'total_employees': queryset.count(),
                 'processed_count': processed_count,
                 'total_net_payable': total_net,
+                'total_payout_employees': total_net_employees,
+                'total_payout_vehicles': total_net_vehicles,
                 'total_deductions': total_ded,
                 'total_ot': total_ot,
                 'total_advance': total_advance,
@@ -1106,6 +1112,23 @@ def salary_dashboard(request):
 # ────────────────────────────────────────────────────────────────────────────
 @login_required
 def salary_report_download(request):
+    """Employees-only salary report (is_vehicle=False)."""
+    return _salary_report_response(request, is_vehicle=False)
+
+
+@login_required
+def salary_download_vehicles_pdf(request):
+    """Vehicles-only salary report as PDF (is_vehicle=True)."""
+    return _salary_report_response(request, is_vehicle=True, fmt='pdf')
+
+
+@login_required
+def salary_download_vehicles_xlsx(request):
+    """Vehicles-only salary report as XLSX (is_vehicle=True)."""
+    return _salary_report_response(request, is_vehicle=True, fmt='xlsx')
+
+
+def _salary_report_response(request, is_vehicle=False, fmt=None):
     """
     GET /employees/salary/report/download/?format=pdf|xlsx
         &month=June&year=2026
@@ -1127,7 +1150,7 @@ def salary_report_download(request):
     URL, so if Django redirects to login the user stays on the salary
     page and can re-authenticate without losing context.
     """
-    fmt = (request.GET.get('format') or 'pdf').strip().lower()
+    fmt = (fmt or request.GET.get('format') or 'pdf').strip().lower()
     if fmt not in ('pdf', 'xlsx'):
         fmt = 'pdf'
 
@@ -1139,7 +1162,7 @@ def salary_report_download(request):
     f_search   = (request.GET.get('search', '') or '').lower()
 
     admin_id = get_admin_id(request.user)
-    queryset = Employee.objects.filter(admin_id=admin_id).order_by('name')
+    queryset = Employee.objects.filter(admin_id=admin_id, is_vehicle=is_vehicle).order_by('name')
     if f_location:
         queryset = queryset.filter(location=f_location)
     if f_site:
@@ -1238,22 +1261,21 @@ def salary_report_download(request):
         })
         total_net += net
 
-    # Group people first, then vehicles, preserving name order within each
-    # group (queryset is already name-ordered; a stable sort keeps that).
-    # total_net stays a single combined total — no per-group subtotals.
-    rows.sort(key=lambda r: r['is_vehicle'])
-
+    # Each download is single-scope (employees OR vehicles), so no section
+    # headers are needed in the output.
     safe_month = (month_name or 'AllMonths').replace(' ', '_')
     safe_year  = (str(year) if year else 'AllYears').replace(' ', '_')
-    filename_base = f"Salary_Report_{safe_month}_{safe_year}"
+    prefix = 'Vehicles_Salary_Report' if is_vehicle else 'Salary_Report'
+    filename_base = f"{prefix}_{safe_month}_{safe_year}"
     period_label  = f"{month_name} {year}".strip() or "All Periods"
+    noun = 'Vehicles' if is_vehicle else 'Employees'
 
     if fmt == 'xlsx':
-        return _render_salary_xlsx(rows, total_net, filename_base, period_label)
-    return _render_salary_pdf(rows, total_net, filename_base, period_label)
+        return _render_salary_xlsx(rows, total_net, filename_base, period_label, noun)
+    return _render_salary_pdf(rows, total_net, filename_base, period_label, noun)
 
 
-def _render_salary_xlsx(rows, total_net, filename_base, period_label):
+def _render_salary_xlsx(rows, total_net, filename_base, period_label, noun='Employees'):
     """Build the salary report as an XLSX HttpResponse using openpyxl."""
     from io import BytesIO
     from django.http import HttpResponse
@@ -1283,20 +1305,6 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
         c.fill = header_fill
         c.alignment = Alignment(horizontal='center')
 
-    # Full-width group-header row (merged across all columns). Only emitted
-    # for a non-empty group — no empty "Vehicles" heading is ever written.
-    group_fill = PatternFill('solid', fgColor='E2E8F0')
-    group_font = Font(bold=True, color='0F172A')
-
-    def _append_section(label):
-        ws.append([label])
-        ridx = ws.max_row
-        ws.merge_cells(start_row=ridx, start_column=1, end_row=ridx, end_column=len(headers))
-        cell = ws.cell(row=ridx, column=1)
-        cell.font = group_font
-        cell.fill = group_fill
-        cell.alignment = Alignment(horizontal='left')
-
     def _append_data(r):
         def _n(v):
             return '' if v == '' or v is None else float(v)
@@ -1323,24 +1331,14 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
             float(r.get('net_pay') or 0),
         ])
 
-    people   = [r for r in rows if not r['is_vehicle']]
-    vehicles = [r for r in rows if r['is_vehicle']]
-    # "Employees" header only when vehicles also exist (a single flat list
-    # keeps its original headerless look otherwise).
-    if people and vehicles:
-        _append_section('Employees')
-    for r in people:
+    for r in rows:
         _append_data(r)
-    if vehicles:
-        _append_section('Vehicles')
-        for r in vehicles:
-            _append_data(r)
 
     # Blank separator + totals footer. Only column 8 (SALARY) and 20
     # (NET PAY) carry monetary totals; other extended columns stay blank.
     ws.append([])
     total_row = [''] * len(headers)
-    total_row[0]  = f'Total Employees: {len(rows)}'
+    total_row[0]  = f'Total {noun}: {len(rows)}'
     total_row[4]  = 'Total Salary Paid'
     total_row[7]  = float(total_net or 0)
     total_row[19] = float(total_net or 0)
@@ -1365,7 +1363,7 @@ def _render_salary_xlsx(rows, total_net, filename_base, period_label):
     return response
 
 
-def _render_salary_pdf(rows, total_net, filename_base, period_label):
+def _render_salary_pdf(rows, total_net, filename_base, period_label, noun='Employees'):
     """Build the salary report as a landscape A4 PDF HttpResponse using reportlab."""
     from io import BytesIO
     from django.http import HttpResponse
@@ -1391,7 +1389,7 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
     sub_style   = ParagraphStyle('Sub8',    parent=styles['Normal'], fontSize=8)
 
     story = [
-        Paragraph(f"Salary Report — {period_label}", title_style),
+        Paragraph(f"{noun} Salary Report — {period_label}", title_style),
         Paragraph(
             f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
             sub_style,
@@ -1439,29 +1437,11 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
             '{:,.2f}'.format(float(r.get('net_pay') or 0)),
         ]
 
-    people   = [r for r in rows if not r['is_vehicle']]
-    vehicles = [r for r in rows if r['is_vehicle']]
-    # Track which table_data row indices are full-width section headers so
-    # their SPAN + background styles can be applied after the table is built.
-    section_header_idx = []
-
-    def _append_section(label):
-        section_header_idx.append(len(table_data))
-        table_data.append([label] + [''] * (NUM_COLS - 1))
-
-    # "Employees" header only when vehicles also exist; "Vehicles" header
-    # omitted entirely when there are no vehicles — no empty headings.
-    if people and vehicles:
-        _append_section('Employees')
-    for r in people:
+    for r in rows:
         table_data.append(_data_row(r))
-    if vehicles:
-        _append_section('Vehicles')
-        for r in vehicles:
-            table_data.append(_data_row(r))
 
     total_row_cells = [''] * NUM_COLS
-    total_row_cells[0]  = f'Total Employees: {len(rows)}'
+    total_row_cells[0]  = f'Total {noun}: {len(rows)}'
     total_row_cells[4]  = 'Total Salary Paid'
     total_row_cells[7]  = '{:,.2f}'.format(float(total_net or 0))
     total_row_cells[19] = '{:,.2f}'.format(float(total_net or 0))
@@ -1507,15 +1487,6 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label):
         ('TEXTCOLOR',  (0, -1), (-1, -1), colors.HexColor('#059669')),
         ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
     ]
-    # Merge each section-header row across all 8 columns and shade it. The
-    # right-align on column 7 does not apply to these rows because the SPAN
-    # makes the first cell own the full width.
-    for ridx in section_header_idx:
-        style_cmds.append(('SPAN', (0, ridx), (-1, ridx)))
-        style_cmds.append(('BACKGROUND', (0, ridx), (-1, ridx), colors.HexColor('#E2E8F0')))
-        style_cmds.append(('TEXTCOLOR', (0, ridx), (-1, ridx), colors.HexColor('#0F172A')))
-        style_cmds.append(('FONTNAME', (0, ridx), (-1, ridx), 'Helvetica-Bold'))
-        style_cmds.append(('ALIGN', (0, ridx), (-1, ridx), 'LEFT'))
     tbl.setStyle(TableStyle(style_cmds))
     story.append(tbl)
     doc.build(story)
