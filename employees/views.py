@@ -18,6 +18,7 @@ from .models import Employee, BankDetail, PFDetail, SalaryUpdate, SalaryStructur
 from .forms import EmployeeForm, BankDetailForm, PFDetailForm, SalaryForm
 from branches.models import LocationSite
 from accounts.views import get_admin_id
+from .utils import compute_net_pay, compute_net_pay_for_record
 
 
 def _sync_employee_location(employee, user):
@@ -741,7 +742,7 @@ def compute_cycle_salary_total(admin_id, cycle_start, cycle_end, is_vehicle=None
     """Actual salary accrual for a cycle, matching the Salary Report PDF.
 
     Iterates every Employee for the tenant, computes per-employee
-    `attendance_earnings + ot - advance - ded` (identical formula to
+    `compute_net_pay` (attendance + ot - advance - ded + food adj; identical formula to
     salary_report_download / _render_salary_pdf) and returns the Decimal
     sum. This is the SINGLE SOURCE OF TRUTH for cycle salary totals
     across the suite — Salary Management's Total Payout tile AND Expense
@@ -763,14 +764,11 @@ def compute_cycle_salary_total(admin_id, cycle_start, cycle_end, is_vehicle=None
             month__year=target_date.year, month__month=target_date.month,
         ).first()
         gross_base = Decimal(str(salary_record.basic_salary if salary_record else (e.base_salary or 0)))
-        ot         = Decimal(str(salary_record.ot_allowance    if salary_record else 0))
-        advance    = Decimal(str(salary_record.advance_pay     if salary_record else 0))
-        ded        = Decimal(str(salary_record.total_deduction if salary_record else 0))
         try:
             earn_dec, _ = _compute_attendance_breakdown(e, target_date, gross_base)
         except Exception:
             earn_dec = gross_base
-        total += (earn_dec + ot - advance - ded)
+        total += compute_net_pay_for_record(earn_dec, salary_record)
     return total
 
 
@@ -838,14 +836,11 @@ def compute_cycle_salary_by_site(admin_id, cycle_start, cycle_end):
             month__year=target_date.year, month__month=target_date.month,
         ).first()
         gross_base = Decimal(str(salary_record.basic_salary if salary_record else (e.base_salary or 0)))
-        ot         = Decimal(str(salary_record.ot_allowance    if salary_record else 0))
-        advance    = Decimal(str(salary_record.advance_pay     if salary_record else 0))
-        ded        = Decimal(str(salary_record.total_deduction if salary_record else 0))
         try:
             earn_dec, _ = _compute_attendance_breakdown(e, target_date, gross_base)
         except Exception:
             earn_dec = gross_base
-        expected = earn_dec + ot - advance - ded
+        expected = compute_net_pay_for_record(earn_dec, salary_record)
         expected_total += expected
         residual = expected - attended_by_emp.get(e.id, Decimal('0'))
         if residual != 0:
@@ -968,7 +963,7 @@ def salary_dashboard(request):
             # is a snapshot stamped at Save time for payslip rendering — using
             # it here would lock the row at a stale value (e.g. ₹0 from an
             # earlier save when attendance had not yet been marked).
-            net = attendance_earnings + ot - advance - ded
+            net = float(compute_net_pay_for_record(attendance_earnings, salary_record))
 
             if salary_record:
                 processed_count += 1
@@ -1221,7 +1216,7 @@ def _salary_report_response(request, is_vehicle=False, fmt=None):
             print(f'[salary_report_download] attendance compute failed for emp {e.pk}: {exc}')
             attendance_earnings = gross_base
             paid_days           = 0.0
-        net = attendance_earnings + ot - advance - ded
+        net = float(compute_net_pay_for_record(attendance_earnings, salary_record))
 
         # Report column 19: Total Deduction per spec — advance + PF + any
         # food-usage overshoot. Distinct from the SalaryUpdate.total_deduction
@@ -1880,7 +1875,7 @@ def manage_ajax(request):
                         food_adj       = food_allowance - food_usage
 
                         payable_base = _compute_attendance_earnings(emp, target_date, basic)
-                        new_net_pay  = payable_base + ot - advance - deduction + food_adj
+                        new_net_pay  = compute_net_pay(payable_base, ot, advance, deduction, food_allowance, food_usage)
 
                         prev_net = Decimal(str(salary_record.net_pay or 0))
                         if abs(new_net_pay - prev_net) > Decimal('1'):
@@ -2118,7 +2113,7 @@ def manage_ajax(request):
             # derives the value directly from the database to prevent payload
             # manipulation.
             payable_base = _compute_attendance_earnings(employee, target_date, basic)
-            salary_record.net_pay = payable_base + ot - advance - deduction + food_adjustment
+            salary_record.net_pay = compute_net_pay(payable_base, ot, advance, deduction, food_allowance, food_usage)
             salary_record.save()
             
             return JsonResponse({'success': True})

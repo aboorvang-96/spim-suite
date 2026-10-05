@@ -23,3 +23,37 @@ def normalize_employee_id(raw):
     if raw is None:
         return ''
     return _EMP_ID_STRIP_RE.sub('', str(raw)).upper()
+
+
+def compute_net_pay(attendance_earnings, ot=0, advance=0, deduction=0,
+                    food_allowance=0, food_usage=0):
+    """Single source of truth for net pay.
+
+    net = attendance_earnings + ot - advance - deduction
+          + (food_allowance - food_usage)
+
+    Applies whether or not a custom salary override is active. None is
+    treated as 0. Returns an unrounded Decimal (round only for display).
+    """
+    from decimal import Decimal
+
+    def _d(v):
+        return Decimal(str(v)) if v not in (None, '') else Decimal('0')
+
+    return (
+        _d(attendance_earnings) + _d(ot) - _d(advance) - _d(deduction)
+        + (_d(food_allowance) - _d(food_usage))
+    )
+
+
+def compute_net_pay_for_record(attendance_earnings, salary_record):
+    """compute_net_pay() fed from a SalaryUpdate row (or None => zeros)."""
+    r = salary_record
+    return compute_net_pay(
+        attendance_earnings,
+        ot=r.ot_allowance if r else 0,
+        advance=r.advance_pay if r else 0,
+        deduction=r.total_deduction if r else 0,
+        food_allowance=r.food_allowance if r else 0,
+        food_usage=r.food_usage if r else 0,
+    )
