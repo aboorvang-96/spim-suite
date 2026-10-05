@@ -29,6 +29,9 @@ def compute_net_pay(attendance_earnings, ot=0, advance=0, deduction=0,
                     food_allowance=0, food_usage=0):
     """Single source of truth for net pay.
 
+    SINGLE SOURCE OF TRUTH. Do not inline this formula elsewhere.
+    Mobile API, web list, report rows, report totals, and cycle totals all call this.
+
     net = attendance_earnings + ot - advance - deduction
           + (food_allowance - food_usage)
 

@@ -1455,8 +1455,11 @@ def _mobile_salary_impl(request):
         emp.pk, type(emp.base_salary).__name__, emp.base_salary,
         present_days, no_week_off_days,
     )
+    # Base for the attendance proration mirrors the web dashboard: the
+    # cycle's SalaryUpdate.basic_salary when a row exists, else Employee.base_salary.
     net_salary_amount, paid_days_dec = _compute_attendance_breakdown(
-        emp, cycle_end.replace(day=1), float(emp.base_salary),
+        emp, cycle_end.replace(day=1),
+        float(sal.basic_salary if sal else emp.base_salary),
     )
     _log.info(
         '[MOBILE_SALARY_STEP3] emp_pk=%s post_compute '
@@ -1521,13 +1524,13 @@ def _mobile_salary_impl(request):
         deductions, advance_deduction,
     )
 
-    # Live net = attendance earnings + OT + food − deductions (advance is
-    # already inside total_deduction on SalaryUpdate; see manage_ajax save).
+    # Live net — SINGLE SOURCE OF TRUTH shared with the Suite web list,
+    # report and cycle totals: attendance + OT - advance - deduction
+    # + (food_allowance - food_usage). See employees.utils.compute_net_pay.
+    from decimal import Decimal
+    from employees.utils import compute_net_pay_for_record
     net_salary_final = round(
-        float(attendance_earnings)
-        + float(ot_allowance)
-        + float(food_allowance)
-        - float(deductions),
+        float(compute_net_pay_for_record(Decimal(attendance_earnings), sal)),
         2,
     )
     net_salary = str(net_salary_final)
