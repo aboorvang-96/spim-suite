@@ -20,6 +20,7 @@ Deliberate design choices:
 import datetime
 import logging
 
+from django.db import transaction
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
@@ -82,72 +83,77 @@ def sync_expense_from_attendance(sender, instance, **kwargs):
     from employees.views import compute_daily_salary_for_attendance
 
     try:
-        if instance.date < CUTOVER_DATE:
-            return
+        # Own SAVEPOINT: a DB error in here must roll back ONLY the expense
+        # write. Swallowing it without a savepoint left the surrounding
+        # attendance transaction aborted, so Postgres silently rolled back
+        # the AttendanceRecord on COMMIT (marks "vanished" later).
+        with transaction.atomic():
+            if instance.date < CUTOVER_DATE:
+                return
 
-        marker = _marker(instance.pk)
-        existing_qs = Transaction.objects.filter(
-            admin_id=instance.admin_id,
-            reference=marker,
-        )
-
-        amount = compute_daily_salary_for_attendance(instance)
-        site = _resolve_site(instance)
-
-        # Unpaid day (leave / no_week_off / etc.) or no site → delete any prior row.
-        if amount <= 0 or not site:
-            deleted, _ = existing_qs.delete()
-            if amount > 0 and not site:
-                logger.warning(
-                    "AUTO-SAL: no site resolvable for AttendanceRecord "
-                    "pk=%s emp=%s date=%s; skipped (deleted=%d)",
-                    instance.pk, instance.employee_id, instance.date, deleted,
-                )
-            return
-
-        user = _resolve_user(instance)
-        if user is None:
-            logger.warning(
-                "AUTO-SAL: no admin user for tenant admin_id=%s; "
-                "skipping AttendanceRecord pk=%s",
-                instance.admin_id, instance.pk,
-            )
-            return
-
-        salary_category, _ = Category.objects.get_or_create(
-            admin_id=instance.admin_id,
-            name='Salary',
-            type='expense',
-            defaults={'created_by': user, 'modified_by': user},
-        )
-
-        description = (
-            f"Auto salary — {instance.employee.name} — {instance.date}"
-        )
-
-        fields = {
-            'user': user,
-            'type': 'expense',
-            'category': salary_category,
-            'amount': amount,
-            'description': description,
-            'date': instance.date,
-            'location_site': site,
-            'admin_id': instance.admin_id,
-            'modified_by': user,
-        }
-
-        row = existing_qs.first()
-        if row is not None:
-            for k, v in fields.items():
-                setattr(row, k, v)
-            row.save()
-        else:
-            Transaction.objects.create(
+            marker = _marker(instance.pk)
+            existing_qs = Transaction.objects.filter(
+                admin_id=instance.admin_id,
                 reference=marker,
-                created_by=user,
-                **fields,
             )
+
+            amount = compute_daily_salary_for_attendance(instance)
+            site = _resolve_site(instance)
+
+            # Unpaid day (leave / no_week_off / etc.) or no site → delete any prior row.
+            if amount <= 0 or not site:
+                deleted, _ = existing_qs.delete()
+                if amount > 0 and not site:
+                    logger.warning(
+                        "AUTO-SAL: no site resolvable for AttendanceRecord "
+                        "pk=%s emp=%s date=%s; skipped (deleted=%d)",
+                        instance.pk, instance.employee_id, instance.date, deleted,
+                    )
+                return
+
+            user = _resolve_user(instance)
+            if user is None:
+                logger.warning(
+                    "AUTO-SAL: no admin user for tenant admin_id=%s; "
+                    "skipping AttendanceRecord pk=%s",
+                    instance.admin_id, instance.pk,
+                )
+                return
+
+            salary_category, _ = Category.objects.get_or_create(
+                admin_id=instance.admin_id,
+                name='Salary',
+                type='expense',
+                defaults={'created_by': user, 'modified_by': user},
+            )
+
+            description = (
+                f"Auto salary — {instance.employee.name} — {instance.date}"
+            )
+
+            fields = {
+                'user': user,
+                'type': 'expense',
+                'category': salary_category,
+                'amount': amount,
+                'description': description,
+                'date': instance.date,
+                'location_site': site,
+                'admin_id': instance.admin_id,
+                'modified_by': user,
+            }
+
+            row = existing_qs.first()
+            if row is not None:
+                for k, v in fields.items():
+                    setattr(row, k, v)
+                row.save()
+            else:
+                Transaction.objects.create(
+                    reference=marker,
+                    created_by=user,
+                    **fields,
+                )
     except Exception:
         # Full traceback — attendance save must never fail because of a
         # downstream expense hiccup, but future debugging needs the stack.
@@ -161,10 +167,11 @@ def sync_expense_from_attendance(sender, instance, **kwargs):
 def remove_expense_on_attendance_delete(sender, instance, **kwargs):
     from finance.models import Transaction
     try:
-        Transaction.objects.filter(
-            admin_id=instance.admin_id,
-            reference=_marker(instance.pk),
-        ).delete()
+        with transaction.atomic():  # own savepoint — see post_save above
+            Transaction.objects.filter(
+                admin_id=instance.admin_id,
+                reference=_marker(instance.pk),
+            ).delete()
     except Exception:
         logger.exception(
             "[SALSYNC] post_delete failed for AttendanceRecord pk=%s",

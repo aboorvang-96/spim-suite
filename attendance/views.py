@@ -148,6 +148,7 @@ def save_attendance(request):
 
     admin_id = get_admin_id(request.user)
     saved = 0
+    saved_rows = []
     failures = []
 
     for idx, record in enumerate(data):
@@ -155,8 +156,13 @@ def save_attendance(request):
         emp_pk = record.get('pk')
         emp    = _resolve_employee(admin_id, emp_id, emp_pk)
         if emp is None:
-            # Silent skip — matches historical behaviour for unresolvable
-            # rows so a bad localStorage entry doesn't break a bulk save.
+            # Was a silent `continue` — the client then showed the row as
+            # marked although nothing reached the DB. Report it instead.
+            failures.append({
+                'rowIndex':   idx,
+                'employeeId': emp_id or '',
+                'error':      'Employee not found for this organisation.',
+            })
             continue
 
         date_val = record.get('date')
@@ -354,12 +360,33 @@ def save_attendance(request):
             })
             continue
 
+        # Regression guard: attendance must never appear marked unless the DB confirmed the save — see Nov 2026 recurrence.
+        # A swallowed DB error inside the atomic block (e.g. in a side-effect
+        # helper) makes Postgres silently ROLL BACK on commit while no
+        # exception reaches us. Re-read the committed row before reporting it.
+        persisted = AttendanceRecord.objects.filter(pk=rec.pk)
+        if status_in_payload:
+            persisted = persisted.filter(status=model_status)
+        if not persisted.exists():
+            _log.error(
+                "attendance.save_attendance: row not persisted after commit "
+                "emp=%s date=%s admin_id=%s", emp.pk, date_val, admin_id,
+            )
+            failures.append({
+                'rowIndex':   idx,
+                'employeeId': emp_id or '',
+                'error':      'Save did not reach the database. Please retry.',
+            })
+            continue
+
         saved += 1
+        saved_rows.append(idx)
 
     return JsonResponse({
-        'success':  True,
-        'saved':    saved,
-        'failures': failures,
+        'success':   True,
+        'saved':     saved,
+        'savedRows': saved_rows,
+        'failures':  failures,
     })
 
 
