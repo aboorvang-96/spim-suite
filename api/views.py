@@ -1622,7 +1622,7 @@ def mobile_dashboard(request):
     # Deferred import to avoid any import-time cycle through api.views.
     from employees.views import _compute_attendance_breakdown
     latest_net_salary_amount, _paid_dec = _compute_attendance_breakdown(
-        emp, cycle_end.replace(day=1), float(emp.base_salary),
+        emp, cycle_end.replace(day=1), None,  # None → monthly snapshot rate (paid_days.resolve_cycle_rate)
     )
     latest_net_salary = str(round(latest_net_salary_amount, 2))
 
@@ -1965,7 +1965,7 @@ def mobile_hr_salary(request):
     # Reuse the exact same helper mobile_salary uses.
     from employees.views import _compute_attendance_breakdown
     net_salary_amount, paid_days_dec = _compute_attendance_breakdown(
-        target, cycle_end.replace(day=1), float(target.base_salary),
+        target, cycle_end.replace(day=1), None,  # None → monthly snapshot rate (paid_days.resolve_cycle_rate)
     )
     net_salary = str(round(net_salary_amount, 2))
     paid_days = float(paid_days_dec)

@@ -418,6 +418,46 @@ def load_attendance(request):
 
 
 @login_required
+def cycle_summary(request):
+    """Paid days / earnings for one employee + 26→25 cycle, straight from
+    employees.paid_days.calculate_paid_days (the single source of truth).
+    The calendar drawer uses this for its footer, per-cell ₹ weights and
+    per-day rate so it always matches the Salary page.
+
+    GET params: empId and/or pk, cycle_end=YYYY-MM-DD (any date in the
+    cycle's end month)."""
+    from accounts.cycle_utils import get_cycle_ending_in_month
+    from employees.paid_days import PAY_WEIGHTS, calculate_paid_days
+    from .utils import STATUS_DISPLAY
+
+    admin_id = get_admin_id(request.user)
+    emp = _resolve_employee(admin_id, request.GET.get('empId'), request.GET.get('pk'))
+    if emp is None:
+        return JsonResponse({'success': False, 'error': 'Employee not found'}, status=404)
+    try:
+        end_ref = datetime.datetime.strptime(request.GET.get('cycle_end', ''), '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid cycle_end'}, status=400)
+
+    cycle = get_cycle_ending_in_month(end_ref)
+    s = calculate_paid_days(emp, cycle['start'], cycle['end'])
+    weights = {
+        STATUS_DISPLAY[status]: float(w)
+        for status, w in PAY_WEIGHTS[s['is_daily']].items()
+    }
+    return JsonResponse({
+        'success':             True,
+        'is_daily':            s['is_daily'],
+        'rate':                float(s['rate']),
+        'per_day_rate':        float(s['per_day_rate']),
+        'cycle_days':          s['cycle_days'],
+        'paid_days':           float(s['paid_days']),
+        'attendance_earnings': float(s['attendance_earnings']),
+        'weights':             weights,
+    })
+
+
+@login_required
 def delete_attendance(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request'})

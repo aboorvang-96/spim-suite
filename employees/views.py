@@ -1495,16 +1495,10 @@ def _render_salary_pdf(rows, total_net, filename_base, period_label, noun='Emplo
 def _attendance_day_weight(status, is_daily):
     """Per-day pay weight for a single AttendanceRecord.status. Shared with
     _compute_attendance_breakdown and the attendance→expense signal so
-    monthly totals and per-day auto-expense rows can never diverge."""
-    if is_daily:
-        if status in ('present', 'week_off'):
-            return Decimal('1')
-        return Decimal('0')
-    if status in ('present', 'week_off', 'holiday'):
-        return Decimal('1')
-    if status == 'half_day':
-        return Decimal('0.5')
-    return Decimal('0')
+    monthly totals and per-day auto-expense rows can never diverge.
+    Weights live in employees/paid_days.py::PAY_WEIGHTS — do not inline."""
+    from .paid_days import day_weight
+    return day_weight(status, is_daily)
 
 
 def compute_daily_salary_for_attendance(attendance):
@@ -1548,11 +1542,8 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
 
     See _compute_attendance_earnings for the formula and fallback semantics.
     """
-    from attendance.models import AttendanceRecord
     from accounts.cycle_utils import get_cycle_ending_in_month
-
-    # Coerce to Decimal to prevent float × Decimal TypeError
-    basic_salary = Decimal(str(basic_salary))
+    from .paid_days import calculate_paid_days
 
     # ---- 26→25 cycle anchored on month_date's END month ----
     # month_date names the payroll month (the month the cycle ENDS in).
@@ -1564,73 +1555,15 @@ def _compute_attendance_breakdown(employee, month_date, basic_salary):
     cycle_start = cycle['start']
     cycle_end   = cycle['end']
 
-    # ---- CycleDays = actual calendar days in the cycle window ----
-    cycle_days = (cycle_end - cycle_start).days + 1
-
-    if cycle_days <= 0:
-        # Defensive: never divide by zero.
-        return basic_salary, Decimal('0')
-
-    today = datetime.date.today()
-
-    records = AttendanceRecord.objects.filter(
-        employee=employee,
-        date__gte=cycle_start,
-        date__lte=cycle_end,
-    ).filter(date__lte=today)
-
-    # Salary Type branch. 'daily_basis' employees never receive the fixed
-    # monthly-salary fallback and never divide by cycle_days — their
-    # `base_salary` field holds a per-day rate and earnings are literally
-    # rate × paid_days. 'base_salary' path below is byte-for-byte the
-    # existing formula.
-    is_daily = getattr(employee, 'salary_type', 'base_salary') == 'daily_basis'
-
-    if not records.exists():
-        if is_daily:
-            # Daily-basis: no attendance → no earnings. Never surface the
-            # per-day rate as a monthly "safe fallback".
-            return Decimal('0'), Decimal('0')
-        # No attendance marked — treat as fully paid (safe fallback).
-        # Paid-days surfaced as CycleDays so the modal stays consistent
-        # with the full-base earnings figure.
-        return basic_salary, Decimal(str(cycle_days))
-
-    # Defensive Sunday rule: even if a future-Sunday row leaked past the
-    # date__lte=today filter, do not credit it.
-    records_paid = records.exclude(
-        date__week_day=1, date__gt=today,
+    # All counting + weighting + rate math lives in employees/paid_days.py.
+    # `basic_salary` is the caller's already-resolved snapshot rate
+    # (SalaryUpdate.basic_salary for the month, else Employee.base_salary);
+    # None → resolve it here with the same rule.
+    summary = calculate_paid_days(
+        employee, cycle_start, cycle_end,
+        rate=None if basic_salary is None else Decimal(str(basic_salary)),
     )
-
-    present_days  = records_paid.filter(status='present').count()
-    holiday_days  = records_paid.filter(status='holiday').count()
-    half_days     = records_paid.filter(status='half_day').count()
-    week_off_days = records_paid.filter(status='week_off').count()
-
-    # Weights sourced from the shared _attendance_day_weight table so the
-    # per-day auto-expense signal (attendance/signals.py) never diverges
-    # from this monthly aggregate.
-    w_present  = _attendance_day_weight('present',  is_daily)
-    w_week_off = _attendance_day_weight('week_off', is_daily)
-    w_holiday  = _attendance_day_weight('holiday',  is_daily)
-    w_half_day = _attendance_day_weight('half_day', is_daily)
-
-    paid_days = (
-        Decimal(str(present_days))  * w_present
-        + Decimal(str(week_off_days)) * w_week_off
-        + Decimal(str(holiday_days))  * w_holiday
-        + Decimal(str(half_days))     * w_half_day
-    )
-
-    if is_daily:
-        # Daily basis: no cycle divisor — basic_salary is a per-day rate.
-        final_salary = (basic_salary * paid_days).quantize(Decimal('0.01'))
-        return final_salary, paid_days
-
-    cycle_dec    = Decimal(str(cycle_days))
-    daily_salary = basic_salary / cycle_dec
-    final_salary = (daily_salary * paid_days).quantize(Decimal('0.01'))
-    return final_salary, paid_days
+    return summary['attendance_earnings'], summary['paid_days']
 
 
 def _compute_attendance_earnings(employee, month_date, basic_salary):

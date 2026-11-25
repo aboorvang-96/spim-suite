@@ -7,6 +7,7 @@ urlpatterns = [
     path('', views.index, name='index'),
     path('load/', views.load_attendance, name='load_attendance'),
     path('save/', views.save_attendance, name='save_attendance'),
+    path('cycle-summary/', views.cycle_summary, name='cycle_summary'),
     path('delete/', views.delete_attendance, name='delete_attendance'),
     path('remarks/unlock/', views.unlock_remarks, name='unlock_remarks'),
     path('machines/suggest/', views.machine_suggest, name='machine_suggest'),

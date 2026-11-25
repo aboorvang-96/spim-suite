@@ -233,7 +233,7 @@
                         <input type="number" name="advance" id="edit-advance" class="filter-input" oninput="calcNet()" title="Advance Pay">
                     </div>
                     <div class="form-group">
-                        <label class="stat-label">Paid Days <span style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(Present + Week Off + Holiday + 0.5×Half Day)</span></label>
+                        <label class="stat-label">Paid Days <span id="edit-paid-days-formula" style="font-size:0.65rem;color:var(--slate-500);font-weight:400">(Present + Week Off + Holiday + 0.5×Half Day)</span></label>
                         <input type="text" id="edit-paid-days" class="filter-input" readonly style="background:var(--slate-50);cursor:not-allowed;" title="Sum of paid days from attendance records for this cycle" placeholder="No records">
                     </div>
                     <div class="form-group">
@@ -824,6 +824,7 @@
         var hint     = document.getElementById('edit-salary-hint');
         if (!sTypeSel || !lbl) return;
         var isDaily = sTypeSel.value === 'daily_basis';
+        updatePaidDaysLabel(isDaily);
         // Preserve the existing "Base Salary (₹) …" text node structure
         // by rebuilding the label + inner <span> instead of replacing the
         // whole element (keeps CSS selectors, id, and layout intact).
@@ -839,89 +840,22 @@
         if (typeof calcNet === 'function') calcNet();
     }
 
-    /* ── Attendance earnings: read localStorage, compute payable days × per-day ── */
+    /* ── Attendance earnings: server value only.
+       Computed by employees/paid_days.py::calculate_paid_days (same helper
+       the list, Save and payslips use). No client-side pay math here. ── */
     function calcAttendanceEarnings() {
-        const recId  = parseInt(document.getElementById('edit-id').value, 10);
-        const base   = parseFloat(document.getElementById('edit-salary').value) || 0;
-        const month  = document.getElementById('edit-month').value;   // e.g. "May"
-        const year   = parseInt(document.getElementById('edit-year').value, 10);
-
-        if (!base || !recId || !month || !year) return 0;
-
+        const recId = parseInt(document.getElementById('edit-id').value, 10);
+        if (!recId) return 0;
         const s = salaryData.find(x => x.id === recId);
-        if (!s) return 0;
+        return (s && typeof s.attendance_earnings === 'number') ? s.attendance_earnings : 0;
+    }
 
-        // Prefer the server-computed attendance_earnings value (single source
-        // of truth — same _compute_attendance_earnings helper the dashboard
-        // list and the Save handler use). Falls through to the legacy
-        // localStorage path only if the server didn't include one.
-        if (typeof s.attendance_earnings === 'number' && s.attendance_earnings > 0) {
-            return s.attendance_earnings;
-        }
-
-        // Match the empId used in attendance localStorage
-        const empId = (s.employee_id && String(s.employee_id).trim())
-                      ? String(s.employee_id).trim()
-                      : String(s.id);
-
-        const MONTHS = ["January","February","March","April","May","June",
-                        "July","August","September","October","November","December"];
-        const mIdx = MONTHS.indexOf(month);
-        if (mIdx < 0) return 0;
-
-        // 26→25 cycle for the selected month
-        const cycleEnd   = new Date(year, mIdx,     25);
-        const cycleStart = new Date(year, mIdx - 1, 26);
-
-        function _dts(d) {
-            return d.getFullYear() + '-'
-                + String(d.getMonth() + 1).padStart(2, '0') + '-'
-                + String(d.getDate()).padStart(2, '0');
-        }
-        const cStart = _dts(cycleStart);
-        const cEnd   = _dts(cycleEnd);
-
-        const attendance = JSON.parse(localStorage.getItem('attendance') || '[]');
-        const records = attendance.filter(r =>
-            String(r.empId) === empId && r.date >= cStart && r.date <= cEnd
-        );
-
-        if (records.length === 0) return 0;
-
-        // Salary Type branch — Daily Basis counts only worked days
-        // (Present + 0.5 × Half Day); Base Salary keeps the existing
-        // fixed-26 divisor + cap formula with the full paid-day set.
-        const isDaily = (s.salary_type === 'daily_basis');
-
-        if (isDaily) {
-            // Daily Basis: pay ONLY for full Present days. Half Day /
-            // Holiday / Weekly Off / Sunday / Leave / No Week Off all
-            // contribute 0 — mirrors the server-side rule in
-            // employees/views.py::_compute_attendance_breakdown.
-            let worked = 0;
-            records.forEach(r => {
-                if ((r.status || '').trim() === 'Present') worked += 1;
-                // Every other status contributes 0.
-            });
-            return Math.round(worked * base * 100) / 100;
-        }
-
-        // ── Base Salary: existing formula unchanged ──
-        let payable = 0;
-        records.forEach(r => {
-            const st = (r.status || '').trim();
-            if      (st === 'Present')    payable += 1;
-            else if (st === 'Half Day')   payable += 0.5;
-            else if (st === 'Holiday')    payable += 1;
-            else if (st === 'Weekly Off') payable += 1;
-            // Leave = 0 (unpaid)
-        });
-        // Fixed 26-day divisor — ensures full attendance always equals basic salary
-        // regardless of whether the calendar month has 28, 29, 30, or 31 days.
-        const perDay = base / 26;
-        // Cap at basic salary so no over-payment in longer cycles
-        const computed = Math.round(payable * perDay * 100) / 100;
-        return Math.min(computed, base);
+    /* Paid-days label follows the employee's salary type. */
+    function updatePaidDaysLabel(isDaily) {
+        const el = document.getElementById('edit-paid-days-formula');
+        if (el) el.textContent = isDaily
+            ? '(Present + Week Off)'
+            : '(Present + Week Off + Holiday + 0.5×Half Day)';
     }
 
     function calcNet() {
