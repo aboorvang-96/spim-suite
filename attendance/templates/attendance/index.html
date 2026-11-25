@@ -797,6 +797,9 @@ const EMPLOYEE_KEY    = 'employees';
 const ATTENDANCE_KEY  = 'attendance';
 const LOCATIONS_KEY   = 'locations';
 const SITES_KEY       = 'sites';
+// Shared site list + "(No Site)" sentinel (finance.services.site_cards).
+var SHARED_SITE_NAMES = {{ shared_site_names_json|default:"[]"|safe }};
+var NO_SITE_VALUE     = '__NO_SITE__';
 const STATUS_OPTIONS  = ['Present', 'Leave', 'Holiday', 'Weekly Off', 'Half Day', 'No Week Off'];
 const DAY_NAMES       = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTH_NAMES     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1181,13 +1184,22 @@ function updateLocSiteDropdown() {
         if (e.mainLocation || e.site)
             pairs.add((e.mainLocation || '') + '|' + (e.site || ''));
     });
+    // Shared site list (same helper Income/Expense/Salary/Projects use) so a
+    // site added anywhere shows here without a manual sync.
+    const known = new Set([...pairs].map(p => (p.split('|')[1] || '').toLowerCase()));
+    (SHARED_SITE_NAMES || []).forEach(s => {
+        if (s && !known.has(s.toLowerCase())) pairs.add('|' + s);
+    });
+    const prev = sel.value;
     let html = '<option value="">-- All Locations/Sites --</option>';
     [...pairs].sort().forEach(p => {
         const [loc, site] = p.split('|');
         const label = (loc && site) ? loc + ' / ' + site : (loc || site);
-        html += `<option value="${p}">${label}</option>`;
+        html += `<option value="${escAttr(p)}">${escHtml(label)}</option>`;
     });
+    html += `<option value="${NO_SITE_VALUE}">(No Site)</option>`;
     sel.innerHTML = html;
+    if (prev) sel.value = prev;
 }
 
 /* ═══════════════════════════════════════════════
@@ -1221,7 +1233,11 @@ function loadBulkAttendanceTable() {
     const locSiteVal   = document.getElementById('attLocSite') ? document.getElementById('attLocSite').value : '';
     const allEmployees = loadEmployees();
     let targetEmps     = empId ? allEmployees.filter(e => String(e.id) === String(empId)) : allEmployees;
-    if (locSiteVal) {
+    if (locSiteVal === NO_SITE_VALUE) {
+        // "(No Site)" — employees with no site set (same bucket as the
+        // Income/Expense "(No Site)" card).
+        targetEmps = targetEmps.filter(e => !(e.site || '').trim());
+    } else if (locSiteVal) {
         const [filterLoc, filterSite] = locSiteVal.split('|');
         targetEmps = targetEmps.filter(e =>
             (!filterLoc  || (e.mainLocation || '') === filterLoc) &&

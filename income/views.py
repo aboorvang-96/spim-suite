@@ -33,9 +33,10 @@ def _site_color_index(name):
 
 
 def _location_sites_json(user):
-    admin_id = get_admin_id(user)
-    names = list(LocationSite.objects.filter(admin_id=admin_id).values_list('name', flat=True))
-    return json.dumps(names)
+    # Shared site list (finance.services.site_cards) incl. "(No Site)" —
+    # identical to the Expense page's list.
+    from finance.services.site_cards import site_choice_names
+    return json.dumps(site_choice_names(get_admin_id(user)))
 
 
 def _shared_sources_json(user):
@@ -271,7 +272,7 @@ def income_list(request):
     # Seed identical to /expenses/: single-source helper get_expense_card_seed.
     # Same admin, same cycle bounds → identical card set (names + order).
     # Any divergence between the two pages is a bug in the shared helper.
-    from finance.services.site_cards import get_expense_card_seed, has_unassigned_transactions
+    from finance.services.site_cards import get_expense_card_seed, site_key as _site_key
     from accounts.cycle_utils import get_salary_cycle
     from accounts.date_utils import today_ist
     from django.utils import timezone as _tz_seed
@@ -287,13 +288,17 @@ def income_list(request):
     )
 
     accounts_grouped = _group_incomes_by_account(incomes_list)
-    sites_grouped    = _group_incomes_by_site(incomes_list, request.user, seed_names=seed_site_names)
-
-    # Drop the (No Site) bucket unless a legacy row without location_site exists.
-    if not (has_unassigned_transactions(admin_id) or any(
-        not (getattr(i, 'location_site', None) or '').strip() for i in incomes_list
-    )):
-        sites_grouped = [g for g in sites_grouped if g['site_key']]
+    # Same card set + same Credit/Debit rule + same 26→25 cycle as
+    # /expenses/ (finance.services.site_cards.build_site_cards). Blank-site
+    # rows land in the shared "(No Site)" card.
+    _restrict = (
+        {('' if s == 'UNASSIGNED' else _site_key(s)) for s in sites} if sites else None
+    )
+    sites_grouped = _group_incomes_by_site(
+        incomes_list, request.user, seed_names=seed_site_names,
+        cycle_start=_cycle['start'], cycle_end=_cycle['end'],
+        restrict_keys=_restrict,
+    )
 
     # Salary Income side panel — mirrors the expense-side salary panel.
     # Rows are Income.objects with is_salary=True in the current salary
@@ -342,7 +347,9 @@ def income_list(request):
         'accounts_grouped': accounts_grouped,
         'sites_grouped':    sites_grouped,
         'categories':       categories,
-        'current_month':    _tz.now().strftime('%Y-%m'),
+        # Card cycle picker default — 26→25 cycle key ('YYYY-MM' of the
+        # cycle END month), same as /expenses/.
+        'current_month':    _cycle['month_key'],
         'total':            total,
         'count':            count,
         'average':          average,
@@ -550,33 +557,14 @@ def _is_ajax(request):
 
 
 def _normalize_site_or_office(admin_id, raw, user=None):
-    """Reject orphan sites on the write path.
-
-    Inline row writes always POST location_site from the card they were
-    added under, but a crafted request could try to smuggle in an
-    arbitrary site name. If the value isn't in the canonical set
-    (sites_for_admin), fold it to "OFFICE" — matching the presentation-
-    layer OFFICE fold in _group_incomes_by_site and the rewrite_income_sites
-    backfill. Guarantees no new orphan Income rows leak past the API.
-    """
-    from projects.utils import sites_for_admin
-    from attendance.site_utils import get_or_create_office_site, OFFICE_SITE_NAME
-    value = (raw or '').strip()
-    if not value:
-        try:
-            get_or_create_office_site(admin_id, user)
-        except Exception:
-            pass
-        return OFFICE_SITE_NAME
-    canonical = {s.lower(): s for s in sites_for_admin(admin_id)}
-    hit = canonical.get(value.lower())
-    if hit is not None:
-        return hit
-    try:
-        get_or_create_office_site(admin_id, user)
-    except Exception:
-        pass
-    return OFFICE_SITE_NAME
+    """Write-path site normalisation for Income rows (see comment below)."""
+    # Superseded: Income now uses the ONE shared site create path
+    # (finance.services.site_cards.ensure_site), same as Expense. Blank /
+    # "(No Site)" → '' (the shared No Site bucket, not OFFICE); a new name
+    # is registered as a projects.Site + LocationSite so it appears in
+    # Expense, Attendance, Salary and Projects immediately.
+    from finance.services.site_cards import ensure_site
+    return ensure_site(admin_id, raw, user)
 
 
 @login_required
@@ -657,8 +645,58 @@ def _group_incomes_by_account(qs):
     )
 
 
-def _group_incomes_by_site(incomes, user, seed_names=None):
+def _group_incomes_by_site(incomes, user, seed_names=None,
+                           cycle_start=None, cycle_end=None, restrict_keys=None):
+    """Income site cards — built by the SAME helper as the Expense cards
+    (finance.services.site_cards.build_site_cards), so both pages show the
+    same card set, the same "(No Site)" bucket and the same Credit / Debit
+    figures for the same 26→25 cycle:
+
+      credit = Income rows in the cycle
+      debit  = non-salary expenses in the cycle + attendance salary per site
+
+    Σ card debits == the "Total Debits" KPI. This function only groups the
+    page's Income rows by site_key() so each card can list its rows; blank
+    and "(No Site)" rows go to the "(No Site)" card (no more OFFICE fold).
     """
+    import datetime as _dt
+    from accounts.views import get_admin_id
+    from accounts.cycle_utils import get_salary_cycle
+    from accounts.date_utils import today_ist
+    from finance.services.site_cards import build_site_cards, site_key
+
+    admin_id = get_admin_id(user)
+    if cycle_start is None or cycle_end is None:
+        _c = get_salary_cycle(today_ist())
+        cycle_start, cycle_end = _c['start'], _c['end']
+
+    row_groups = {}
+    for i in incomes:
+        k = site_key(getattr(i, 'location_site', None))
+        g = row_groups.setdefault(k, {
+            'site': (getattr(i, 'location_site', None) or '').strip(),
+            'site_key': k, 'count': 0, 'transactions': [], 'latest_date': None,
+        })
+        g['count'] += 1
+        g['transactions'].append(i)
+        if i.date and (g['latest_date'] is None or i.date > g['latest_date']):
+            g['latest_date'] = i.date
+    for g in row_groups.values():
+        g['transactions'].sort(key=lambda x: (x.date or _dt.date.min), reverse=True)
+
+    return build_site_cards(
+        admin_id, cycle_start, cycle_end,
+        seed_names=seed_names,
+        row_groups=list(row_groups.values()),
+        restrict_keys=restrict_keys,
+    )
+
+
+def _legacy_group_incomes_by_site(incomes, user, seed_names=None):
+    """
+    UNUSED since the shared site-card helper landed (kept one release for
+    rollback reference; safe to delete).
+
     Site-based card view (Income/Expense restructure).
 
     Groups incomes by `location_site` (case-insensitive). For each site
@@ -895,12 +933,8 @@ def _ensure_location_site(admin_id, name, created_by):
     """
     if not admin_id:
         return
-    name = (name or '').strip()
-    if not name:
-        return
-    if LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
-        return
-    LocationSite.objects.create(admin_id=admin_id, name=name, created_by=created_by)
+    from finance.services.site_cards import ensure_site
+    ensure_site(admin_id, name, created_by)
 
 
 def _income_to_dict(i):

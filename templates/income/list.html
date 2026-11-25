@@ -603,8 +603,8 @@
                    style="width:18px;height:18px;accent-color:#dc2626;cursor:pointer;">
           </label>
           <h3 class="site-card-title">{{ group.label|default:group.site }}</h3>
-          <select class="card-month-picker" title="View totals for a specific month">
-            <option value="all">All Months</option>
+          <select class="card-month-picker" title="View totals for a specific salary cycle">
+            <option value="all">All Cycles</option>
             {% for m in group.month_options %}
             <option value="{{ m.key }}"{% if m.key == current_month %} selected{% endif %}>{{ m.label }}</option>
             {% endfor %}

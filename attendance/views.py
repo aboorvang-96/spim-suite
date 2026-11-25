@@ -114,8 +114,20 @@ def index(request):
         'is_admin':       bool(getattr(request.user, 'is_admin', False)),
         'project_clients_json': json.dumps(project_clients),
         'project_sites_json':   json.dumps(project_sites),
+        # Shared site list (finance.services.site_cards) for the bulk-entry
+        # "All Locations/Sites" filter; "(No Site)" is appended client-side
+        # with the shared sentinel value.
+        'shared_site_names_json': json.dumps(_shared_site_names(admin_id)),
     }
     return render(request, 'attendance/index.html', context)
+
+
+def _shared_site_names(admin_id):
+    from finance.services.site_cards import site_choices
+    try:
+        return [c['value'] for c in site_choices(admin_id, include_no_site=False)]
+    except Exception:
+        return []
 
 
 @login_required

@@ -132,6 +132,14 @@ def _location_sites_json(user):
     return json.dumps(names)
 
 
+def _salary_site_options(admin_id):
+    """Salary page Site filter options — shared site list (finance.services.
+    site_cards.site_choice_names) ∪ Employee.site values, "(No Site)" last."""
+    from finance.services.site_cards import site_choice_names
+    emp_sites = Employee.objects.filter(admin_id=admin_id).values_list('site', flat=True).distinct()
+    return site_choice_names(admin_id, extra=emp_sites)
+
+
 def timezone_month_map(month_name):
     months = {
         "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
@@ -891,7 +899,9 @@ def salary_dashboard(request):
         if f_location:
             queryset = queryset.filter(location=f_location)
         if f_site:
-            queryset = queryset.filter(site=f_site)
+            # Shared helper: "(No Site)" matches blank/NULL Employee.site.
+            from finance.services.site_cards import site_filter_q
+            queryset = queryset.filter(site_filter_q('site', f_site))
         if f_bank:
             queryset = queryset.filter(bank_details__bank_name=f_bank)
         if f_search:
@@ -1060,7 +1070,9 @@ def salary_dashboard(request):
             },
             'filters': {
                 'locations': list(Employee.objects.filter(admin_id=admin_id).values_list('location', flat=True).distinct()),
-                'sites': list(Employee.objects.filter(admin_id=admin_id).values_list('site', flat=True).distinct()),
+                # Shared site list (same helper as Income/Expense/Attendance/
+                # Projects) ∪ employee home sites, with "(No Site)" last.
+                'sites': _salary_site_options(admin_id),
                 'banks': list(BankDetail.objects.filter(employee__admin_id=admin_id).values_list('bank_name', flat=True).distinct()),
             }
         })
@@ -1161,7 +1173,8 @@ def _salary_report_response(request, is_vehicle=False, fmt=None):
     if f_location:
         queryset = queryset.filter(location=f_location)
     if f_site:
-        queryset = queryset.filter(site=f_site)
+        from finance.services.site_cards import site_filter_q
+        queryset = queryset.filter(site_filter_q('site', f_site))
     if f_bank:
         queryset = queryset.filter(bank_details__bank_name=f_bank)
     if f_search:

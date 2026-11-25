@@ -192,10 +192,20 @@ def work_log_dashboard(request):
         'tree_json':      json.dumps(tree),
         'clients_json':   json.dumps(clients_flat),
         'sites_json':     json.dumps(sites_flat),
+        # Shared site list (incl. "(No Site)") for the Site filter inputs.
+        'site_choice_names': _shared_site_names(admin_id),
         # UX-only gate for the tree's Edit/Delete icon buttons. The
         # authoritative check stays on the endpoints via @admin_required.
         'is_admin':       bool(getattr(request.user, 'is_admin', False)),
     })
+
+
+def _shared_site_names(admin_id):
+    from finance.services.site_cards import site_choice_names
+    try:
+        return site_choice_names(admin_id)
+    except Exception:
+        return []
 
 
 def _build_projects_tree(admin_id):
@@ -256,7 +266,8 @@ def _work_log_json(request, admin_id):
     if f_location:
         qs = qs.filter(location_id=f_location)
     if f_site:
-        qs = qs.filter(site__icontains=f_site)
+        from finance.services.site_cards import site_filter_q
+        qs = qs.filter(site_filter_q('site', f_site, contains=True))
     if f_remarks:
         qs = qs.filter(remarks__icontains=f_remarks)
 
@@ -336,7 +347,8 @@ def _work_summary_json(request, admin_id):
     if f_date_to:
         qs = qs.filter(date__lte=f_date_to)
     if f_site:
-        qs = qs.filter(site__icontains=f_site)
+        from finance.services.site_cards import site_filter_q
+        qs = qs.filter(site_filter_q('site', f_site, contains=True))
     if f_location:
         qs = qs.filter(location_id=f_location)
     if f_remarks:
@@ -1086,7 +1098,9 @@ def machine_monthly_report(request):
         .order_by('date')
     )
     if site_flt:
-        qs = qs.filter(site__icontains=site_flt)
+        # Shared helper: "(No Site)" matches blank/NULL WorkLog.site.
+        from finance.services.site_cards import site_filter_q
+        qs = qs.filter(site_filter_q('site', site_flt, contains=True))
 
     # day (1–31) → {emp_id_set, work_details, site}
     # TMP is derived from len(emp_ids) at output time below — the stored
@@ -1181,7 +1195,9 @@ def _build_work_summary_matrix(admin_id, year, month, location, site_flt):
         .order_by('date')
     )
     if site_flt:
-        qs = qs.filter(site__icontains=site_flt)
+        # Shared helper: "(No Site)" matches blank/NULL WorkLog.site.
+        from finance.services.site_cards import site_filter_q
+        qs = qs.filter(site_filter_q('site', site_flt, contains=True))
 
     day_map      = {}
     emp_registry = {}

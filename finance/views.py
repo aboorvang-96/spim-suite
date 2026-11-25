@@ -68,9 +68,10 @@ def _resolve_active_cycle(request):
 
 
 def _location_sites_json(user):
-    admin_id = get_admin_id(user)
-    names = list(LocationSite.objects.filter(admin_id=admin_id).values_list('name', flat=True))
-    return json.dumps(names)
+    # Shared site list (finance.services.site_cards) incl. "(No Site)" —
+    # identical to the Income page's list.
+    from finance.services.site_cards import site_choice_names
+    return json.dumps(site_choice_names(get_admin_id(user)))
 
 
 def _shared_sources_json(user):
@@ -926,12 +927,24 @@ def transaction_list(request):
     accounts_grouped = _group_expenses_by_account(transactions_list)
     sites_grouped    = _group_expenses_by_site(transactions_list, request.user, seed_names=seed_site_names)
 
-    # Only surface the "(No Site)" / Unassigned bucket when a legacy row
-    # without a location_site actually exists — otherwise the card is empty
-    # clutter. Drop it from sites_grouped when the check comes back False.
+    # Card figures + card set come from the SAME helper /income/ uses
+    # (finance.services.site_cards.build_site_cards): credit = Income in
+    # the cycle, debit = non-salary expenses in the cycle + attendance
+    # salary per site, one "(No Site)" card for blank-site money. The
+    # grouping above only supplies each card's row lists; its figures
+    # (which were built from the first 200 rows only) are overwritten.
+    from finance.services.site_cards import build_site_cards, site_key as _sk
+    _site_filter = filters.get('sites') or []
+    sites_grouped = build_site_cards(
+        admin_id, cycle_start, cycle_end,
+        seed_names=seed_site_names,
+        row_groups=sites_grouped,
+        restrict_keys=(
+            {('' if s == 'UNASSIGNED' else _sk(s)) for s in _site_filter}
+            if _site_filter else None
+        ),
+    )
     has_unassigned = has_unassigned_transactions(admin_id, txn_type='expense')
-    if not has_unassigned:
-        sites_grouped = [g for g in sites_grouped if g['site_key']]
 
     # Site dropdown — full universe of sites the tenant has ever used, so
     # the filter never looks broken.
@@ -1056,12 +1069,11 @@ def add_transaction(request):
         t.user     = request.user
         t.type     = 'expense'
         t.admin_id = get_admin_id(request.user)
+        # ONE shared create path (also used by Income): registers a new
+        # site in projects.Site + LocationSite; "(No Site)" → ''.
+        from finance.services.site_cards import ensure_site
+        t.location_site = ensure_site(t.admin_id, t.location_site, request.user)
         t.save()
-        if t.location_site:
-            admin_id = get_admin_id(request.user)
-            name = t.location_site.strip()
-            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
-                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
         if ajax:
             d = _expense_to_dict(t)
             d['combo'] = _expense_combo_data(t, request.user)
@@ -1097,12 +1109,9 @@ def edit_transaction(request, pk):
         obj.user     = request.user
         obj.type     = 'expense'
         obj.admin_id = get_admin_id(request.user)
+        from finance.services.site_cards import ensure_site
+        obj.location_site = ensure_site(obj.admin_id, obj.location_site, request.user)
         obj.save()
-        if obj.location_site:
-            admin_id = get_admin_id(request.user)
-            name = obj.location_site.strip()
-            if name and not LocationSite.objects.filter(admin_id=admin_id, name__iexact=name).exists():
-                LocationSite.objects.create(admin_id=admin_id, name=name, created_by=request.user)
         if ajax:
             d = _expense_to_dict(obj)
             d['combo'] = _expense_combo_data(obj, request.user)

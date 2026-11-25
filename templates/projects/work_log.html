@@ -315,7 +315,10 @@
             </div>
             <div class="filter-group" style="min-width:140px;">
                 <label>Site</label>
-                <input type="text" id="s-site" class="filter-input" placeholder="Site name…" title="Filter by site">
+                <input type="text" id="s-site" class="filter-input" placeholder="Site name…" title="Filter by site" list="shared-site-options">
+                <datalist id="shared-site-options">
+                    {% for n in site_choice_names %}<option value="{{ n }}"></option>{% endfor %}
+                </datalist>
             </div>
             <div class="filter-group" style="min-width:140px;">
                 <label>Remarks</label>
@@ -368,7 +371,7 @@
                 </div>
                 <div class="filter-group" style="min-width:130px;">
                     <label>Site</label>
-                    <input type="text" id="r-site" class="filter-input" placeholder="Optional…">
+                    <input type="text" id="r-site" class="filter-input" placeholder="Optional…" list="shared-site-options">
                 </div>
                 <button class="btn btn-primary btn-sm" style="height:38px;align-self:flex-end;" onclick="generateReport()">
                     Generate Report
