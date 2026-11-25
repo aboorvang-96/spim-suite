@@ -2627,11 +2627,15 @@ function perDay(monthlySalary, cycleDays, salaryType) {
 }
 
 /* Per-cell earning — pay-per-status weights per the business rule.
-   daily_basis employees earn only on Present days (full daily salary). */
+   daily_basis employees earn on Present + Weekly Off days (full daily
+   salary); Holiday / Half Day / Leave pay 0. Mirrors the backend
+   employees/views.py::_attendance_day_weight — keep the two in sync. */
 function dailyEarning(status, baseSalary, cycleDays, salaryType) {
     const pd = perDay(baseSalary, cycleDays, salaryType);
     if (salaryType === 'daily_basis') {
-        if (status === 'Present') return pd;
+        if (status === 'Present')    return pd;
+        if (status === 'Week Off')   return pd;
+        if (status === 'Weekly Off') return pd;
         return 0;
     }
     if (status === 'Present')    return pd;
@@ -2667,7 +2671,8 @@ function computeCycleEarnings(records, baseSalary, cycleDays, salaryType) {
         }
     });
     if (isDaily) {
-        return baseSalary * present;
+        // Daily basis: Present + Weekly Off (see _attendance_day_weight).
+        return baseSalary * (present + weekOff);
     }
     const paidDays = present + holiday + weekOff + 0.5 * half;
     return (baseSalary / cycleDays) * paidDays;
