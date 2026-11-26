@@ -10,7 +10,7 @@ from .models import Transaction, Category, Source
 from .forms import TransactionForm, CategoryForm
 from branches.models import LocationSite
 from accounts.views import get_admin_id
-from accounts.date_utils import today_ist
+from accounts.date_utils import today_ist, validate_not_future
 from accounts.cycle_utils import get_salary_cycle
 
 
@@ -386,11 +386,18 @@ def _group_expenses_by_site(expenses, user, seed_names=None):
                 'from_account': _inc['from_account'],
                 'to_account':   _inc['to_account'],
             })
+        # ONE table row per (site, date): every expense Transaction of the
+        # day is folded into its category column. Each Transaction still
+        # holds a single category — the merge is display-only, and the
+        # row's Save goes through save_expense_day (upsert per category).
+        _by_date = {}
         for _t in g['transactions']:
+            _by_date.setdefault(_t.date, []).append(_t)
+        for _d, _txns in _by_date.items():
             _combined.append({
                 'kind': 'expense',
-                'date': _t.date,
-                'obj':  _t,
+                'date': _d,
+                'day':  _build_day_row(_d, _txns),
             })
         _combined.sort(key=lambda r: (
             r['date'] or _dt.date.min,
@@ -601,6 +608,214 @@ def _expense_combo_data(t, user):
         if c['source'].lower() == src and c['account'].lower() == acc:
             return c
     return None
+
+
+# ── Site-detail "one row per (site, date)" ───────────────────────────────
+# Column order of the Expense Manager site panel. Each Transaction stores a
+# single expense_category; the panel shows a day's records side by side.
+DAY_ROW_CATEGORIES = ('food', 'room', 'diesel', 'travel', 'ticket', 'other')
+DAY_ROW_LABELS = {
+    'food': 'Food', 'room': 'Room', 'diesel': 'Diesel',
+    'travel': 'Travel', 'ticket': 'Ticket', 'other': 'Misc./Others',
+}
+
+
+def _day_row_cat(code):
+    """Panel column for a stored expense_category. Legacy 'fuel' → diesel;
+    blank / unknown codes → other (same rule the old per-row template used)."""
+    c = (code or '').strip().lower()
+    if c == 'fuel':
+        return 'diesel'
+    return c if c in DAY_ROW_CATEGORIES else 'other'
+
+
+def _build_day_row(date, txns):
+    """Fold one (site, date)'s expense Transactions into a single row dict.
+    count > 1 in a column means several records share that category on the
+    same day — the UI shows the sum and keeps that cell read-only."""
+    from decimal import Decimal as _D
+    txns = sorted(txns, key=lambda t: t.pk)
+    cats = {c: {'key': c, 'amount': _D('0'), 'count': 0} for c in DAY_ROW_CATEGORIES}
+    remarks = []
+    for t in txns:
+        slot = cats[_day_row_cat(t.expense_category)]
+        slot['amount'] += (t.amount or _D('0'))
+        slot['count'] += 1
+        d = (t.description or '').strip()
+        if d and d not in remarks:
+            remarks.append(d)
+    return {
+        'date':     date,
+        'cat_list': [cats[c] for c in DAY_ROW_CATEGORIES],
+        'pks':      [t.pk for t in txns],
+        'pks_csv':  ','.join(str(t.pk) for t in txns),
+        'remarks':  ' | '.join(remarks),
+        'count':    len(txns),
+    }
+
+
+def _day_row_json(day):
+    return {
+        'date':    day['date'].isoformat() if day['date'] else '',
+        'cats':    {c['key']: {'amount': str(c['amount']), 'count': c['count']}
+                    for c in day['cat_list']},
+        'pks':     day['pks'],
+        'remarks': day['remarks'],
+        'count':   day['count'],
+    }
+
+
+def _day_expense_txns(admin_id, skey, date, lock=False):
+    """Every non-salary expense Transaction for (tenant, site key, date) —
+    the same population the site panel renders. Site matching uses the
+    shared site_key() so '', NULL and '(No Site)' land in one bucket."""
+    from finance.services.site_cards import site_key
+    qs = (Transaction.objects
+          .filter(admin_id=admin_id, type='expense', date=date)
+          .exclude(reference__startswith=AUTO_SAL_PREFIX)
+          .order_by('pk'))
+    if lock:
+        qs = qs.select_for_update()
+    return [t for t in qs if site_key(t.location_site) == skey]
+
+
+def _parse_day_amount(raw):
+    """'' / None → 0. Returns Decimal, or None when the value is invalid."""
+    from decimal import Decimal as _D, InvalidOperation
+    s = str(raw if raw is not None else '').replace(',', '').strip()
+    if not s:
+        return _D('0')
+    try:
+        v = _D(s).quantize(_D('0.01'))
+    except (InvalidOperation, ValueError):
+        return None
+    if v < 0 or v >= _D('10000000000'):
+        return None
+    return v
+
+
+@login_required
+def save_expense_day(request):
+    """Upsert the site panel's (site, date) row.
+
+    POST: site, date, cat_<food|room|diesel|travel|ticket|other>,
+          orig_<cat> (value the row showed when editing began),
+          remarks, orig_remarks; or action=delete + pks.
+
+    Per category: unchanged → untouched. Changed → update the single
+    existing record, delete it when set to 0, or create one when none
+    exists. Never overwrites a column the user didn't change, and refuses
+    (409) when the DB no longer matches what the row showed, or when the
+    column holds more than one record — nothing is silently merged.
+    """
+    from decimal import Decimal
+    from django.db import transaction as db_tx
+    from django.core.exceptions import ValidationError
+    from finance.services.site_cards import ensure_site, site_key
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'POST required.'}, status=405)
+
+    admin_id = get_admin_id(request.user)
+    raw_site = request.POST.get('site', '')
+    skey = site_key(raw_site)
+    date = _parse_iso_date(request.POST.get('date'))
+    if date is None:
+        return JsonResponse({'success': False, 'message': 'Please enter a valid date.'}, status=400)
+    try:
+        validate_not_future(date, 'Expense date')
+    except ValidationError as exc:
+        return JsonResponse({'success': False, 'message': ' '.join(exc.messages)}, status=400)
+
+    if (request.POST.get('action') or '') == 'delete':
+        wanted = {int(x) for x in request.POST.get('pks', '').split(',') if x.strip().isdigit()}
+        with db_tx.atomic():
+            txns = _day_expense_txns(admin_id, skey, date, lock=True)
+            for t in txns:
+                if t.pk in wanted:
+                    t.delete()
+            remaining = _day_expense_txns(admin_id, skey, date)
+        return JsonResponse({'success': True, 'day': _day_row_json(_build_day_row(date, remaining))})
+
+    new_vals, orig_vals = {}, {}
+    for c in DAY_ROW_CATEGORIES:
+        nv = _parse_day_amount(request.POST.get(f'cat_{c}'))
+        ov = _parse_day_amount(request.POST.get(f'orig_{c}'))
+        if nv is None or ov is None:
+            return JsonResponse({'success': False,
+                                 'message': f'Invalid amount in {DAY_ROW_LABELS[c]}.'}, status=400)
+        new_vals[c], orig_vals[c] = nv, ov
+    remarks = (request.POST.get('remarks') or '').strip()[:300]
+    # 'new' = the +Add Row template: its remarks belong only to the records
+    # it creates, never to entries already saved for that date.
+    is_new_row = (request.POST.get('mode') or '') == 'new'
+    remarks_changed = (not is_new_row) and (
+        remarks != (request.POST.get('orig_remarks') or '').strip()[:300])
+    create_desc = remarks if (is_new_row or remarks_changed) else ''
+
+    # Resolve/register the site before taking row locks (ensure_site has
+    # its own atomic block and never raises).
+    stored_site = ensure_site(admin_id, raw_site, request.user)
+    date_disp = date.strftime('%d %b %Y')
+
+    with db_tx.atomic():
+        txns = _day_expense_txns(admin_id, skey, date, lock=True)
+        by_cat = {c: [] for c in DAY_ROW_CATEGORIES}
+        for t in txns:
+            by_cat[_day_row_cat(t.expense_category)].append(t)
+
+        ops, problems = [], []
+        for c in DAY_ROW_CATEGORIES:
+            if new_vals[c] == orig_vals[c]:
+                continue
+            recs = by_cat[c]
+            current = sum((t.amount for t in recs), Decimal('0'))
+            label = DAY_ROW_LABELS[c]
+            if len(recs) > 1:
+                problems.append(
+                    f'{label} has {len(recs)} separate entries on {date_disp} '
+                    f'(total ₹{current}). They were not changed.')
+            elif current != orig_vals[c]:
+                problems.append(
+                    f'{label} is already ₹{current} on {date_disp} for this site. '
+                    f'Edit that date\'s row instead (reload if you don\'t see it).')
+            else:
+                ops.append((c, recs[0] if recs else None, new_vals[c]))
+        if problems:
+            return JsonResponse({'success': False, 'message': '\n'.join(problems)}, status=409)
+
+        if not ops and not remarks_changed:
+            return JsonResponse({'success': True, 'day': _day_row_json(_build_day_row(date, txns))})
+        if not txns and not any(new for _c, _r, new in ops if new > 0):
+            return JsonResponse({'success': False,
+                                 'message': 'Please enter an amount in one of the category columns.'},
+                                status=400)
+
+        for c, rec, new in ops:
+            if rec is not None and new == 0:
+                rec.delete()
+            elif rec is not None:
+                rec.amount = new
+                rec.modified_by = request.user
+                rec.save(update_fields=['amount', 'modified_by', 'updated_at'])
+            elif new > 0:
+                Transaction.objects.create(
+                    user=request.user, type='expense', expense_category=c,
+                    amount=new, date=date, location_site=stored_site,
+                    description=create_desc, payment_mode='',
+                    admin_id=admin_id, created_by=request.user,
+                    modified_by=request.user,
+                )
+
+        remaining = _day_expense_txns(admin_id, skey, date)
+        if remarks_changed:
+            for t in remaining:
+                if (t.description or '') != remarks:
+                    t.description = remarks
+                    t.modified_by = request.user
+                    t.save(update_fields=['description', 'modified_by', 'updated_at'])
+
+    return JsonResponse({'success': True, 'day': _day_row_json(_build_day_row(date, remaining))})
 
 
 def _expense_to_dict(t):

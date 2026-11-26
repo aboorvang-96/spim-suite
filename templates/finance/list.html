@@ -784,6 +784,8 @@
         font-weight: 700 !important; min-width: 80px !important;
       }
       .site-detail-table td.cat-cell:empty::after { content: '-'; color: #cbd5e1; font-weight: 400; }
+      .site-detail-table td.cat-cell .cat-multi { font-size: 10px; color: #b45309; font-weight: 800; }
+      .site-detail-table tr.is-editing td.cat-cell.cat-locked { background: #f1f5f9 !important; cursor: not-allowed; }
       /* Inline edit cell inputs */
       .site-detail-table tr.is-editing td.cell-date,
       .site-detail-table tr.is-editing td.cat-cell,
@@ -1051,39 +1053,25 @@
                                         <td style="text-align:center;">—</td>
                                     </tr>
                                     {% else %}
-                                    {% with t=row.obj cat=row.obj.expense_category|default_if_none:''|lower %}
-                                    <tr class="account-detail-row site-month-row"
-                                        data-month="{{ t.date|date:'Y-m' }}"
-                                        data-pk="{{ t.pk }}"
-                                        data-expense-id="{{ t.pk }}"
-                                        data-date="{{ t.date|date:'Y-m-d' }}"
-                                        data-amount="{{ t.amount|stringformat:'s' }}"
-                                        data-category-id="{{ t.category_id|default_if_none:'' }}"
-                                        data-expense-category="{{ cat }}"
-                                        data-purpose="{{ t.purpose|default_if_none:'' }}"
-                                        data-payment-by="{{ t.payment_by|default_if_none:'' }}"
-                                        data-vendor="{{ t.vendor|default_if_none:'' }}"
-                                        data-location-site="{{ t.location_site|default_if_none:'' }}"
-                                        data-payment-mode="{{ t.payment_mode|default_if_none:'' }}"
-                                        data-income-source="{{ t.income_source|default_if_none:'' }}"
-                                        data-description="{{ t.description|default_if_none:'' }}">
-                                        <td class="cell-date" data-readmode>{{ t.date|date:"d M, Y" }}</td>
+                                    {# One row per (site, date). Each category cell is the
+                                       sum of that day's records in that category; a cell
+                                       backed by more than one record (data-count > 1) is
+                                       read-only in edit mode. Saved via expenses:save_day. #}
+                                    {% with d=row.day %}
+                                    <tr class="account-detail-row site-month-row site-day-row"
+                                        data-month="{{ d.date|date:'Y-m' }}"
+                                        data-date="{{ d.date|date:'Y-m-d' }}"
+                                        data-pks="{{ d.pks_csv }}"
+                                        data-remarks="{{ d.remarks }}">
+                                        <td class="cell-date">{{ d.date|date:"d M, Y" }}</td>
                                         <td class="credit">—</td>
                                         <td class="cell-from">—</td>
                                         <td class="cell-to">—</td>
-                                        <td class="cat-cell" data-cat="food">{% if cat == 'food' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
-                                        <td class="cat-cell" data-cat="room">{% if cat == 'room' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
-                                        <td class="cat-cell" data-cat="diesel">{% if cat == 'diesel' or cat == 'fuel' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
-                                        <td class="cat-cell" data-cat="travel">{% if cat == 'travel' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
-                                        <td class="cat-cell" data-cat="ticket">{% if cat == 'ticket' %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
-                                        <td class="cat-cell" data-cat="other">{% if cat == 'other' or not cat %}-₹{{ t.amount|floatformat:2 }}{% endif %}</td>
-                                        <td class="cell-remarks">{{ t.description|default:"-" }}</td>
+                                        {% for c in d.cat_list %}<td class="cat-cell" data-cat="{{ c.key }}" data-amount="{% if c.count %}{{ c.amount|stringformat:'s' }}{% endif %}" data-count="{{ c.count }}">{% if c.count %}-₹{{ c.amount|floatformat:2 }}{% if c.count > 1 %} <span class="cat-multi" title="{{ c.count }} separate entries">×{{ c.count }}</span>{% endif %}{% endif %}</td>{% endfor %}
+                                        <td class="cell-remarks">{{ d.remarks|default:"-" }}</td>
                                         <td style="text-align:center;white-space:nowrap;">
                                             <button type="button" class="btn-action-mini edit row-edit-btn">Edit</button>
-                                            <form method="post" action="{% url 'expenses:delete' t.pk %}" class="m-0 inline-form" onsubmit="return confirm('Confirm deletion of this expense?')">
-                                                {% csrf_token %}
-                                                <button type="submit" class="btn-action-mini delete">Del</button>
-                                            </form>
+                                            <button type="button" class="btn-action-mini delete row-day-delete-btn">Del</button>
                                         </td>
                                     </tr>
                                     {% endwith %}
@@ -1092,7 +1080,7 @@
                                     <tr class="empty-row"><td colspan="12" style="text-align:center;color:#94a3b8;padding:20px;">No entries yet for this site.</td></tr>
                                     {% endfor %}
                                     <!-- Inline new-row template — clicking + Add opens an editable empty row. -->
-                                    <tr class="account-detail-row site-new-row" hidden
+                                    <tr class="account-detail-row site-new-row site-day-row" hidden
                                         data-site-name="{{ group.site }}">
                                         <td class="cell-date"></td>
                                         <td class="credit">—</td>
@@ -1906,6 +1894,7 @@
     const emptyState = document.getElementById('expenseEmptyState');
     const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
     const ADD_EXPENSE_URL = "{% url 'expenses:add' %}";
+    const SAVE_DAY_URL    = "{% url 'expenses:save_day' %}";
 
     function todayISO() {
       const d = new Date();
@@ -2288,14 +2277,14 @@
       row.dataset._originalHtml = row.innerHTML;
       row.classList.add('is-editing');
 
+      const isNew      = row.classList.contains('site-new-row');
       const dateVal    = row.dataset.date || '';
-      const remarksVal = row.dataset.description || '';
-      const curCat     = (row.dataset.expenseCategory || '').toLowerCase();
-      const curAmount  = row.dataset.amount || '';
+      const remarksVal = row.dataset.remarks || '';
 
-      // Date cell -> date input
+      // Date cell -> date input, NEW rows only. A saved row IS the
+      // (site, date) bucket, so its date is its key and stays fixed.
       const dateCell = row.querySelector('.cell-date');
-      if (dateCell) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}" max="{{ today_ist_iso }}">`;
+      if (dateCell && isNew) dateCell.innerHTML = `<input type="date" class="site-row-input row-date" value="${dateVal}" max="{{ today_ist_iso }}">`;
 
       // Credit / From / To are sourced from the Income module for this
       // site + date — NEVER editable from an expense row (new or edit).
@@ -2309,13 +2298,18 @@
       const creditCell = row.querySelector('.credit');
       if (creditCell) creditCell.textContent = '—';
 
-      // Category cells -> numeric inputs (only the matching category gets the amount)
+      // Category cells -> numeric inputs prefilled with the day's amount for
+      // that column. A column backed by several records (data-count > 1)
+      // stays read-only — the server refuses to merge those silently.
       row.querySelectorAll('.cat-cell').forEach(function (td) {
         const key = td.dataset.cat;
-        const matches = (key === curCat) ||
-                        (key === 'diesel' && curCat === 'fuel') ||
-                        (!curCat && key === 'other');
-        const val = matches ? curAmount : '';
+        const count = parseInt(td.dataset.count || '0', 10) || 0;
+        if (count > 1) {
+          td.classList.add('cat-locked');
+          td.title = count + ' separate entries on this date — not editable here';
+          return;
+        }
+        const val = isNew ? '' : (td.dataset.amount || '');
         td.innerHTML = `<input type="number" step="0.01" min="0" class="site-row-input cat-input" data-cat="${key}" value="${val}">`;
       });
 
@@ -2340,55 +2334,34 @@
       delete row.dataset._originalHtml;
     }
 
-    // Read the inline-edit inputs into a FormData payload compatible with
-    // TransactionForm. The first non-zero category cell wins (the chosen
-    // expense_category + amount).
+    // Read the inline-edit inputs into the save_expense_day payload: EVERY
+    // category column (cat_<key>) plus the value it showed when editing
+    // began (orig_<key>). The server only touches columns that changed, so
+    // filling Travel never wipes the Food already saved for that date.
     function collectRowPayload(row, siteName) {
+      const isNew = row.classList.contains('site-new-row');
       const dateInput = row.querySelector('.row-date');
       const date = dateInput ? dateInput.value : (row.dataset.date || '');
       const remarksInput = row.querySelector('.row-remarks');
-      const remarks = remarksInput ? remarksInput.value : '';
-      // Credit From / Credit To — could be either a <select> (dropdown)
-      // or a text <input> (Add-new mode). Either way we read its .value.
-      // The "__ADD_NEW__" sentinel means the user opened Add-new but didn't
-      // type anything; treat that as a blank value rather than persisting
-      // the sentinel string.
-      function _readCreditField(el, fallback) {
-        if (!el) return fallback || '';
-        let v = (el.value || '').trim();
-        if (v === '__ADD_NEW__') v = '';
-        return v;
-      }
-      const fromEl = row.querySelector('.row-from');
-      const toEl   = row.querySelector('.row-to');
-      const paymentBy = _readCreditField(fromEl, row.dataset.paymentBy);
-      const vendor    = _readCreditField(toEl,   row.dataset.vendor);
-
-      let cat = '', amount = 0;
-      row.querySelectorAll('.cat-input').forEach(function (inp) {
-        if (cat) return;
-        const v = parseAmount(inp.value);
-        if (v > 0) { cat = inp.dataset.cat || ''; amount = v; }
-      });
+      const remarks = remarksInput ? remarksInput.value.trim() : '';
 
       const fd = new FormData();
-      fd.set('type', 'expense');
+      fd.set('mode', isNew ? 'new' : 'edit');
+      fd.set('site', siteName || '');
       fd.set('date', date);
-      fd.set('amount', amount ? String(amount) : '');
-      fd.set('expense_category', cat);
-      fd.set('description', remarks);
-      // Preserve existing per-row metadata so we don't blow away the Account/Source
-      // values that the row already has — important for edits. From/To come from
-      // the inline-edit inputs above (so new picks / new typed values persist).
-      fd.set('location_site',  row.dataset.locationSite || siteName || '');
-      fd.set('payment_by',     paymentBy);
-      fd.set('vendor',         vendor);
-      fd.set('purpose',        row.dataset.purpose      || '');
-      fd.set('payment_mode',   row.dataset.paymentMode  || '');
-      fd.set('income_source',  row.dataset.incomeSource || '');
-      const catId = row.dataset.categoryId;
-      if (catId) fd.set('category', catId);
-      return { fd, date, amount, cat, remarks, paymentBy, vendor };
+      let anyAmount = false;
+      row.querySelectorAll('.cat-cell').forEach(function (td) {
+        const key = td.dataset.cat;
+        const orig = isNew ? '' : (td.dataset.amount || '');
+        const inp = td.querySelector('.cat-input');
+        const val = inp ? inp.value.trim() : orig;   // locked cell → unchanged
+        fd.set('cat_' + key, val);
+        fd.set('orig_' + key, orig);
+        if (parseAmount(val) > 0) anyAmount = true;
+      });
+      fd.set('remarks', remarks);
+      fd.set('orig_remarks', isNew ? '' : (row.dataset.remarks || ''));
+      return { fd, date, anyAmount, isNew };
     }
 
     // Format a row's date in the "DD MMM, YYYY" style the saved rows use.
@@ -2408,153 +2381,147 @@
       return '-₹' + Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-    // Replace the row's editing inputs with view-mode cells reflecting the
-    // newly-saved values, then drop edit-mode classes. This keeps the row
-    // in place (no page reload, no duplicate card creation).
-    function refreshRowDisplay(row, vals, isNewSavedRow) {
-      // Normalise dataset first so subsequent edits read the latest values.
-      row.dataset.date              = vals.date || '';
-      row.dataset.amount            = vals.amount ? String(vals.amount) : '';
-      row.dataset.expenseCategory   = vals.cat || '';
-      row.dataset.description       = vals.remarks || '';
-      row.dataset.month             = (vals.date || '').slice(0, 7);
-      // Persist the From / To values picked or typed in the combobox so
-      // subsequent edits prefill correctly.
-      if (vals.paymentBy !== undefined) row.dataset.paymentBy = vals.paymentBy || '';
-      if (vals.vendor    !== undefined) row.dataset.vendor    = vals.vendor    || '';
+    function fmtDayAmount(v) {
+      const n = Math.abs(parseFloat(v) || 0);
+      return '-₹' + n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    // Paint a (site, date) row from the server's day dict
+    // {date, cats:{key:{amount,count}}, pks:[], remarks, count}.
+    function paintDayRow(row, day) {
+      row.dataset.date    = day.date || '';
+      row.dataset.month   = (day.date || '').slice(0, 7);
+      row.dataset.pks     = (day.pks || []).join(',');
+      row.dataset.remarks = day.remarks || '';
+      delete row.dataset._originalHtml;
+      row.classList.remove('is-editing');
 
       const dateCell = row.querySelector('.cell-date');
-      if (dateCell) dateCell.textContent = fmtDateDisplay(vals.date);
-
-      // Credit / From / To — always "—" in view mode after save.
-      // These three cells reflect Income module data (rendered on
-      // their own read-only Income rows after page reload), never
-      // per-expense-row values.
-      const creditCell = row.querySelector('.credit');
-      if (creditCell) creditCell.textContent = '—';
-      const fromCell = row.querySelector('.cell-from');
-      if (fromCell) fromCell.textContent = '—';
-      const toCell = row.querySelector('.cell-to');
-      if (toCell) toCell.textContent = '—';
-
-      // Re-paint every category cell — only the chosen one shows the amount.
-      const chosenCat = (vals.cat === 'fuel') ? 'diesel'
-                      : (CAT_ORDER.indexOf(vals.cat) >= 0 ? vals.cat
-                      : 'other');
-      row.querySelectorAll('.cat-cell').forEach(function (td) {
-        const key = td.dataset.cat;
-        td.textContent = (key === chosenCat) ? fmtDebitRupee(vals.amount) : '';
+      if (dateCell) dateCell.textContent = fmtDateDisplay(day.date);
+      ['.credit', '.cell-from', '.cell-to'].forEach(function (sel) {
+        const c = row.querySelector(sel); if (c) c.textContent = '—';
       });
-
+      row.querySelectorAll('.cat-cell').forEach(function (td) {
+        const c = (day.cats || {})[td.dataset.cat] || { amount: '0', count: 0 };
+        const count = parseInt(c.count || 0, 10) || 0;
+        td.dataset.count  = String(count);
+        td.dataset.amount = count ? String(c.amount) : '';
+        td.classList.remove('cat-locked');
+        td.removeAttribute('title');
+        td.textContent = count ? fmtDayAmount(c.amount) : '';
+        if (count > 1) {
+          const s = document.createElement('span');
+          s.className = 'cat-multi';
+          s.title = count + ' separate entries';
+          s.textContent = ' ×' + count;
+          td.appendChild(s);
+        }
+      });
       const remarksCell = row.querySelector('.cell-remarks');
-      if (remarksCell) remarksCell.textContent = vals.remarks || '-';
-
-      // Restore the standard Edit + Delete action buttons. For a freshly-
-      // saved new row we need a real Delete URL (the server returned a pk).
+      if (remarksCell) remarksCell.textContent = day.remarks || '-';
       const lastTd = row.cells[row.cells.length - 1];
       if (lastTd) {
-        const pk = row.dataset.pk || row.dataset.expenseId || '';
         lastTd.innerHTML =
-          '<button type="button" class="btn-action-mini edit row-edit-btn">Edit</button>' +
-          (pk ? ' <form method="post" action="/expenses/' + encodeURIComponent(pk) + '/delete/" class="m-0 inline-form" onsubmit="return confirm(\'Confirm deletion of this expense?\')">' +
-                '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
-                '<button type="submit" class="btn-action-mini delete">Del</button>' +
-              '</form>'
-              : '');
+          '<button type="button" class="btn-action-mini edit row-edit-btn">Edit</button> ' +
+          '<button type="button" class="btn-action-mini delete row-day-delete-btn">Del</button>';
       }
+    }
 
-      row.classList.remove('is-editing');
-      delete row.dataset._originalHtml;
-
-      if (isNewSavedRow) {
-        // The +Add Row template just became a real saved row — promote it so
-        // it's no longer treated as the inline new-row template, and prepare
-        // a fresh hidden template for the next +Add Row click.
-        row.classList.remove('site-new-row');
-        row.classList.add('site-month-row');
-        const tbody = row.parentNode;
-        if (tbody) {
-          const tpl = row.cloneNode(true);
-          tpl.classList.remove('site-month-row');
-          tpl.classList.add('site-new-row');
-          tpl.setAttribute('hidden', '');
-          tpl.removeAttribute('data-pk');
-          tpl.removeAttribute('data-expense-id');
-          tpl.dataset.date = '';
-          tpl.dataset.amount = '';
-          tpl.dataset.expenseCategory = '';
-          tpl.dataset.description = '';
-          tpl.dataset.month = '';
-          const tplDate = tpl.querySelector('.cell-date');     if (tplDate)    tplDate.textContent    = '';
-          const tplRem  = tpl.querySelector('.cell-remarks');  if (tplRem)     tplRem.textContent     = '';
-          tpl.querySelectorAll('.cat-cell').forEach(td => { td.textContent = ''; });
-          // Reset the action cell to the Save/Cancel buttons so the next
-          // +Add Row click goes straight into edit-mode again.
-          const tplLast = tpl.cells[tpl.cells.length - 1];
-          if (tplLast) {
-            tplLast.innerHTML =
-              '<button type="button" class="btn-action-mini edit row-save-btn">Save</button>' +
-              ' <button type="button" class="btn-action-mini row-cancel-btn">Cancel</button>';
-          }
-          tbody.appendChild(tpl);
-        }
-        // Drop the empty-state row, if any: this site now has at least one expense.
-        const panel = row.closest('.site-detail-panel');
-        if (panel) {
-          const emptyRow = panel.querySelector('.empty-row');
-          if (emptyRow && emptyRow.parentNode) emptyRow.parentNode.removeChild(emptyRow);
-        }
+    // Apply a save/delete response. There is exactly one visible row per
+    // date: Add Row on a date already listed updates THAT row (the server
+    // upserted into it) instead of appending a second one.
+    function applyDayResult(row, day, isNew) {
+      const tbody = row.parentNode;
+      if (!tbody) return;
+      let target = isNew ? null : row;
+      tbody.querySelectorAll('tr.site-day-row:not(.site-new-row)').forEach(function (tr) {
+        if (tr === target || tr.dataset.date !== day.date) return;
+        if (!target) target = tr; else tr.remove();
+      });
+      if (isNew) {
+        // Reset the hidden +Add Row template for the next click.
+        exitRowEdit(row, true);
+        row.setAttribute('hidden', '');
       }
+      if (!day.count) {
+        if (target) target.remove();
+        return;
+      }
+      if (!target) {
+        target = row.cloneNode(true);
+        target.classList.remove('site-new-row');
+        target.classList.add('site-month-row');
+        target.removeAttribute('hidden');
+        target.removeAttribute('data-site-name');
+        // Keep the table in date order (income/expense rows both carry data-date).
+        let before = row;
+        const rows = tbody.querySelectorAll('tr[data-date]:not(.site-new-row)');
+        for (let i = 0; i < rows.length; i++) {
+          if ((rows[i].dataset.date || '') > day.date) { before = rows[i]; break; }
+        }
+        tbody.insertBefore(target, before);
+      }
+      paintDayRow(target, day);
+      const panel = tbody.closest('.site-detail-panel');
+      const emptyRow = panel && panel.querySelector('.empty-row');
+      if (emptyRow) emptyRow.remove();
+    }
+
+    async function postDay(fd) {
+      const res = await fetch(SAVE_DAY_URL, {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRFToken': csrfToken,
+          'Accept': 'application/json',
+        },
+        body: fd,
+        credentials: 'same-origin',
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      return { ok: res.ok && data && data.success, data };
     }
 
     async function postRow(row, siteName) {
       const payload = collectRowPayload(row, siteName);
       if (!payload.date) { alert('Please enter a date.'); return; }
-      if (!payload.amount) { alert('Please enter an amount in one of the category columns.'); return; }
-      // The server-side pk is the source of truth for "is this an edit?".
-      // data-pk is set on every saved row; the inline +Add Row template
-      // leaves it empty until the server returns a fresh id.
-      const pk = (row.dataset.pk || '').trim();
-      const url = pk ? `/expenses/${encodeURIComponent(pk)}/edit/` : ADD_EXPENSE_URL;
-      const wasNewRow = !pk;
+      if (payload.isNew && !payload.anyAmount) {
+        alert('Please enter an amount in one of the category columns.');
+        return;
+      }
+      if (!payload.isNew && !payload.anyAmount &&
+          !confirm('All amounts are empty — this removes every expense on ' +
+                   fmtDateDisplay(payload.date) + ' for this site. Continue?')) {
+        return;
+      }
       try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRFToken': csrfToken,
-            'Accept': 'application/json',
-          },
-          body: payload.fd,
-          credentials: 'same-origin',
-        });
-        let data = null;
-        try { data = await res.json(); } catch (_) {}
-        if (res.ok && data && data.success) {
-          if (wasNewRow && data.expense && data.expense.id != null) {
-            row.dataset.pk         = String(data.expense.id);
-            row.dataset.expenseId  = String(data.expense.id);
-          }
-          // Stamp the location_site dataset so the row stays anchored even
-          // if the user later flips Location/Site in the modal.
-          if (!row.dataset.locationSite) row.dataset.locationSite = siteName || '';
-          // Add any newly-typed Credit From / Credit To values to the
-          // in-page cache so the next inline Edit shows them as dropdown
-          // options without needing a page reload.
-          CreditOptions.push('from', payload.paymentBy);
-          CreditOptions.push('to',   payload.vendor);
-          refreshRowDisplay(row, {
-            date:      payload.date,
-            amount:    payload.amount,
-            cat:       payload.cat,
-            remarks:   payload.remarks,
-            paymentBy: payload.paymentBy,
-            vendor:    payload.vendor,
-          }, wasNewRow);
+        const r = await postDay(payload.fd);
+        if (r.ok) {
+          applyDayResult(row, r.data.day, payload.isNew);
         } else {
-          const msg = (data && (data.message || data.error)) || 'Could not save the row.';
-          alert(msg);
+          alert((r.data && (r.data.message || r.data.error)) || 'Could not save the row.');
         }
+      } catch (err) {
+        alert('Network error. Please try again.');
+      }
+    }
+
+    async function deleteDayRow(row, siteName) {
+      const pks = (row.dataset.pks || '').split(',').filter(Boolean);
+      const n = pks.length;
+      if (!n) return;
+      if (!confirm('Delete ' + (n === 1 ? 'the expense' : 'all ' + n + ' expense entries') +
+                   ' on ' + fmtDateDisplay(row.dataset.date) + ' for this site?')) return;
+      const fd = new FormData();
+      fd.set('action', 'delete');
+      fd.set('site', siteName || '');
+      fd.set('date', row.dataset.date || '');
+      fd.set('pks', pks.join(','));
+      try {
+        const r = await postDay(fd);
+        if (r.ok) applyDayResult(row, r.data.day, false);
+        else alert((r.data && r.data.message) || 'Could not delete.');
       } catch (err) {
         alert('Network error. Please try again.');
       }
@@ -2610,7 +2577,10 @@
           // Fully reset dataset so values from a previously saved row's
           // clone (paymentBy / vendor / purpose / categoryId / paymentMode
           // / incomeSource / amount) never bleed into the fresh new row.
-          newRow.dataset.date            = new Date().toISOString().slice(0, 10);
+          // Today in IST (server-rendered) — toISOString() is UTC and gave
+          // yesterday's date before 05:30 IST.
+          newRow.dataset.date            = '{{ today_ist_iso }}';
+          newRow.dataset.remarks         = '';
           newRow.dataset.amount          = '';
           newRow.dataset.expenseCategory = '';
           newRow.dataset.description     = '';
@@ -2635,6 +2605,16 @@
           // Pre-fill location_site from the panel's site name so the saved
           // row stays linked to the same card group.
           newRow.dataset.locationSite = panel.dataset.siteName || '';
+          return;
+        }
+
+        // Per-row "Del" — deletes every expense shown in that (site, date) row.
+        const dayDelBtn = e.target.closest('.row-day-delete-btn');
+        if (dayDelBtn) {
+          e.preventDefault();
+          const row = dayDelBtn.closest('.site-day-row');
+          const panel = row && row.closest('.site-detail-panel');
+          if (row) deleteDayRow(row, (panel && panel.dataset.siteName) || '');
           return;
         }
 
