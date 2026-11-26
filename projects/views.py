@@ -334,6 +334,10 @@ def _work_summary_json(request, admin_id):
         .filter(admin_id=admin_id)
         .select_related('location', 'location__site', 'location__site__client')
         .prefetch_related('employees')
+        # Oldest date first (Meta default is '-date'); same-date tiebreak
+        # keeps the Meta's '-created_at'. SL numbers follow this order, and
+        # the tab's PDF/Excel buttons export these rows as-is.
+        .order_by('date', '-created_at')
     )
 
     f_date_from = request.GET.get('date_from', '').strip()
