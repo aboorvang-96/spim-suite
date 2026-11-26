@@ -346,6 +346,16 @@ def _work_summary_json(request, admin_id):
     f_location  = request.GET.get('location', '').strip()
     f_remarks   = request.GET.get('remarks', '').strip()
 
+    # Default range = current 26→25 payroll cycle (same helper the Expense
+    # Manager uses). Applied only when the user sent NEITHER date, i.e. first
+    # load and Reset; any user-entered date is honoured as-is.
+    from accounts.cycle_utils import get_salary_cycle
+    from accounts.date_utils import today_ist
+    _cycle = get_salary_cycle(today_ist())
+    if not f_date_from and not f_date_to:
+        f_date_from = _cycle['start'].isoformat()
+        f_date_to   = _cycle['end'].isoformat()
+
     if f_date_from:
         qs = qs.filter(date__gte=f_date_from)
     if f_date_to:
@@ -414,6 +424,12 @@ def _work_summary_json(request, admin_id):
         'total_tmp':     total_tmp,
         'total_entries': len(rows),
         'locations':     locations,
+        # Range actually applied + the current cycle, so the tab can prefill
+        # Date From/To and show the "current cycle" banner.
+        'date_from':     f_date_from,
+        'date_to':       f_date_to,
+        'cycle_start':   _cycle['start'].isoformat(),
+        'cycle_end':     _cycle['end'].isoformat(),
     })
 
 

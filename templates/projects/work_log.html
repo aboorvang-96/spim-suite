@@ -398,6 +398,16 @@
         <span id="s-total-entries" hidden></span>
         <span id="s-total-tmp"     hidden></span>
 
+        <!-- Current-cycle notice (same style as the Expense Manager banner).
+             Shown while the list covers exactly the current 26→25 cycle. -->
+        <div id="summary-cycle-banner"
+             style="margin-top:1rem;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:600;display:none;align-items:center;gap:8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span id="summary-cycle-text"></span>
+        </div>
+
         <!-- Inline error banner for summary-tab delete failures (locked, network, etc.) -->
         <div id="summary-err-banner" class="entity-del-banner" style="margin-top:1rem;"></div>
 
@@ -1837,9 +1847,31 @@ async function fetchSummaryData() {
         if (data.locations) syncSummaryLocationDropdown(data.locations);
         document.getElementById('s-total-entries').textContent = data.total_entries || 0;
         document.getElementById('s-total-tmp').textContent     = data.total_tmp     || 0;
+        applySummaryCycleState(data);
         renderSummaryTable();
     } catch(e) {
         showToast('Failed to load summary', 'error');
+    }
+}
+
+// Prefill Date From / Date To with the range the server applied (the
+// current cycle when both were blank) and toggle the cycle banner.
+function applySummaryCycleState(data) {
+    const fromEl = document.getElementById('s-date-from');
+    const toEl   = document.getElementById('s-date-to');
+    if (fromEl && !fromEl.value && data.date_from) fromEl.value = data.date_from;
+    if (toEl   && !toEl.value   && data.date_to)   toEl.value   = data.date_to;
+    const banner = document.getElementById('summary-cycle-banner');
+    if (!banner) return;
+    const isCycle = data.cycle_start && data.cycle_end
+        && data.date_from === data.cycle_start && data.date_to === data.cycle_end;
+    if (isCycle) {
+        const fmt = iso => iso.split('-').reverse().join('-');   // dd-mm-yyyy, as in the table
+        document.getElementById('summary-cycle-text').textContent =
+            `Showing current cycle: ${fmt(data.cycle_start)} → ${fmt(data.cycle_end)}. Use filters to view older data.`;
+        banner.style.display = 'flex';
+    } else {
+        banner.style.display = 'none';
     }
 }
 
