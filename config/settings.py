@@ -2,6 +2,7 @@ from pathlib import Path
 from decouple import config
 import dj_database_url
 import os
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -100,6 +101,11 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = False
 
 CORS_URLS_REGEX = r'^/api/.*$'
+
+# SPIM Lite sends a custom App-Version header on every request (version
+# gate). Browsers preflight custom headers, so it must be allowed here or
+# every web/PWA request fails CORS and surfaces as "network error".
+CORS_ALLOW_HEADERS = (*default_headers, 'app-version')
 
 # -------------------------------------------------------------------
 # URLS & AUTH
